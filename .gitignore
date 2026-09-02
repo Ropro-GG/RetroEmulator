@@ -1,0 +1,7 @@
+roms/
+*.db
+retrolauncher_local.db
+__pycache__/
+*.pyc
+.venv/
+venv/
