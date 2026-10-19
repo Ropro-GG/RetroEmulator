@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RetroEmulator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- PANTALLA DE LOGIN / REGISTRO -->
+    <div id="auth-screen" class="auth-container">
+        <div class="auth-box">
+            <h1 class="logo">RETRO<span>EMULATOR</span></h1>
+            
+            <div id="login-form">
+                <h2>Iniciar Sesión</h2>
+                <input type="email" id="login-email" placeholder="Correo electrónico">
+                <input type="password" id="login-pass" placeholder="Contraseña">
+                <button onclick="login()">Entrar</button>
+                <p class="switch-auth">¿No tenés cuenta? <a href="#" onclick="toggleAuth(true)">Registrate</a></p>
+            </div>
+
+            <div id="register-form" style="display: none;">
+                <h2>Crear Cuenta</h2>
+                <input type="text" id="reg-username" placeholder="Nombre de usuario">
+                <input type="email" id="reg-email" placeholder="Correo electrónico">
+                <input type="password" id="reg-pass" placeholder="Contraseña">
+                <button onclick="registrar()">Registrarse</button>
+                <p class="switch-auth">¿Ya tenés cuenta? <a href="#" onclick="toggleAuth(false)">Iniciá sesión</a></p>
+            </div>
+            <p id="auth-error" class="error-msg"></p>
+        </div>
+    </div>
+
+    <!-- PANTALLA PRINCIPAL -->
+    <div id="app-screen" class="app-container" style="display: none;">
+        
+        <!-- HEADER PRINCIPAL -->
+        <header class="top-bar">
+            <div class="brand">RETRO<span>EMULATOR</span></div>
+            
+            <!-- BUSCADOR EN TIEMPO REAL -->
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="🔍 Buscar juego..." oninput="filtrarCatalogo()">
+            </div>
+            
+            <div class="header-right">
+                <button class="btn-scan" onclick="escanearRoms()">🔍 Escanear ROMs</button>
+                
+                <!-- CÁPSULA DE USUARIO (ESTILO STEAM CIRCULAR/ELONGADO) -->
+                <div class="user-pill" onclick="abrirPerfil()">
+                    <div class="user-avatar-wrapper">
+                        <img id="header-avatar" src="https://via.placeholder.com/40" alt="Avatar">
+                    </div>
+                    <span id="header-username" class="user-pill-name">Cargando...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- CONTENIDO PRINCIPAL -->
+        <main class="main-content">
+            <aside class="sidebar">
+                <h3>Consolas</h3>
+                <ul id="console-list">
+                    <li class="active" onclick="seleccionarConsola('todas', this)">Todas</li>
+                </ul>
+            </aside>
+
+            <section class="game-grid-container">
+                <h2>Biblioteca de Juegos</h2>
+                <div id="game-grid" class="game-grid">
+                    <!-- Cards de juegos dinámicas -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- MODAL DE PERFIL DE USUARIO -->
+    <div id="profile-modal" class="modal" style="display: none;">
+        <div class="modal-content profile-card">
+            <span class="close-btn" onclick="cerrarPerfil()">&times;</span>
+            
+            <div class="profile-header">
+                <div class="profile-avatar-container">
+                    <img id="profile-avatar" src="https://via.placeholder.com/100" alt="Foto de Perfil">
+                    <div class="avatar-buttons">
+                        <button class="change-avatar-btn" onclick="subirNuevaFoto()">📷 Foto</button>
+                        <button class="change-avatar-btn" onclick="cambiarNombreUsuario()">✏️ Nombre</button>
+                    </div>
+                </div>
+                <div class="profile-info">
+                    <h2 id="profile-username">NombreUsuario</h2>
+                    <span class="user-status">🟢 En línea</span>
+                </div>
+            </div>
+
+            <div class="profile-body">
+                <h3>Biografía</h3>
+                <textarea id="profile-bio" placeholder="Escribí algo sobre vos..."></textarea>
+                <button class="btn-save-bio" onclick="guardarPerfil()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
