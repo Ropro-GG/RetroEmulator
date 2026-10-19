@@ -165,7 +165,7 @@ async function cargarConsolas() {
     try {
         const consolas = await window.pywebview.api.obtener_consolas();
         const list = document.getElementById('console-list');
-        list.innerHTML = '<li class="active" onclick="seleccionarConsola(\'todas\', this)">Todas</li>';
+        list.innerHTML = `<li class="${consolaSeleccionada === 'todas' ? 'active' : ''}" onclick="seleccionarConsola('todas', this)">Todas</li>`;
 
         if (consolas && consolas.length > 0) {
             consolas.forEach(c => {
@@ -174,6 +174,7 @@ async function cargarConsolas() {
                 
                 const li = document.createElement('li');
                 li.innerText = nombreConsola;
+                if (consolaId === consolaSeleccionada) li.classList.add('active');
                 li.onclick = () => seleccionarConsola(consolaId, li);
                 list.appendChild(li);
             });
@@ -230,6 +231,45 @@ async function lanzarJuego(gameId) {
     }
 }
 
+function crearPortada(juego, nombre) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'game-cover-wrapper';
+
+    const fallback = document.createElement('div');
+    fallback.className = 'game-cover-fallback';
+    fallback.textContent = '🎮';
+
+    if (!juego.portada_url) {
+        wrapper.appendChild(fallback);
+        return wrapper;
+    }
+
+    const img = document.createElement('img');
+    img.alt = nombre;
+    img.loading = 'lazy';
+
+    let reintentado = false;
+    img.onerror = async () => {
+        // Plan B: pedirle la imagen en base64 a Python; si tampoco, queda el emoji
+        if (!reintentado && juego.portada_path) {
+            reintentado = true;
+            try {
+                const dataUri = await window.pywebview.api.obtener_portada_data_uri(juego.portada_path);
+                if (dataUri) {
+                    img.src = dataUri;
+                    return;
+                }
+            } catch (e) { /* se muestra el emoji */ }
+        }
+        img.remove();
+        wrapper.appendChild(fallback);
+    };
+
+    img.src = juego.portada_url;
+    wrapper.appendChild(img);
+    return wrapper;
+}
+
 function renderizarJuegos(juegos) {
     const grid = document.getElementById('game-grid');
     grid.innerHTML = '';
@@ -240,50 +280,86 @@ function renderizarJuegos(juegos) {
     }
 
     juegos.forEach(juego => {
-        const nombreJuego = juego.nombre || juego.titulo || juego.title || juego.name;
-        const consolaJuego = juego.nombre_consola || juego.consola;
-        const gameId = juego.id;
-        const portadaPath = juego.portada_path;
+        const nombreJuego = juego.nombre || juego.titulo || juego.title || juego.name || '';
+        const consolaJuego = juego.nombre_consola || juego.consola || '';
 
         const card = document.createElement('div');
         card.className = 'game-card';
-        
-        let imagenHtml = '';
-        if (portadaPath && portadaPath.trim() !== "") {
-            const nombreArchivoCover = portadaPath.split('/').pop().split('\\').pop();
-            const urlLocalCover = `roms/boxarts/${nombreArchivoCover}`;
-            
-            imagenHtml = `<img src="${urlLocalCover}" alt="${nombreJuego}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                        <div class="game-cover-fallback" style="display: none;">🎮</div>`;
-        } else {
-            imagenHtml = `<div class="game-cover-fallback">🎮</div>`;
-        }
+        card.appendChild(crearPortada(juego, nombreJuego));
 
-        card.innerHTML = `
-            <div class="game-cover-wrapper">
-                ${imagenHtml}
-            </div>
-            <div class="game-info">
-                <h3>${nombreJuego}</h3>
-                <p style="color: #45A29E; font-size: 0.82em;">${consolaJuego}</p>
-            </div>
-        `;
-        card.onclick = () => lanzarJuego(gameId);
+        const info = document.createElement('div');
+        info.className = 'game-info';
+        const titulo = document.createElement('h3');
+        titulo.textContent = nombreJuego;
+        titulo.title = nombreJuego;
+        const consola = document.createElement('p');
+        consola.style.cssText = 'color: #45A29E; font-size: 0.82em;';
+        consola.textContent = consolaJuego;
+        info.append(titulo, consola);
+        card.appendChild(info);
+
+        card.onclick = () => lanzarJuego(juego.id);
         grid.appendChild(card);
     });
 }
 
+let escaneoEnCurso = false;
+
 async function escanearRoms() {
-    alert("Escaneo iniciado en segundo plano. Las carátulas e información se actualizarán en un momento.");
+    if (escaneoEnCurso) return;
     try {
-        await window.pywebview.api.escanear_roms();
-        setTimeout(async () => {
-            await cargarConsolas();
-            await filtrarCatalogo();
-            alert("¡Escaneo finalizado y catálogo actualizado!");
-        }, 3000);
+        const res = await window.pywebview.api.escanear_roms();
+        if (!res || !res.exito) {
+            alert("No se pudo iniciar el escaneo.");
+            return;
+        }
+        seguirEscaneo();
     } catch (e) {
         console.error("Error al escanear ROMs:", e);
         alert("Hubo un error al iniciar el escaneo.");
+    }
+}
+
+async function seguirEscaneo() {
+    escaneoEnCurso = true;
+    const btn = document.getElementById('btn-scan');
+    const label = document.getElementById('scan-status');
+    btn.disabled = true;
+
+    let ultimo = '';
+    let estado = null;
+    try {
+        do {
+            await new Promise(r => setTimeout(r, 1500));
+            estado = await window.pywebview.api.obtener_estado_escaneo();
+            if (!estado) break;
+
+            if (estado.portadas_total > 0) {
+                label.textContent = `Carátulas ${estado.portadas_hechas}/${estado.portadas_total}`;
+            } else {
+                label.textContent = `${estado.fase || 'Escaneando…'} ${estado.juegos || ''}`.trim();
+            }
+
+            // Refrescar el catálogo solo cuando hay novedades
+            const firma = `${estado.juegos}|${estado.portadas_ok}`;
+            if (firma !== ultimo) {
+                ultimo = firma;
+                await cargarConsolas();
+                await filtrarCatalogo();
+            }
+        } while (estado && estado.activo);
+
+        await cargarConsolas();
+        await filtrarCatalogo();
+        label.textContent = estado && estado.portadas_total > 0
+            ? `Listo: ${estado.portadas_ok}/${estado.portadas_total} carátulas`
+            : 'Escaneo finalizado';
+    } catch (e) {
+        console.error("Error siguiendo el escaneo:", e);
+        label.textContent = '';
+    } finally {
+        btn.disabled = false;
+        escaneoEnCurso = false;
+        setTimeout(() => { label.textContent = ''; }, 5000);
     }
 }
