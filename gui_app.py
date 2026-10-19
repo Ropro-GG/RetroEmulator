@@ -6,6 +6,7 @@ from db_local import LocalDB
 from scanner import ROMScanner
 from launcher import GameLauncher
 from cloud_client import CloudClient
+import boxart
 
 class API:
     def __init__(self):
@@ -47,25 +48,27 @@ class API:
         return {"exito": False, "error": "No se seleccionó ninguna imagen."}
 
     def escanear_roms(self):
-        """Ejecuta el escaneo en segundo plano para no congelar la interfaz."""
-        def proceso_escaneo():
-            try:
-                total = self.scanner.escanear()
-                print(f"[ESCANEO] Finalizado correctamente. Juegos encontrados: {total}")
-                # Opcional: Podés evaluar notificar a la UI si lo deseas
-            except Exception as e:
-                print(f"[ESCANEO ERROR] {e}")
+        """Lanza el escaneo (juegos + carátulas) en segundo plano."""
+        iniciado = self.scanner.iniciar()
+        return {"exito": True, "ya_en_curso": not iniciado}
 
-        hilo = threading.Thread(target=proceso_escaneo)
-        hilo.start()
-        return {"exito": True, "mensaje": "Escaneo iniciado en segundo plano."}
+    def obtener_estado_escaneo(self):
+        """La interfaz lo consulta periódicamente para mostrar el progreso."""
+        return self.scanner.estado()
+
+    def obtener_portada_data_uri(self, ruta_portada):
+        """Plan B si el webview no puede abrir la imagen por file://."""
+        return boxart.leer_como_data_uri(ruta_portada)
 
     def obtener_juegos(self):
         return self.db.obtener_todos_los_juegos()
 
     def obtener_juegos_filtrados(self, texto_busqueda="", consola_id=None):
         """Retorna juegos filtrados por búsqueda y/o consola para pywebview."""
-        return self.db.obtener_juegos_filtrados(texto_busqueda, consola_id)
+        juegos = self.db.obtener_juegos_filtrados(texto_busqueda, consola_id)
+        for juego in juegos:
+            juego["portada_url"] = boxart.ruta_a_uri(juego.get("portada_path"))
+        return juegos
 
     def obtener_consolas(self):
         """Retorna las consolas registradas para llenar el selector/filtro de la UI."""

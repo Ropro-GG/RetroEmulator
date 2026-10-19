@@ -166,11 +166,30 @@ def registrar_juego(consola_id, titulo, ruta_rom, portada_path=""):
     """Inserta un juego en la base de datos si la ruta no existe."""
     with obtener_conexion() as conn:
         cursor = conn.cursor()
+        # Upsert: si el juego ya existe se actualiza el título, pero una portada
+        # ya guardada nunca se pisa con un valor vacío.
         cursor.execute("""
-            INSERT OR IGNORE INTO juegos (consola_id, titulo, ruta_rom, portada_path)
-            VALUES (?, ?, ?, ?);
+            INSERT INTO juegos (consola_id, titulo, ruta_rom, portada_path)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(ruta_rom) DO UPDATE SET
+                consola_id = excluded.consola_id,
+                titulo = excluded.titulo,
+                portada_path = CASE WHEN excluded.portada_path <> ''
+                                    THEN excluded.portada_path
+                                    ELSE juegos.portada_path END;
         """, (consola_id, titulo, ruta_rom, portada_path))
         conn.commit()
+
+def actualizar_portada(ruta_rom, portada_path):
+    """Guarda la ruta de la carátula descargada para un juego."""
+    with obtener_conexion() as conn:
+        conn.execute("UPDATE juegos SET portada_path = ? WHERE ruta_rom = ?;", (portada_path, ruta_rom))
+        conn.commit()
+
+def obtener_mapa_portadas():
+    """Retorna {ruta_rom: portada_path} para saber qué juegos ya tienen carátula."""
+    with obtener_conexion() as conn:
+        return dict(conn.execute("SELECT ruta_rom, portada_path FROM juegos;").fetchall())
 
 def obtener_juegos_por_consola(consola_id):
     """Retorna la lista de juegos pertenecientes a una consola."""
@@ -238,7 +257,7 @@ class LocalDB:
         cursor = conexion.cursor()
 
         query = """
-            SELECT MIN(j.id) as id, j.titulo, j.ruta_rom, j.consola_id, c.nombre AS nombre_consola, COUNT(j.id) as total_variantes, MIN(j.portada_path) as portada_path
+            SELECT MIN(j.id) as id, j.titulo, j.ruta_rom, j.consola_id, c.nombre AS nombre_consola, COUNT(j.id) as total_variantes, MAX(j.portada_path) as portada_path
             FROM juegos j
             JOIN consolas c ON j.consola_id = c.id
             WHERE 1=1
