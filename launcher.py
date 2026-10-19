@@ -4,48 +4,64 @@ import db_local
 
 def ejecutar_juego(juego_id):
     """
-    Busca un juego por su ID en la base de datos local y ejecuta
-    el emulador configurado pasándole la ruta de la ROM.
+    Busca un juego por su ID. Si hay otros juegos con exactamente el mismo título 
+    (ej. varios discos o versiones), retorna las opciones para que el usuario elija.
     """
-    # 1. Obtener la información del juego desde la DB
     with db_local.obtener_conexion() as conn:
         cursor = conn.cursor()
+        
+        # 1. Obtener el título y la consola del juego seleccionado
         cursor.execute("""
-            SELECT j.titulo, j.ruta_rom, c.nombre, c.ruta_emulador
+            SELECT j.titulo, j.ruta_rom, c.nombre, c.ruta_emulador, j.consola_id
             FROM juegos j
             JOIN consolas c ON j.consola_id = c.id
             WHERE j.id = ?;
         """, (juego_id,))
         resultado = cursor.fetchone()
 
-    if not resultado:
-        print(f"[ERROR] No se encontró el juego con ID {juego_id}.")
-        return False
+        if not resultado:
+            return {"exito": False, "error": f"No se encontró el juego con ID {juego_id}."}
 
-    titulo, ruta_rom, nombre_consola, ruta_emulador = resultado
+        titulo, ruta_rom, nombre_consola, ruta_emulador, consola_id = resultado
 
-    # 2. Validar que exista el archivo ROM
+        # 2. Buscar si hay otros juegos con el mismo título en la misma consola (ej: multidiscos o variantes)
+        cursor.execute("""
+            SELECT j.id, j.titulo, j.ruta_rom, c.ruta_emulador
+            FROM juegos j
+            JOIN consolas c ON j.consola_id = c.id
+            WHERE j.titulo = ? AND j.consola_id = ?;
+        """, (titulo, consola_id))
+        coincidencias = cursor.fetchall()
+
+    # Si hay múltiples variantes o discos con el mismo nombre, devolvemos la lista para elegir
+    if len(coincidencias) > 1:
+        opciones = []
+        for c_id, c_titulo, c_ruta, c_emul in coincidencias:
+            # Extraer un nombre descriptivo (ej: Disc 1, Disc 2, etc.) del nombre del archivo o ruta
+            nombre_archivo = os.path.basename(c_ruta)
+            opciones.append({
+                "id": c_id,
+                "titulo": c_titulo,
+                "ruta_rom": c_ruta,
+                "descripcion": nombre_archivo
+            })
+        return {"exito": False, "requiere_seleccion": True, "opciones": opciones}
+
+    # 3. Validar existencia de la ROM
     if not os.path.exists(ruta_rom):
-        print(f"[ERROR] El archivo de la ROM no existe en la ruta: {ruta_rom}")
-        return False
+        return {"exito": False, "error": f"El archivo de la ROM no existe: {ruta_rom}"}
 
-    # 3. Validar si hay un emulador configurado para esta consola
+    # 4. Validar emulador
     if not ruta_emulador or not os.path.exists(ruta_emulador):
-        print(f"[ADVERTENCIA] No hay emulador configurado para {nombre_consola}.")
-        print(f"Ruta intentada: '{ruta_emulador}'")
-        print(f"Por favor asigná la ruta del emulador en la base de datos o en la configuración.")
-        return False
+        return {"exito": False, "error": f"No hay emulador configurado para {nombre_consola}."}
 
-    # 4. Lanzar el proceso del emulador
-    print(f"[LAUNCHER] Iniciando '{titulo}' en {nombre_consola}...")
+    # 5. Lanzar el proceso
     try:
-        # Pasa el ejecutable del emulador y la ruta de la ROM como argumentos
         subprocess.Popen([ruta_emulador, ruta_rom])
-        return True
+        return {"exito": True}
     except Exception as e:
-        print(f"[ERROR] Falló la ejecución del emulador: {e}")
-        return False
+        return {"exito": False, "error": f"Falló la ejecución del emulador: {e}"}
 
-if __name__ == "__main__":
-    db_local.inicializar_db_local()
-    print("Módulo Launcher listo para recibir comandos.")
+class GameLauncher:
+    def lanzar_por_id(self, juego_id):
+        return ejecutar_juego(juego_id)

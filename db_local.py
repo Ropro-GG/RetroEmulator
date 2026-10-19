@@ -188,7 +188,92 @@ def obtener_juegos_por_consola(consola_id):
             } for r in filas
         ]
 
+class LocalDB:
+    def __init__(self):
+        inicializar_db_local()
+
+    def obtener_todos_los_juegos(self):
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT MIN(j.id) as id, j.titulo, j.ruta_rom, j.portada_path, j.favorito, c.nombre
+                FROM juegos j
+                JOIN consolas c ON j.consola_id = c.id
+                GROUP BY j.titulo, j.consola_id;
+            """)
+            filas = cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "ruta_rom": r[2],
+                    "portada_path": r[3],
+                    "favorito": bool(r[4]),
+                    "console": r[5]
+                } for r in filas
+            ]
+
+    def obtener_consolas(self):
+        """Retorna la lista de consolas registradas en la base de datos local."""
+        conexion = obtener_conexion()
+        cursor = conexion.cursor()
+        cursor.execute("SELECT id, nombre, identificativo, extensiones, ruta_roms FROM consolas ORDER BY nombre ASC")
+        filas = cursor.fetchall()
+        conexion.close()
+
+        consolas = []
+        for fila in filas:
+            consolas.append({
+                "id": fila[0],
+                "nombre": fila[1],
+                "identificativo": fila[2],
+                "extensiones": fila[3],
+                "ruta_roms": fila[4]
+            })
+        return consolas
+
+    def obtener_juegos_filtrados(self, texto_busqueda="", consola_id=None):
+        """Retorna los juegos aplicando filtros por nombre y/o consola agrupados, incluyendo portada."""
+        conexion = obtener_conexion()
+        cursor = conexion.cursor()
+
+        query = """
+            SELECT MIN(j.id) as id, j.titulo, j.ruta_rom, j.consola_id, c.nombre AS nombre_consola, COUNT(j.id) as total_variantes, MIN(j.portada_path) as portada_path
+            FROM juegos j
+            JOIN consolas c ON j.consola_id = c.id
+            WHERE 1=1
+        """
+        parametros = []
+
+        if consola_id and str(consola_id).lower() != "todas":
+            query += " AND j.consola_id = ?"
+            parametros.append(consola_id)
+
+        if texto_busqueda:
+            query += " AND j.titulo LIKE ?"
+            parametros.append(f"%{texto_busqueda.strip()}%")
+
+        query += " GROUP BY j.titulo, j.consola_id ORDER BY j.titulo ASC"
+
+        cursor.execute(query, parametros)
+        filas = cursor.fetchall()
+        conexion.close()
+
+        juegos = []
+        for fila in filas:
+            juegos.append({
+                "id": fila[0],
+                "titulo": fila[1],
+                "nombre": fila[1],
+                "ruta_rom": fila[2],
+                "consola_id": fila[3],
+                "nombre_consola": fila[4],
+                "total_variantes": fila[5],
+                "portada_path": fila[6]
+            })
+
+        return juegos
+
 if __name__ == "__main__":
-    # Si ejecutás este script directamente, recreará la DB con la lista actualizada
     inicializar_db_local()
     print("Base de datos local actualizada e inicializada con todas las consolas.")
