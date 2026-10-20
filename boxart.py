@@ -1,17 +1,3 @@
-"""
-boxart.py - Búsqueda y descarga de carátulas (boxarts) para RetroEmulator.
-
-Cómo funciona (pensado para fallar poco y ser rápido):
-  1. Por cada consola se descarga UNA sola vez el listado de carátulas disponibles en
-     Libretro Thumbnails y se cachea en disco (roms/boxarts/.cache, 14 días).
-     Así, buscar la carátula de cada juego es una operación local, sin red.
-  2. La búsqueda prueba, en orden: nombre exacto -> sin distinguir mayúsculas ->
-     mismo título base eligiendo la mejor región/versión -> coincidencia aproximada
-     (cuidando que no se confundan secuelas: "FF VII" vs "FF VIII").
-  3. La descarga es en paralelo, con reintentos, valida que sea una imagen real y
-     escribe de forma atómica (nunca quedan archivos a medias).
-  4. Todo se guarda en roms/boxarts/.
-"""
 import base64
 import html
 import json
@@ -440,3 +426,8 @@ def leer_como_data_uri(ruta):
         return f"data:{mime};base64," + base64.b64encode(datos).decode("ascii")
     except (ValueError, OSError):
         return ""
+
+
+# API pública para otros módulos (ra_client)
+analizar_titulo = _analizar
+firma_numerica = _firma_numerica

@@ -17,6 +17,7 @@
                 <h2>Iniciar Sesión</h2>
                 <input type="email" id="login-email" placeholder="Correo electrónico">
                 <input type="password" id="login-pass" placeholder="Contraseña">
+                <label class="remember-row"><input type="checkbox" id="login-remember"> Recuérdame</label>
                 <button onclick="login()">Entrar</button>
                 <p class="switch-auth">¿No tenés cuenta? <a href="#" onclick="toggleAuth(true)">Registrate</a></p>
             </div>
@@ -42,7 +43,7 @@
             
             <!-- BUSCADOR EN TIEMPO REAL -->
             <div class="search-container">
-                <input type="text" id="search-input" placeholder="🔍 Buscar juego..." oninput="filtrarCatalogo()">
+                <input type="text" id="search-input" placeholder="🔍 Buscar juego..." oninput="alBuscar()">
             </div>
             
             <div class="header-right">
@@ -56,6 +57,7 @@
                     </div>
                     <span id="header-username" class="user-pill-name">Cargando...</span>
                 </div>
+                <button class="btn-settings" onclick="abrirConfiguracion()" title="Configuración">⚙️</button>
             </div>
         </header>
 
@@ -72,6 +74,51 @@
                 <h2>Biblioteca de Juegos</h2>
                 <div id="game-grid" class="game-grid">
                     <!-- Cards de juegos dinámicas -->
+                </div>
+            </section>
+        
+            <!-- DETALLE DE JUEGO (estilo biblioteca de Steam) -->
+            <section id="game-detail" class="game-detail-container" style="display: none;">
+                <button class="btn-back" onclick="volverABiblioteca()">← Biblioteca</button>
+
+                <div class="detail-hero">
+                    <div id="detail-hero-bg" class="detail-hero-bg"></div>
+                    <div class="detail-hero-content">
+                        <div id="detail-cover" class="detail-cover"></div>
+                        <div class="detail-main">
+                            <h1 id="detail-title"></h1>
+                            <p id="detail-console" class="detail-console"></p>
+                            <button class="btn-play" onclick="jugarDesdeDetalle()">▶ JUGAR</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="detail-body">
+                    <div class="detail-col-main">
+                        <div class="detail-card">
+                            <h3>🏆 Logros</h3>
+                            <div id="achievements-content"></div>
+                        </div>
+                        <div class="detail-card">
+                            <h3>Tu opinión</h3>
+                            <div id="opinion-stars">
+                                <span data-v="1" onclick="elegirPuntuacion(1)">★</span><span data-v="2" onclick="elegirPuntuacion(2)">★</span><span data-v="3" onclick="elegirPuntuacion(3)">★</span><span data-v="4" onclick="elegirPuntuacion(4)">★</span><span data-v="5" onclick="elegirPuntuacion(5)">★</span>
+                            </div>
+                            <textarea id="opinion-text" placeholder="¿Qué te pareció este juego?"></textarea>
+                            <button class="btn-primary-sm" onclick="guardarOpinion()">Guardar opinión</button>
+                            <span id="opinion-msg" class="settings-msg"></span>
+                        </div>
+                    </div>
+                    <div class="detail-col-side">
+                        <div class="detail-card">
+                            <h3>👥 Amigos que lo jugaron</h3>
+                            <div id="friends-played"></div>
+                        </div>
+                        <div class="detail-card">
+                            <h3>⭐ En su lista de deseados</h3>
+                            <div id="friends-wishlist"></div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
@@ -100,6 +147,72 @@
                 <h3>Biografía</h3>
                 <textarea id="profile-bio" placeholder="Escribí algo sobre vos..."></textarea>
                 <button class="btn-save-bio" onclick="guardarPerfil()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MODAL: CONFIRMAR "RECUÉRDAME" CON CÓDIGO DEL CORREO -->
+    <div id="code-modal" class="modal" style="display: none;">
+        <div class="code-card">
+            <h2>Confirmá tu correo</h2>
+            <p>Para recordar tu sesión en este equipo te enviamos un código a <strong id="code-email"></strong>.</p>
+            <input type="text" id="code-input" maxlength="10" placeholder="000000" autocomplete="off">
+            <p id="code-msg" class="code-msg"></p>
+            <div class="code-actions">
+                <button class="btn-primary-sm" onclick="confirmarCodigo()">Confirmar</button>
+                <button class="btn-secondary-sm" onclick="reenviarCodigo()">Reenviar código</button>
+                <button class="btn-secondary-sm" onclick="omitirCodigo()">Ahora no</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VENTANA DE CONFIGURACIÓN (estilo Parámetros de Steam) -->
+    <div id="settings-modal" class="modal" style="display: none;">
+        <div class="settings-window">
+            <aside class="settings-nav">
+                <h3>Parámetros</h3>
+                <ul>
+                    <li class="active" data-section="paths" onclick="seleccionarSeccionConfig('paths')">📁 Rutas y Emuladores</li>
+                    <li data-section="ra" onclick="seleccionarSeccionConfig('ra')">🏆 RetroAchievements</li>
+                    <li data-section="info" onclick="seleccionarSeccionConfig('info')">ℹ️ Información</li>
+                </ul>
+                <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesión</button>
+            </aside>
+
+            <div class="settings-content">
+                <span class="close-btn" onclick="cerrarConfiguracion()">&times;</span>
+
+                <section id="settings-paths" class="settings-section">
+                    <h2>Rutas y Emuladores</h2>
+                    <div id="paths-content"></div>
+                </section>
+
+                <section id="settings-ra" class="settings-section" style="display: none;">
+                    <h2>RetroAchievements</h2>
+                    <p class="settings-help">Conectá tu cuenta para ver tus logros en cada juego. Tu Web API Key está en retroachievements.org → Settings → Keys. <a href="#" onclick="abrirEnlace('https://retroachievements.org/settings'); return false;">Abrir ajustes</a></p>
+                    <label class="settings-label">Usuario</label>
+                    <input id="ra-user" class="settings-input" type="text" autocomplete="off">
+                    <label class="settings-label">Web API Key</label>
+                    <input id="ra-key" class="settings-input" type="password" autocomplete="off">
+                    <div class="settings-actions">
+                        <button class="btn-primary-sm" onclick="guardarCredencialesRA()">Guardar y probar</button>
+                        <button class="btn-secondary-sm" onclick="borrarCredencialesRA()">Quitar cuenta</button>
+                    </div>
+                    <p id="ra-status" class="settings-msg"></p>
+                    <p class="settings-help">Los logros se desbloquean desde el emulador: cada emulador (RetroArch, DuckStation, etc.) debe tener iniciada tu sesión de RetroAchievements. El launcher solo muestra tu progreso.</p>
+                </section>
+
+                <section id="settings-info" class="settings-section" style="display: none;">
+                    <h2>Información</h2>
+                    <div class="info-table">
+                        <div><span>Versión</span><strong id="info-version"></strong></div>
+                        <div><span>Desarrollador</span><strong id="info-dev"></strong></div>
+                        <div><span>Juegos registrados</span><strong id="info-juegos"></strong></div>
+                        <div><span>Emuladores registrados</span><strong id="info-emus"></strong></div>
+                        <div><span>GitHub</span><a href="#" id="info-github" onclick="abrirEnlace(this.dataset.url); return false;"></a></div>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
