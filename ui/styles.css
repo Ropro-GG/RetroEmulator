@@ -373,3 +373,322 @@ body {
     border-radius: 6px;
     cursor: pointer;
 }
+
+/* ============================================================
+   RECUÉRDAME
+   ============================================================ */
+.auth-box .remember-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 2px;
+    font-size: 0.9em;
+    color: #C5C6C7;
+    text-align: left;
+    cursor: pointer;
+}
+.auth-box .remember-row input {
+    width: auto;
+    margin: 0;
+    accent-color: #66FCF1;
+}
+
+/* ============================================================
+   PROGRESO DE ESCANEO Y BOTÓN DE CONFIGURACIÓN
+   ============================================================ */
+.scan-status { font-size: 0.8em; color: #C5C6C7; }
+.btn-scan:disabled { opacity: 0.6; cursor: default; }
+
+.btn-settings {
+    background: #0B0C10;
+    color: #C5C6C7;
+    border: 2px solid #45A29E;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 1.1em;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.25s;
+}
+.btn-settings:hover {
+    border-color: #66FCF1;
+    background: #141722;
+    transform: rotate(45deg);
+}
+
+/* ============================================================
+   MODAL DE CÓDIGO (confirmar Recuérdame)
+   ============================================================ */
+.code-card {
+    background: #1F2833;
+    width: 400px;
+    max-width: 92vw;
+    border-radius: 12px;
+    padding: 25px;
+    border: 1px solid #45A29E;
+    text-align: center;
+}
+.code-card h2 { color: #66FCF1; font-size: 1.25em; margin-bottom: 10px; }
+.code-card p { font-size: 0.9em; color: #C5C6C7; margin-bottom: 12px; }
+.code-card input {
+    width: 100%;
+    padding: 10px;
+    text-align: center;
+    letter-spacing: 6px;
+    font-size: 1.2em;
+    border-radius: 6px;
+    border: 1px solid #45A29E;
+    background: #0B0C10;
+    color: white;
+}
+.code-actions { display: flex; gap: 8px; margin-top: 14px; justify-content: center; flex-wrap: wrap; }
+.code-msg { min-height: 1.2em; margin-top: 10px; font-size: 0.85em; color: #ff4d4d; }
+
+/* ============================================================
+   VENTANA DE CONFIGURACIÓN (estilo "Parámetros" de Steam)
+   ============================================================ */
+.settings-window {
+    display: flex;
+    width: 840px;
+    max-width: 94vw;
+    height: 560px;
+    max-height: 90vh;
+    background: #1F2833;
+    border: 1px solid #45A29E;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.settings-nav {
+    width: 220px;
+    background: #141722;
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #0B0C10;
+    flex-shrink: 0;
+}
+.settings-nav h3 { color: #66FCF1; margin: 0 8px 14px; font-size: 1.05em; letter-spacing: 0.5px; }
+.settings-nav ul { list-style: none; flex: 1; }
+.settings-nav li {
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    color: #C5C6C7;
+    font-size: 0.92em;
+}
+.settings-nav li:hover, .settings-nav li.active { background: #1F2833; color: #66FCF1; }
+
+.btn-logout {
+    background: transparent;
+    color: #ff6b6b;
+    border: 1px solid #ff6b6b;
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: all 0.2s;
+}
+.btn-logout:hover { background: #ff6b6b; color: #0B0C10; }
+
+.settings-content { flex: 1; padding: 24px 28px; overflow-y: auto; position: relative; }
+.settings-content h2 { color: #66FCF1; font-size: 1.25em; margin-bottom: 16px; }
+.settings-subtitle { color: #C5C6C7; font-size: 1em; margin: 22px 0 10px; }
+.settings-help { font-size: 0.85em; color: #a0a0a0; line-height: 1.5; margin: 8px 0; }
+.settings-help a { color: #66FCF1; }
+.settings-label { display: block; font-size: 0.85em; color: #C5C6C7; margin: 12px 0 4px; }
+.settings-msg { font-size: 0.85em; color: #a0a0a0; margin: 8px 0; min-height: 1.2em; }
+
+.settings-input {
+    width: 100%;
+    padding: 8px 10px;
+    background: #0B0C10;
+    border: 1px solid #45A29E;
+    border-radius: 6px;
+    color: white;
+    font-size: 0.9em;
+    outline: none;
+}
+.settings-input:focus { border-color: #66FCF1; }
+.settings-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+.btn-primary-sm, .btn-secondary-sm {
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+.btn-primary-sm { background: #66FCF1; color: #0B0C10; border: none; }
+.btn-primary-sm:hover { background: #45A29E; color: white; }
+.btn-secondary-sm { background: #141722; color: #66FCF1; border: 1px solid #45A29E; }
+.btn-secondary-sm:hover { background: #45A29E; color: white; }
+
+.path-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 10px;
+    font-size: 0.85em;
+    color: #C5C6C7;
+}
+.path-row code {
+    background: #0B0C10;
+    padding: 7px 10px;
+    border-radius: 6px;
+    color: #66FCF1;
+    font-family: monospace;
+    word-break: break-all;
+}
+
+.emu-card {
+    background: #141722;
+    border: 1px solid #2a3544;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+.emu-card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.emu-card-head strong { color: #FFFFFF; }
+.emu-card-head span { font-size: 0.8em; color: #45A29E; }
+.emu-card-roms { font-size: 0.78em; color: #a0a0a0; margin-bottom: 8px; word-break: break-all; }
+.emu-card-row { display: flex; gap: 8px; align-items: center; }
+
+.info-table { display: flex; flex-direction: column; }
+.info-table > div {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 4px;
+    border-bottom: 1px solid #2a3544;
+    font-size: 0.92em;
+}
+.info-table span { color: #a0a0a0; }
+.info-table strong { color: #FFFFFF; }
+.info-table a { color: #66FCF1; text-decoration: none; }
+.info-table a:hover { text-decoration: underline; }
+
+/* ============================================================
+   DETALLE DE JUEGO (estilo biblioteca de Steam)
+   ============================================================ */
+.game-detail-container { flex: 1; height: 100%; overflow-y: auto; padding-bottom: 30px; }
+
+.btn-back {
+    margin: 16px 25px 0;
+    background: transparent;
+    color: #66FCF1;
+    border: 1px solid #45A29E;
+    border-radius: 16px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-back:hover { background: #45A29E; color: white; }
+
+.detail-hero { position: relative; margin-top: 14px; overflow: hidden; background: #0B0C10; }
+.detail-hero-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    filter: blur(30px) brightness(0.45);
+    transform: scale(1.25);
+}
+.detail-hero::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 60px;
+    background: linear-gradient(to bottom, transparent, #12131C);
+}
+.detail-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 28px;
+    align-items: flex-end;
+    padding: 28px 25px 40px;
+}
+.detail-cover {
+    width: 240px;
+    height: 330px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #0B0C10;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+}
+.detail-cover .game-cover-wrapper { height: 100%; }
+.detail-cover .game-cover-wrapper img { object-fit: contain; }
+.detail-main h1 { font-size: 2em; color: #FFFFFF; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7); }
+.detail-console { color: #66FCF1; margin: 6px 0 22px; font-size: 0.95em; }
+
+.btn-play {
+    background: linear-gradient(90deg, #45A29E, #66FCF1);
+    color: #0B0C10;
+    border: none;
+    border-radius: 6px;
+    padding: 12px 38px;
+    font-size: 1.05em;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.15s, filter 0.15s;
+}
+.btn-play:hover { transform: translateY(-2px); filter: brightness(1.1); }
+
+.detail-body {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 20px;
+    padding: 0 25px;
+}
+.detail-card {
+    background: #1F2833;
+    border: 1px solid #2a3544;
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+}
+.detail-card h3 { color: #C5C6C7; font-size: 1em; margin-bottom: 12px; }
+.detail-card textarea {
+    width: 100%;
+    height: 90px;
+    background: #0B0C10;
+    border: 1px solid #45A29E;
+    border-radius: 6px;
+    color: white;
+    padding: 10px;
+    resize: none;
+    margin: 10px 0;
+}
+.empty-state { font-size: 0.85em; color: #7d8590; font-style: italic; line-height: 1.5; }
+.friend-item { padding: 6px 0; font-size: 0.9em; }
+
+#opinion-stars span { font-size: 1.6em; cursor: pointer; color: #3a4656; transition: color 0.15s; }
+#opinion-stars span.on { color: #f5c518; }
+
+/* Logros */
+.ach-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9em;
+    color: #C5C6C7;
+    margin-bottom: 8px;
+}
+.ach-bar { height: 8px; background: #0B0C10; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+.ach-bar-fill { height: 100%; background: #66FCF1; }
+.ach-list { max-height: 440px; overflow-y: auto; }
+.ach-item { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid #2a3544; }
+.ach-item img { width: 48px; height: 48px; border-radius: 6px; flex-shrink: 0; }
+.ach-item.locked { opacity: 0.65; }
+.ach-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ach-info strong { font-size: 0.92em; color: #FFFFFF; }
+.ach-info small { color: #a0a0a0; font-size: 0.8em; }
+.ach-meta { text-align: right; font-size: 0.78em; color: #C5C6C7; flex-shrink: 0; }

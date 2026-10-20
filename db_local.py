@@ -47,6 +47,28 @@ def inicializar_db_local():
             );
         """)
 
+        # Opiniones del usuario sobre sus juegos (una por juego y consola)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS opiniones (
+                consola_id INTEGER NOT NULL,
+                titulo TEXT NOT NULL,
+                puntuacion INTEGER DEFAULT 0,
+                texto TEXT DEFAULT '',
+                actualizado TEXT DEFAULT '',
+                PRIMARY KEY (consola_id, titulo)
+            );
+        """)
+
+        # Coincidencias entre juegos locales y juegos de RetroAchievements
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ra_juegos (
+                consola_id INTEGER NOT NULL,
+                titulo TEXT NOT NULL,
+                ra_game_id INTEGER NOT NULL,
+                PRIMARY KEY (consola_id, titulo)
+            );
+        """)
+
         # Insertar lista completa de consolas retro si la tabla está vacía
         cursor.execute("SELECT COUNT(*) FROM consolas;")
         if cursor.fetchone()[0] == 0:
@@ -206,6 +228,86 @@ def obtener_juegos_por_consola(consola_id):
                 "favorito": bool(r[4])
             } for r in filas
         ]
+
+# --- DETALLE, OPINIONES, CONFIGURACIÓN Y LOGROS ---
+
+def obtener_juego_detalle(juego_id):
+    """Datos de un juego (agrupando variantes/discos del mismo título y consola)."""
+    with obtener_conexion() as conn:
+        fila = conn.execute("""
+            SELECT j.id, j.titulo, j.consola_id, c.nombre, c.identificativo,
+                   (SELECT MAX(j2.portada_path) FROM juegos j2
+                     WHERE j2.titulo = j.titulo AND j2.consola_id = j.consola_id),
+                   (SELECT COUNT(*) FROM juegos j3
+                     WHERE j3.titulo = j.titulo AND j3.consola_id = j.consola_id)
+            FROM juegos j JOIN consolas c ON j.consola_id = c.id
+            WHERE j.id = ?;
+        """, (juego_id,)).fetchone()
+    if not fila:
+        return None
+    return {
+        "id": fila[0], "titulo": fila[1], "consola_id": fila[2], "consola": fila[3],
+        "identificativo": fila[4], "portada_path": fila[5] or "", "total_variantes": fila[6],
+    }
+
+def obtener_opinion(consola_id, titulo):
+    with obtener_conexion() as conn:
+        fila = conn.execute(
+            "SELECT puntuacion, texto FROM opiniones WHERE consola_id = ? AND titulo = ?;",
+            (consola_id, titulo)).fetchone()
+    return {"puntuacion": fila[0], "texto": fila[1]} if fila else None
+
+def guardar_opinion(consola_id, titulo, puntuacion, texto):
+    puntuacion = max(0, min(5, int(puntuacion or 0)))
+    with obtener_conexion() as conn:
+        conn.execute("""
+            INSERT INTO opiniones (consola_id, titulo, puntuacion, texto, actualizado)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(consola_id, titulo) DO UPDATE SET
+                puntuacion = excluded.puntuacion,
+                texto = excluded.texto,
+                actualizado = excluded.actualizado;
+        """, (consola_id, titulo, puntuacion, texto or ""))
+        conn.commit()
+
+def obtener_consolas_con_juegos():
+    """Solo las consolas que ya tienen juegos escaneados (para configurar su emulador)."""
+    with obtener_conexion() as conn:
+        filas = conn.execute("""
+            SELECT c.id, c.nombre, c.identificativo, c.ruta_roms, c.ruta_emulador,
+                   COUNT(DISTINCT j.titulo)
+            FROM consolas c JOIN juegos j ON j.consola_id = c.id
+            GROUP BY c.id ORDER BY c.nombre ASC;
+        """).fetchall()
+    return [{"id": f[0], "nombre": f[1], "identificativo": f[2], "ruta_roms": f[3],
+             "ruta_emulador": f[4], "total_juegos": f[5]} for f in filas]
+
+def contar_juegos():
+    """Cantidad de juegos distintos (los mismos que muestra el catálogo)."""
+    with obtener_conexion() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM juegos GROUP BY titulo, consola_id);").fetchone()[0]
+
+def contar_emuladores():
+    """Cantidad de emuladores distintos configurados."""
+    with obtener_conexion() as conn:
+        return conn.execute(
+            "SELECT COUNT(DISTINCT ruta_emulador) FROM consolas WHERE ruta_emulador <> '';").fetchone()[0]
+
+def obtener_ra_juego(consola_id, titulo):
+    with obtener_conexion() as conn:
+        fila = conn.execute(
+            "SELECT ra_game_id FROM ra_juegos WHERE consola_id = ? AND titulo = ?;",
+            (consola_id, titulo)).fetchone()
+    return fila[0] if fila else 0
+
+def guardar_ra_juego(consola_id, titulo, ra_game_id):
+    with obtener_conexion() as conn:
+        conn.execute("""
+            INSERT INTO ra_juegos (consola_id, titulo, ra_game_id) VALUES (?, ?, ?)
+            ON CONFLICT(consola_id, titulo) DO UPDATE SET ra_game_id = excluded.ra_game_id;
+        """, (consola_id, titulo, ra_game_id))
+        conn.commit()
 
 class LocalDB:
     def __init__(self):
