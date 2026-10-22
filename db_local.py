@@ -1,6 +1,8 @@
 import sqlite3
 import os
 
+import contexto
+
 DB_NAME = "retrolauncher_local.db"
 
 def obtener_conexion():
@@ -56,6 +58,19 @@ def inicializar_db_local():
                 texto TEXT DEFAULT '',
                 actualizado TEXT DEFAULT '',
                 PRIMARY KEY (consola_id, titulo)
+            );
+        """)
+
+        # Opiniones por cuenta (la tabla 'opiniones' anterior queda solo como origen de migración)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS opiniones_cuenta (
+                usuario_id TEXT NOT NULL,
+                consola_id INTEGER NOT NULL,
+                titulo TEXT NOT NULL,
+                puntuacion INTEGER DEFAULT 0,
+                texto TEXT DEFAULT '',
+                actualizado TEXT DEFAULT '',
+                PRIMARY KEY (usuario_id, consola_id, titulo)
             );
         """)
 
@@ -251,24 +266,31 @@ def obtener_juego_detalle(juego_id):
     }
 
 def obtener_opinion(consola_id, titulo):
+    """Opinión de la cuenta que tiene la sesión iniciada."""
     with obtener_conexion() as conn:
         fila = conn.execute(
-            "SELECT puntuacion, texto FROM opiniones WHERE consola_id = ? AND titulo = ?;",
-            (consola_id, titulo)).fetchone()
+            "SELECT puntuacion, texto FROM opiniones_cuenta WHERE usuario_id = ? AND consola_id = ? AND titulo = ?;",
+            (contexto.usuario_id(), consola_id, titulo)).fetchone()
     return {"puntuacion": fila[0], "texto": fila[1]} if fila else None
 
 def guardar_opinion(consola_id, titulo, puntuacion, texto):
     puntuacion = max(0, min(5, int(puntuacion or 0)))
     with obtener_conexion() as conn:
         conn.execute("""
-            INSERT INTO opiniones (consola_id, titulo, puntuacion, texto, actualizado)
-            VALUES (?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(consola_id, titulo) DO UPDATE SET
+            INSERT INTO opiniones_cuenta (usuario_id, consola_id, titulo, puntuacion, texto, actualizado)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(usuario_id, consola_id, titulo) DO UPDATE SET
                 puntuacion = excluded.puntuacion,
                 texto = excluded.texto,
                 actualizado = excluded.actualizado;
-        """, (consola_id, titulo, puntuacion, texto or ""))
+        """, (contexto.usuario_id(), consola_id, titulo, puntuacion, texto or ""))
         conn.commit()
+
+def obtener_identificativo_por_consola(nombre):
+    """Identificativo ('psx', 'nes'...) a partir del nombre de la consola."""
+    with obtener_conexion() as conn:
+        fila = conn.execute("SELECT identificativo FROM consolas WHERE nombre = ?;", (nombre,)).fetchone()
+    return fila[0] if fila else ""
 
 def obtener_consolas_con_juegos():
     """Solo las consolas que ya tienen juegos escaneados (para configurar su emulador)."""
@@ -308,6 +330,53 @@ def guardar_ra_juego(consola_id, titulo, ra_game_id):
             ON CONFLICT(consola_id, titulo) DO UPDATE SET ra_game_id = excluded.ra_game_id;
         """, (consola_id, titulo, ra_game_id))
         conn.commit()
+
+# --- AJUSTES SIMPLES (tabla 'configuracion') ---
+
+def obtener_config(clave, defecto=""):
+    with obtener_conexion() as conn:
+        fila = conn.execute("SELECT valor FROM configuracion WHERE clave = ?;", (clave,)).fetchone()
+    return fila[0] if fila else defecto
+
+def guardar_config(clave, valor):
+    with obtener_conexion() as conn:
+        conn.execute("""
+            INSERT INTO configuracion (clave, valor) VALUES (?, ?)
+            ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor;
+        """, (clave, str(valor)))
+        conn.commit()
+
+# --- AJUSTES POR CUENTA ---
+
+def _clave_usuario(clave):
+    return f"u:{contexto.usuario_id()}:{clave}"
+
+def obtener_config_usuario(clave, defecto=""):
+    """Ajuste personal de la cuenta con sesión iniciada (no se comparte entre cuentas)."""
+    return obtener_config(_clave_usuario(clave), defecto)
+
+def guardar_config_usuario(clave, valor):
+    guardar_config(_clave_usuario(clave), valor)
+
+def adoptar_datos_antiguos(usuario_id):
+    """Antes los ajustes y opiniones eran de todo el equipo. La primera cuenta que entra
+    después de esta actualización se queda con lo que ya existía; el resto empieza limpio.
+    Devuelve True si hizo la migración."""
+    if not usuario_id or obtener_config("migracion_cuentas_v1", ""):
+        return False
+    with obtener_conexion() as conn:
+        conn.execute("""
+            INSERT OR IGNORE INTO opiniones_cuenta
+                (usuario_id, consola_id, titulo, puntuacion, texto, actualizado)
+            SELECT ?, consola_id, titulo, puntuacion, texto, actualizado FROM opiniones;
+        """, (usuario_id,))
+        fila = conn.execute("SELECT valor FROM configuracion WHERE clave = 'compartir_actividad';").fetchone()
+        if fila:
+            conn.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES (?, ?);",
+                         (f"u:{usuario_id}:compartir_actividad", fila[0]))
+        conn.commit()
+    guardar_config("migracion_cuentas_v1", usuario_id)
+    return True
 
 class LocalDB:
     def __init__(self):

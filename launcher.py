@@ -1,8 +1,9 @@
 import subprocess
 import os
+import threading
 import db_local
 
-def ejecutar_juego(juego_id):
+def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None):
     """
     Busca un juego por su ID. Si hay otros juegos con exactamente el mismo título 
     (ej. varios discos o versiones), retorna las opciones para que el usuario elija.
@@ -57,11 +58,33 @@ def ejecutar_juego(juego_id):
 
     # 5. Lanzar el proceso
     try:
-        subprocess.Popen([ruta_emulador, ruta_rom])
-        return {"exito": True}
+        proceso = subprocess.Popen([ruta_emulador, ruta_rom])
     except Exception as e:
         return {"exito": False, "error": f"Falló la ejecución del emulador: {e}"}
 
+    # Se avisa cuando el juego arranca y cuando se cierra (para "jugando ahora")
+    if al_iniciar or al_cerrar:
+        threading.Thread(
+            target=_vigilar,
+            args=(proceso, titulo, nombre_consola, al_iniciar, al_cerrar),
+            daemon=True
+        ).start()
+    return {"exito": True}
+
+def _vigilar(proceso, titulo, consola, al_iniciar, al_cerrar):
+    try:
+        if al_iniciar:
+            al_iniciar(titulo, consola)
+        proceso.wait()
+    except Exception as e:
+        print(f"[LAUNCHER] Error vigilando el emulador: {e}")
+    finally:
+        if al_cerrar:
+            try:
+                al_cerrar()
+            except Exception as e:
+                print(f"[LAUNCHER] Error al cerrar: {e}")
+
 class GameLauncher:
-    def lanzar_por_id(self, juego_id):
-        return ejecutar_juego(juego_id)
+    def lanzar_por_id(self, juego_id, al_iniciar=None, al_cerrar=None):
+        return ejecutar_juego(juego_id, al_iniciar, al_cerrar)

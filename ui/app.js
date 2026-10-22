@@ -62,12 +62,14 @@ async function registrar() {
 }
 
 async function cargarPantallaPrincipal() {
+    reiniciarEstadoUI();   // arranca siempre limpio: nada de la cuenta anterior
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'flex';
 
     await cargarPerfilUsuario();
     await cargarConsolas();
     await filtrarCatalogo();
+    iniciarInsignias();
 }
 
 async function cargarPerfilUsuario() {
@@ -330,7 +332,13 @@ async function escanearRoms() {
 async function seguirEscaneo() {
     escaneoEnCurso = true;
     const btn = document.getElementById('btn-scan');
-    const label = document.getElementById('scan-status');
+    // El progreso se muestra en la cabecera y también dentro de Configuración
+    const label = { set textContent(t) {
+        ['scan-status', 'scan-status-config'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = t;
+        });
+    } };
     btn.disabled = true;
 
     let ultimo = '';
@@ -358,6 +366,7 @@ async function seguirEscaneo() {
 
         await cargarConsolas();
         await filtrarCatalogo();
+        if (document.getElementById('settings-modal').style.display === 'flex') cargarRutasConfig();
         label.textContent = estado && estado.portadas_total > 0
             ? `Listo: ${estado.portadas_ok}/${estado.portadas_total} carátulas`
             : 'Escaneo finalizado';
@@ -439,6 +448,9 @@ async function cerrarSesion() {
     consolaSeleccionada = 'todas';
     cerrarConfiguracion();
     volverABiblioteca();
+    detenerInsignias();
+    reiniciarEstadoUI();
+    mostrarVista('biblioteca');
     document.getElementById('app-screen').style.display = 'none';
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('login-pass').value = '';
@@ -475,6 +487,7 @@ function seleccionarSeccionConfig(nombre) {
 
     if (nombre === 'paths') cargarRutasConfig();
     else if (nombre === 'ra') cargarEstadoRA();
+    else if (nombre === 'privacy') cargarPrivacidad();
     else if (nombre === 'info') cargarInfoLauncher();
 }
 
@@ -822,7 +835,7 @@ async function cargarAmigos(id) {
     if (!juegoDetalleActual || juegoDetalleActual.id !== id) return;
 
     pintarAmigos(document.getElementById('friends-played'), res && res.jugaron,
-        'Aquí verás a tus amigos que jugaron este juego. Función en desarrollo.');
+        'Ninguno de tus amigos jugó este juego todavía.');
     pintarAmigos(document.getElementById('friends-wishlist'), res && res.deseado,
         'Aquí verás qué amigos lo tienen en su lista de deseados. Función en desarrollo.');
 }
@@ -837,9 +850,577 @@ function pintarAmigos(el, amigos, textoVacio) {
         return;
     }
     amigos.forEach(a => {
-        const div = document.createElement('div');
-        div.className = 'friend-item';
-        div.textContent = a.username || String(a);
-        el.appendChild(div);
+        const fila = document.createElement('div');
+        fila.className = 'friend-item';
+
+        const img = document.createElement('img');
+        img.src = avatarDe(a);
+        img.alt = '';
+        img.onerror = () => { img.style.visibility = 'hidden'; };
+
+        const info = document.createElement('div');
+        info.className = 'friend-info';
+        const nombre = document.createElement('span');
+        nombre.textContent = a.username || String(a);
+        const sub = document.createElement('small');
+        sub.textContent = a.veces ? `${a.veces} ${a.veces === 1 ? 'vez' : 'veces'} · ${formatearFecha(a.ultima_vez)}` : '';
+        info.append(nombre, sub);
+
+        fila.append(img, info);
+        if (a.user_id) {
+            fila.classList.add('clickable');
+            fila.onclick = () => irAPerfilAmigo(a.user_id);
+        }
+        el.appendChild(fila);
     });
+}
+
+// ============================================================================
+// NAVEGACIÓN PRINCIPAL (SOCIAL · BIBLIOTECA · NOTICIAS · CATÁLOGO)
+// ============================================================================
+
+let vistaActual = 'biblioteca';
+
+function mostrarVista(nombre) {
+    vistaActual = nombre;
+    document.querySelectorAll('.view').forEach(v => {
+        v.style.display = (v.id === 'view-' + nombre) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === nombre);
+    });
+
+    if (nombre === 'social') abrirSocial();
+    else detenerSocial();
+}
+
+// ============================================================================
+// SOCIAL
+// ============================================================================
+
+const SECCIONES_PRONTO = {
+    chat:           { icono: '💬', titulo: 'Chat',          texto: 'Mensajes directos con tus amigos.' },
+    publicaciones:  { icono: '📰', titulo: 'Publicaciones', texto: 'Mirá lo que publican tus amigos y compartí tus propias capturas y opiniones.' },
+    foros:          { icono: '🗨️', titulo: 'Foros',         texto: 'Foros por juego y por consola para preguntar, recomendar y debatir.' },
+    llamadas:       { icono: '📞', titulo: 'Llamadas',      texto: 'Llamadas de voz con tus amigos.' },
+};
+
+let socialSeccion = 'amigos';
+let socialTimer = null;
+let busquedaTimer = null;
+
+function abrirSocial() {
+    seleccionarSeccionSocial(socialSeccion);
+    detenerSocial();
+    // Se refresca solo para ver qué juegan tus amigos
+    socialTimer = setInterval(() => {
+        if (vistaActual === 'social' && socialSeccion === 'amigos') {
+            if (perfilAjenoId) cargarPerfilAjeno(); else cargarSocial();
+        }
+    }, 30000);
+}
+
+function detenerSocial() {
+    if (socialTimer) clearInterval(socialTimer);
+    socialTimer = null;
+}
+
+function seleccionarSeccionSocial(nombre) {
+    socialSeccion = nombre;
+    perfilAjenoId = null;
+    document.getElementById('social-perfil').style.display = 'none';
+    document.querySelectorAll('.social-nav li').forEach(li => {
+        li.classList.toggle('active', li.dataset.social === nombre);
+    });
+
+    const esAmigos = nombre === 'amigos';
+    document.getElementById('social-amigos').style.display = esAmigos ? 'block' : 'none';
+    document.getElementById('social-pronto').style.display = esAmigos ? 'none' : 'block';
+
+    if (esAmigos) {
+        cargarSocial();
+    } else {
+        const info = SECCIONES_PRONTO[nombre];
+        document.getElementById('pronto-icono').textContent = info.icono;
+        document.getElementById('pronto-titulo').textContent = info.titulo;
+        document.getElementById('pronto-texto').textContent = info.texto;
+    }
+}
+
+function avatarDe(u) {
+    return (u.avatar_url && u.avatar_url.trim() !== '')
+        ? u.avatar_url
+        : `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || '?')}&background=45A29E&color=fff`;
+}
+
+function boton(texto, clase, accion) {
+    const b = document.createElement('button');
+    b.className = clase;
+    b.textContent = texto;
+    b.onclick = async () => {
+        b.disabled = true;   // evita dobles clics mientras se procesa
+        try { await accion(); } finally { b.disabled = false; }
+    };
+    return b;
+}
+
+function filaUsuario(u, subtitulo, jugando, acciones) {
+    const fila = document.createElement('div');
+    fila.className = 'user-row';
+
+    const img = document.createElement('img');
+    img.src = avatarDe(u);
+    img.alt = '';
+    img.onerror = () => { img.style.visibility = 'hidden'; };
+
+    const info = document.createElement('div');
+    info.className = 'user-row-info';
+    const nombre = document.createElement('span');
+    nombre.className = 'user-row-name';
+    nombre.textContent = u.username || 'Usuario';
+    const sub = document.createElement('span');
+    sub.className = 'user-row-sub' + (jugando ? ' playing' : '');
+    sub.textContent = subtitulo || '';
+    info.append(nombre, sub);
+
+    const cont = document.createElement('div');
+    cont.className = 'user-row-actions';
+    acciones.forEach(a => cont.appendChild(a));
+
+    if (u.user_id) {
+        img.onclick = info.onclick = () => abrirPerfilAjeno(u.user_id);
+    }
+    fila.append(img, info, cont);
+    return fila;
+}
+
+function tituloBloque(texto, cantidad) {
+    const h = document.createElement('h3');
+    h.className = 'social-block-title';
+    h.textContent = texto;
+    if (cantidad !== undefined) {
+        const c = document.createElement('span');
+        c.className = 'count-badge';
+        c.textContent = cantidad;
+        h.appendChild(c);
+    }
+    return h;
+}
+
+function mensajeVacio(texto) {
+    const p = document.createElement('p');
+    p.className = 'empty-state';
+    p.textContent = texto;
+    return p;
+}
+
+async function cargarSocial() {
+    const cont = document.getElementById('friend-lists');
+    if (!cont.children.length) cont.appendChild(mensajeVacio('Cargando…'));
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_social();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+
+    if (!res || !res.exito) {
+        cont.innerHTML = '';
+        const err = document.createElement('p');
+        err.className = 'error-msg';
+        err.textContent = (res && res.error) || 'No se pudo cargar la sección social.';
+        cont.appendChild(err);
+        return;
+    }
+    pintarInsignias(res.recibidas.length);
+    cont.innerHTML = '';
+
+    // Solicitudes recibidas (solo si hay)
+    if (res.recibidas.length > 0) {
+        cont.appendChild(tituloBloque('Solicitudes de amistad', res.recibidas.length));
+        res.recibidas.forEach(u => {
+            cont.appendChild(filaUsuario(u, 'Quiere ser tu amigo', false, [
+                boton('Aceptar', 'btn-primary-sm', () => responderSolicitud(u.friendship_id, true)),
+                boton('Rechazar', 'btn-secondary-sm', () => responderSolicitud(u.friendship_id, false)),
+            ]));
+        });
+    }
+
+    // Amigos
+    cont.appendChild(tituloBloque('Amigos', res.amigos.length));
+    if (res.amigos.length === 0) {
+        cont.appendChild(mensajeVacio('Todavía no tenés amigos agregados. Buscá a alguien por su nombre de usuario en el cuadro de arriba.'));
+    }
+    res.amigos.forEach(u => {
+        const jugando = u.jugando ? `🎮 Jugando a ${u.jugando.titulo}` + (u.jugando.consola ? ` · ${u.jugando.consola}` : '') : '';
+        cont.appendChild(filaUsuario(u, jugando, !!u.jugando, [
+            boton('Quitar', 'btn-secondary-sm', () => quitarAmistad(u.friendship_id, u.username)),
+        ]));
+    });
+
+    // Enviadas (solo si hay)
+    if (res.enviadas.length > 0) {
+        cont.appendChild(tituloBloque('Solicitudes enviadas', res.enviadas.length));
+        res.enviadas.forEach(u => {
+            cont.appendChild(filaUsuario(u, 'Esperando respuesta', false, [
+                boton('Cancelar', 'btn-secondary-sm', () => quitarAmistad(u.friendship_id, null)),
+            ]));
+        });
+    }
+}
+
+function buscarUsuariosConRetraso() {
+    clearTimeout(busquedaTimer);
+    busquedaTimer = setTimeout(buscarUsuarios, 350);
+}
+
+async function buscarUsuarios() {
+    const texto = document.getElementById('friend-search').value.trim();
+    const cont = document.getElementById('friend-search-results');
+    if (texto.length < 2) {
+        cont.innerHTML = '';
+        if (texto.length === 1) cont.appendChild(mensajeVacio('Escribí al menos 2 letras para buscar.'));
+        return;
+    }
+
+    let res;
+    try {
+        res = await window.pywebview.api.buscar_usuarios(texto);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    // Si mientras tanto cambió el texto, esta respuesta ya no sirve
+    if (document.getElementById('friend-search').value.trim() !== texto) return;
+
+    cont.innerHTML = '';
+    if (!res || !res.exito) {
+        const err = document.createElement('p');
+        err.className = 'error-msg';
+        err.textContent = (res && res.error) || 'No se pudo buscar.';
+        cont.appendChild(err);
+        return;
+    }
+
+    cont.appendChild(tituloBloque('Resultados'));
+    if (res.usuarios.length === 0) {
+        cont.appendChild(mensajeVacio('No se encontró ningún usuario con ese nombre.'));
+        return;
+    }
+    res.usuarios.forEach(u => {
+        let accion;
+        if (u.relacion === 'amigos') {
+            accion = boton('✔ Amigos', 'btn-secondary-sm', () => {});
+            accion.disabled = true;
+        } else if (u.relacion === 'enviada') {
+            accion = boton('Solicitud enviada', 'btn-secondary-sm', () => {});
+            accion.disabled = true;
+        } else if (u.relacion === 'recibida') {
+            accion = boton('Aceptar solicitud', 'btn-primary-sm', () => responderSolicitud(u.friendship_id, true));
+        } else {
+            accion = boton('Agregar', 'btn-primary-sm', () => agregarAmigo(u.user_id));
+        }
+        cont.appendChild(filaUsuario(u, '', false, [accion]));
+    });
+}
+
+async function refrescarSocialYBusqueda() {
+    await cargarSocial();
+    await buscarUsuarios();
+    if (perfilAjenoId) await cargarPerfilAjeno();
+}
+
+async function agregarAmigo(userId) {
+    const res = await window.pywebview.api.enviar_solicitud_amistad(userId);
+    if (!res || !res.exito) alert(res ? res.error : 'No se pudo enviar la solicitud.');
+    await refrescarSocialYBusqueda();
+}
+
+async function responderSolicitud(friendshipId, aceptar) {
+    const res = await window.pywebview.api.responder_solicitud_amistad(friendshipId, aceptar);
+    if (!res || !res.exito) alert(res ? res.error : 'No se pudo responder la solicitud.');
+    await refrescarSocialYBusqueda();
+}
+
+async function quitarAmistad(friendshipId, nombre) {
+    if (nombre && !confirm(`¿Quitar a ${nombre} de tus amigos?`)) return;
+    const res = await window.pywebview.api.eliminar_amistad(friendshipId);
+    if (!res || !res.exito) alert(res ? res.error : 'No se pudo completar la acción.');
+    await refrescarSocialYBusqueda();
+}
+
+// ============================================================================
+// PRIVACIDAD
+// ============================================================================
+
+async function cargarPrivacidad() {
+    try {
+        const p = await window.pywebview.api.obtener_privacidad();
+        document.getElementById('privacy-share').checked = !!p.actividad;
+        document.getElementById('privacy-history').checked = !!p.historial;
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function guardarCompartirActividad() {
+    const activo = document.getElementById('privacy-share').checked;
+    await window.pywebview.api.guardar_compartir_actividad(activo);
+}
+
+// ============================================================================
+// PERFIL DE OTRO USUARIO
+// ============================================================================
+
+let perfilAjenoId = null;
+
+async function abrirPerfilAjeno(userId) {
+    perfilAjenoId = userId;
+    document.getElementById('social-amigos').style.display = 'none';
+    document.getElementById('social-perfil').style.display = 'block';
+    document.getElementById('pa-nombre').textContent = 'Cargando…';
+    document.getElementById('pa-estado').textContent = '';
+    document.getElementById('pa-estado').className = 'pa-estado';
+    document.getElementById('pa-bio').textContent = '';
+    document.getElementById('pa-acciones').innerHTML = '';
+    document.getElementById('pa-juegos').innerHTML = '';
+    document.getElementById('pa-comun').innerHTML = '';
+    document.getElementById('pa-avatar').removeAttribute('src');
+    await cargarPerfilAjeno();
+}
+
+function cerrarPerfilAjeno() {
+    perfilAjenoId = null;
+    document.getElementById('social-perfil').style.display = 'none';
+    document.getElementById('social-amigos').style.display = 'block';
+    cargarSocial();
+}
+
+async function cargarPerfilAjeno() {
+    const id = perfilAjenoId;
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_perfil_social(id);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (perfilAjenoId !== id) return;   // ya se cerró o se abrió otro perfil
+
+    const acciones = document.getElementById('pa-acciones');
+    acciones.innerHTML = '';
+
+    if (!res || !res.exito) {
+        document.getElementById('pa-nombre').textContent = 'No se pudo cargar el perfil';
+        document.getElementById('pa-estado').textContent = (res && res.error) || '';
+        return;
+    }
+
+    const p = res.perfil;
+    const avatar = document.getElementById('pa-avatar');
+    avatar.onerror = () => {
+        avatar.onerror = null;
+        avatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.username || '?')}&background=45A29E&color=fff`;
+    };
+    avatar.src = avatarDe(p);
+    document.getElementById('pa-nombre').textContent = p.username || 'Usuario';
+
+    const estado = document.getElementById('pa-estado');
+    if (res.jugando) {
+        estado.textContent = `🎮 Jugando a ${res.jugando.titulo}` + (res.jugando.consola ? ` · ${res.jugando.consola}` : '');
+        estado.className = 'pa-estado playing';
+    } else {
+        estado.textContent = res.relacion === 'amigos' ? 'No está jugando ahora' : '';
+        estado.className = 'pa-estado';
+    }
+
+    const bio = document.getElementById('pa-bio');
+    if (p.bio && p.bio.trim() !== '') {
+        bio.textContent = p.bio;
+        bio.className = 'pa-bio';
+    } else {
+        bio.textContent = 'Este usuario todavía no escribió una biografía.';
+        bio.className = 'empty-state';
+    }
+
+    pintarJuegosPerfil(res);
+
+    if (res.relacion === 'ninguna') {
+        acciones.appendChild(boton('Agregar a amigos', 'btn-primary-sm', () => agregarAmigo(p.user_id)));
+    } else if (res.relacion === 'enviada') {
+        acciones.appendChild(boton('Cancelar solicitud', 'btn-secondary-sm', () => quitarAmistad(res.friendship_id, null)));
+    } else if (res.relacion === 'recibida') {
+        acciones.append(
+            boton('Aceptar solicitud', 'btn-primary-sm', () => responderSolicitud(res.friendship_id, true)),
+            boton('Rechazar', 'btn-secondary-sm', () => responderSolicitud(res.friendship_id, false))
+        );
+    } else if (res.relacion === 'amigos') {
+        acciones.appendChild(boton('Quitar de amigos', 'btn-secondary-sm', () => quitarAmistad(res.friendship_id, p.username)));
+    }
+}
+
+// ============================================================================
+// INSIGNIAS (solicitudes de amistad pendientes)
+// ============================================================================
+
+let insigniaTimer = null;
+
+function pintarInsignias(n) {
+    ['nav-social-badge', 'social-amigos-badge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = n;
+        el.style.display = n > 0 ? '' : 'none';
+    });
+}
+
+async function actualizarInsignias() {
+    try {
+        const r = await window.pywebview.api.obtener_resumen_social();
+        if (r && r.exito) pintarInsignias(r.solicitudes);
+    } catch (e) { /* sin conexión: se deja como estaba */ }
+}
+
+function iniciarInsignias() {
+    detenerInsignias();
+    actualizarInsignias();
+    insigniaTimer = setInterval(actualizarInsignias, 60000);
+}
+
+function detenerInsignias() {
+    if (insigniaTimer) clearInterval(insigniaTimer);
+    insigniaTimer = null;
+    pintarInsignias(0);
+}
+
+// ============================================================================
+// CAMBIO DE CUENTA: estado limpio
+// ============================================================================
+
+function reiniciarEstadoUI() {
+    // Estado en memoria
+    perfilActual = null;
+    consolaSeleccionada = 'todas';
+    juegoDetalleActual = null;
+    opinionPuntuacion = 0;
+    scrollBiblioteca = 0;
+    perfilAjenoId = null;
+    socialSeccion = 'amigos';
+    clearTimeout(busquedaTimer);
+    pintarInsignias(0);
+
+    // Campos de texto
+    ['login-email', 'login-pass', 'reg-username', 'reg-email', 'reg-pass', 'search-input', 'friend-search',
+     'opinion-text', 'profile-bio', 'ra-user', 'ra-key', 'code-input'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    ['login-remember', 'privacy-share', 'privacy-history'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+    });
+
+    // Textos y listas que dependen de la cuenta
+    ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
+     'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+    });
+    ['header-username', 'profile-username', 'opinion-msg', 'ra-status', 'pa-nombre', 'pa-estado', 'pa-bio',
+     'code-msg', 'scan-status', 'scan-status-config', 'auth-error', 'detail-title', 'detail-console'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+    });
+    ['header-avatar', 'profile-avatar', 'pa-avatar'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.removeAttribute('src');
+    });
+    document.getElementById('console-list').innerHTML =
+        '<li class="active" onclick="seleccionarConsola(\'todas\', this)">Todas</li>';
+
+    // Pantallas y ventanas
+    cerrarConfiguracion();
+    cerrarPerfil();
+    document.getElementById('code-modal').style.display = 'none';
+    document.getElementById('game-detail').style.display = 'none';
+    document.querySelector('.game-grid-container').style.display = '';
+    document.getElementById('social-perfil').style.display = 'none';
+    document.getElementById('social-pronto').style.display = 'none';
+    document.getElementById('social-amigos').style.display = 'block';
+    document.querySelectorAll('.social-nav li').forEach(li => li.classList.toggle('active', li.dataset.social === 'amigos'));
+    document.querySelectorAll('.settings-section').forEach(s => s.style.display = (s.id === 'settings-paths') ? 'block' : 'none');
+    document.querySelectorAll('.settings-nav li').forEach(li => li.classList.toggle('active', li.dataset.section === 'paths'));
+    mostrarVista('biblioteca');
+}
+
+// ============================================================================
+// HISTORIAL DE JUEGOS
+// ============================================================================
+
+function formatearFecha(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const dias = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (dias <= 0) return 'hoy';
+    if (dias === 1) return 'ayer';
+    if (dias < 30) return `hace ${dias} días`;
+    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function filaJuego(titulo, subtitulo) {
+    const fila = document.createElement('div');
+    fila.className = 'game-row';
+    const t = document.createElement('strong');
+    t.textContent = titulo;
+    const s = document.createElement('small');
+    s.textContent = subtitulo;
+    fila.append(t, s);
+    return fila;
+}
+
+function pintarJuegosPerfil(res) {
+    const jugados = document.getElementById('pa-juegos');
+    const comun = document.getElementById('pa-comun');
+    jugados.innerHTML = '';
+    comun.innerHTML = '';
+
+    if (res.relacion !== 'amigos') {
+        jugados.appendChild(mensajeVacio('Solo los amigos pueden ver los juegos que jugó.'));
+        comun.appendChild(mensajeVacio('Agregalo a tus amigos para ver qué juegos tienen en común.'));
+        return;
+    }
+
+    const recientes = res.recientes || [];
+    if (recientes.length === 0) {
+        jugados.appendChild(mensajeVacio('Todavía no hay juegos registrados (o no comparte su historial).'));
+    }
+    recientes.forEach(j => {
+        const veces = `${j.veces} ${j.veces === 1 ? 'vez' : 'veces'}`;
+        jugados.appendChild(filaJuego(j.titulo, [j.consola, veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · ')));
+    });
+
+    const enComun = res.en_comun || [];
+    if (enComun.length === 0) {
+        comun.appendChild(mensajeVacio('Todavía no tienen juegos en común.'));
+    } else {
+        const resumen = document.createElement('p');
+        resumen.className = 'settings-help';
+        resumen.textContent = `${enComun.length} ${enComun.length === 1 ? 'juego' : 'juegos'} en común`;
+        comun.appendChild(resumen);
+        enComun.forEach(j => comun.appendChild(filaJuego(j.titulo, j.consola)));
+    }
+}
+
+function irAPerfilAmigo(userId) {
+    mostrarVista('social');
+    seleccionarSeccionSocial('amigos');
+    abrirPerfilAjeno(userId);
+}
+
+async function guardarCompartirHistorial() {
+    const casilla = document.getElementById('privacy-history');
+    if (!casilla.checked && !confirm('Se borrará de la nube el historial de juegos que ya publicaste. ¿Continuar?')) {
+        casilla.checked = true;
+        return;
+    }
+    await window.pywebview.api.guardar_compartir_historial(casilla.checked);
 }
