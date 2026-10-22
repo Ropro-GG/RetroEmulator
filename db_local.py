@@ -70,9 +70,14 @@ def inicializar_db_local():
                 puntuacion INTEGER DEFAULT 0,
                 texto TEXT DEFAULT '',
                 actualizado TEXT DEFAULT '',
+                publica INTEGER DEFAULT 1,
                 PRIMARY KEY (usuario_id, consola_id, titulo)
             );
         """)
+        # Bases creadas antes de existir la opción "visible para mis amigos"
+        columnas = [f[1] for f in cursor.execute("PRAGMA table_info(opiniones_cuenta);").fetchall()]
+        if "publica" not in columnas:
+            cursor.execute("ALTER TABLE opiniones_cuenta ADD COLUMN publica INTEGER DEFAULT 1;")
 
         # Coincidencias entre juegos locales y juegos de RetroAchievements
         cursor.execute("""
@@ -269,22 +274,29 @@ def obtener_opinion(consola_id, titulo):
     """Opinión de la cuenta que tiene la sesión iniciada."""
     with obtener_conexion() as conn:
         fila = conn.execute(
-            "SELECT puntuacion, texto FROM opiniones_cuenta WHERE usuario_id = ? AND consola_id = ? AND titulo = ?;",
+            "SELECT puntuacion, texto, publica FROM opiniones_cuenta WHERE usuario_id = ? AND consola_id = ? AND titulo = ?;",
             (contexto.usuario_id(), consola_id, titulo)).fetchone()
-    return {"puntuacion": fila[0], "texto": fila[1]} if fila else None
+    return {"puntuacion": fila[0], "texto": fila[1], "publica": bool(fila[2])} if fila else None
 
-def guardar_opinion(consola_id, titulo, puntuacion, texto):
+def guardar_opinion(consola_id, titulo, puntuacion, texto, publica=True):
     puntuacion = max(0, min(5, int(puntuacion or 0)))
     with obtener_conexion() as conn:
         conn.execute("""
-            INSERT INTO opiniones_cuenta (usuario_id, consola_id, titulo, puntuacion, texto, actualizado)
-            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO opiniones_cuenta (usuario_id, consola_id, titulo, puntuacion, texto, actualizado, publica)
+            VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
             ON CONFLICT(usuario_id, consola_id, titulo) DO UPDATE SET
                 puntuacion = excluded.puntuacion,
                 texto = excluded.texto,
-                actualizado = excluded.actualizado;
-        """, (contexto.usuario_id(), consola_id, titulo, puntuacion, texto or ""))
+                actualizado = excluded.actualizado,
+                publica = excluded.publica;
+        """, (contexto.usuario_id(), consola_id, titulo, puntuacion, texto or "", 1 if publica else 0))
         conn.commit()
+
+def obtener_nombre_consola(identificativo):
+    """Nombre legible de una consola a partir de su identificativo."""
+    with obtener_conexion() as conn:
+        fila = conn.execute("SELECT nombre FROM consolas WHERE identificativo = ?;", (identificativo,)).fetchone()
+    return fila[0] if fila else ""
 
 def obtener_identificativo_por_consola(nombre):
     """Identificativo ('psx', 'nes'...) a partir del nombre de la consola."""

@@ -168,6 +168,24 @@ class API:
     def eliminar_amistad(self, friendship_id):
         return self.cloud.eliminar_amistad(friendship_id)
 
+    # --- LISTA DE DESEADOS ---
+
+    def buscar_titulos(self, identificativo, texto):
+        """Sugerencias de títulos de una consola (para agregar a deseados)."""
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        return boxart.buscar_titulos(identificativo, nombre, texto)
+
+    def obtener_mis_deseados(self):
+        return self.cloud.obtener_mis_deseados()
+
+    def agregar_deseado(self, identificativo, titulo):
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        publica = db_local.obtener_config_usuario("compartir_deseados", "1") == "1"
+        return self.cloud.agregar_deseado(identificativo, titulo, nombre, publica)
+
+    def quitar_deseado(self, clave):
+        return self.cloud.quitar_deseado(clave)
+
     # --- PRIVACIDAD ---
 
     def obtener_privacidad(self):
@@ -175,6 +193,7 @@ class API:
         return {
             "actividad": db_local.obtener_config_usuario("compartir_actividad", "1") == "1",
             "historial": db_local.obtener_config_usuario("compartir_historial", "1") == "1",
+            "deseados": db_local.obtener_config_usuario("compartir_deseados", "1") == "1",
         }
 
     def guardar_compartir_actividad(self, activo):
@@ -182,6 +201,13 @@ class API:
         if not activo:
             self.cloud.limpiar_jugando()   # se borra lo que ya estuviera publicado
         return {"exito": True}
+
+    def guardar_compartir_deseados(self, activo):
+        """La visibilidad se aplica en Supabase a toda tu lista (y a lo que agregues después)."""
+        resultado = self.cloud.actualizar_visibilidad_deseados(activo)
+        if resultado.get("exito"):
+            db_local.guardar_config_usuario("compartir_deseados", "1" if activo else "0")
+        return resultado
 
     def guardar_compartir_historial(self, activo):
         db_local.guardar_config_usuario("compartir_historial", "1" if activo else "0")
@@ -249,11 +275,17 @@ class API:
         juego["opinion"] = db_local.obtener_opinion(juego["consola_id"], juego["titulo"])
         return {"exito": True, "juego": juego}
 
-    def guardar_opinion(self, game_id, puntuacion, texto):
+    def guardar_opinion(self, game_id, puntuacion, texto, publica=True):
+        """Guarda la opinión en tu equipo y la publica para tus amigos (si la dejás visible)."""
         juego = db_local.obtener_juego_detalle(game_id)
         if not juego:
             return {"exito": False, "error": "No se encontró el juego."}
-        db_local.guardar_opinion(juego["consola_id"], juego["titulo"], puntuacion, texto)
+        db_local.guardar_opinion(juego["consola_id"], juego["titulo"], puntuacion, texto, publica)
+        publicada = self.cloud.publicar_opinion(
+            juego["identificativo"], juego["titulo"], juego["consola"],
+            puntuacion, texto, publica)
+        if not publicada.get("exito"):
+            return {"exito": True, "aviso": publicada.get("error")}
         return {"exito": True}
 
     def obtener_logros_juego(self, game_id):
@@ -270,7 +302,8 @@ class API:
         return {
             "exito": True,
             "jugaron": self.cloud.obtener_amigos_que_jugaron(juego["identificativo"], juego["titulo"]),
-            "deseado": self.cloud.obtener_amigos_con_deseado(juego["titulo"], juego["consola"]),
+            "deseado": self.cloud.obtener_amigos_con_deseado(juego["identificativo"], juego["titulo"]),
+            "opiniones": self.cloud.obtener_opiniones_amigos(juego["identificativo"], juego["titulo"]),
         }
 
     # --- RETROACHIEVEMENTS ---
