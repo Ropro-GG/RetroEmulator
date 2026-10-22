@@ -205,7 +205,9 @@ class CloudClient:
         return self.usuario_actual.id if self.usuario_actual else None
 
     def _requiere_sesion(self):
-        if not self.client or not self.usuario_actual:
+        if not self.client:
+            return {"exito": False, "error": "No hay conexión con la nube (revisá el archivo .env)."}
+        if not self.usuario_actual:
             return {"exito": False, "error": "Debes iniciar sesión."}
         return None
 
@@ -358,6 +360,7 @@ class CloudClient:
 
             jugando = self._presencias([user_id]).get(user_id) if relacion == "amigos" else None
             recientes, en_comun = self._historial_con_amigo(yo, user_id) if relacion == "amigos" else ([], [])
+            deseados = self.obtener_deseados_de(user_id) if relacion == "amigos" else []
             return {
                 "exito": True,
                 "perfil": {
@@ -371,6 +374,7 @@ class CloudClient:
                 "jugando": jugando,
                 "recientes": recientes,
                 "en_comun": en_comun,
+                "deseados": deseados,
             }
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
@@ -514,9 +518,151 @@ class CloudClient:
             print(f"[SOCIAL] No se pudo consultar quién jugó este juego: {self._error_social(e)}")
             return []
 
-    def obtener_amigos_con_deseado(self, titulo, consola):
-        """TODO: consultar en Supabase qué amigos tienen este juego en su lista de deseados."""
-        return []
+    def obtener_amigos_con_deseado(self, identificativo, titulo):
+        """Amigos que tienen este juego en su lista de deseados (solo los que la comparten)."""
+        if not self.client or not self.usuario_actual:
+            return []
+        try:
+            res = self.client.table("lista_deseados").select("user_id, agregado_en") \
+                .eq("clave", clave_juego(identificativo, titulo)).neq("user_id", self._yo()).execute()
+            filas = res.data or []
+            perfiles = self._perfiles_por_id([f["user_id"] for f in filas])
+            lista = [{
+                "user_id": f["user_id"],
+                "username": perfiles.get(f["user_id"], {}).get("username") or "Usuario",
+                "avatar_url": perfiles.get(f["user_id"], {}).get("avatar_url") or "",
+                "agregado_en": f.get("agregado_en"),
+            } for f in filas]
+            lista.sort(key=lambda a: a["agregado_en"] or "", reverse=True)
+            return lista
+        except Exception as e:
+            print(f"[SOCIAL] No se pudo consultar quién lo desea: {self._error_social(e)}")
+            return []
+
+    # --- LISTA DE DESEADOS (visible solo para tus amigos, si la compartís) ---
+    # Requiere la tabla lista_deseados de supabase_social.sql.
+
+    def agregar_deseado(self, identificativo, titulo, consola, publica=True):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        titulo = (titulo or "").strip()
+        if not identificativo or not titulo:
+            return {"exito": False, "error": "Elegí la consola y escribí el nombre del juego."}
+        try:
+            clave = clave_juego(identificativo, titulo)
+            ya = self.client.table("lista_deseados").select("clave") \
+                .eq("user_id", self._yo()).eq("clave", clave).execute()
+            if ya.data:
+                return {"exito": False, "error": f'"{titulo}" ya está en tu lista.'}
+            self.client.table("lista_deseados").upsert({
+                "user_id": self._yo(),
+                "clave": clave,
+                "titulo": titulo,
+                "consola": consola or "",
+                "identificativo": identificativo,
+                "publica": bool(publica),
+            }).execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def quitar_deseado(self, clave):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            self.client.table("lista_deseados").delete().eq("user_id", self._yo()).eq("clave", clave).execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def _lista_deseados_de(self, user_id):
+        res = self.client.table("lista_deseados") \
+            .select("clave, titulo, consola, identificativo, agregado_en").eq("user_id", user_id).execute()
+        filas = res.data or []
+        filas.sort(key=lambda r: r.get("agregado_en") or "", reverse=True)
+        return filas
+
+    def obtener_mis_deseados(self):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            return {"exito": True, "deseados": self._lista_deseados_de(self._yo())}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def obtener_deseados_de(self, user_id):
+        """Lista de un amigo (Supabase solo devuelve lo que él comparte)."""
+        try:
+            return self._lista_deseados_de(user_id)[:30]
+        except Exception as e:
+            print(f"[SOCIAL] Sin lista de deseados disponible: {self._error_social(e)}")
+            return []
+
+    def actualizar_visibilidad_deseados(self, publica):
+        """Cambia de golpe la visibilidad de toda tu lista (ajuste de privacidad)."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            self.client.table("lista_deseados").update({"publica": bool(publica)}).eq("user_id", self._yo()).execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    # --- OPINIONES DE JUEGOS (las ven tus amigos si las dejás visibles) ---
+    # Requiere la tabla opiniones_juegos de supabase_social.sql.
+
+    def publicar_opinion(self, identificativo, titulo, consola, puntuacion, texto, publica=True):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            clave = clave_juego(identificativo, titulo)
+            if not puntuacion and not (texto or "").strip():
+                # Opinión vacía: se retira de la nube
+                self.client.table("opiniones_juegos").delete().eq("user_id", self._yo()).eq("clave", clave).execute()
+            else:
+                self.client.table("opiniones_juegos").upsert({
+                    "user_id": self._yo(),
+                    "clave": clave,
+                    "titulo": titulo,
+                    "consola": consola or "",
+                    "identificativo": identificativo,
+                    "puntuacion": int(puntuacion or 0),
+                    "texto": texto or "",
+                    "publica": bool(publica),
+                    "actualizado_en": datetime.now(timezone.utc).isoformat(),
+                }).execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def obtener_opiniones_amigos(self, identificativo, titulo):
+        """Opiniones que tus amigos dejaron (y compartieron) de este juego."""
+        if not self.client or not self.usuario_actual:
+            return []
+        try:
+            res = self.client.table("opiniones_juegos") \
+                .select("user_id, puntuacion, texto, actualizado_en") \
+                .eq("clave", clave_juego(identificativo, titulo)).neq("user_id", self._yo()).execute()
+            filas = res.data or []
+            perfiles = self._perfiles_por_id([f["user_id"] for f in filas])
+            lista = [{
+                "user_id": f["user_id"],
+                "username": perfiles.get(f["user_id"], {}).get("username") or "Usuario",
+                "avatar_url": perfiles.get(f["user_id"], {}).get("avatar_url") or "",
+                "puntuacion": f.get("puntuacion", 0),
+                "texto": f.get("texto", ""),
+                "actualizado_en": f.get("actualizado_en"),
+            } for f in filas]
+            lista.sort(key=lambda a: a["actualizado_en"] or "", reverse=True)
+            return lista
+        except Exception as e:
+            print(f"[SOCIAL] No se pudieron cargar las opiniones: {self._error_social(e)}")
+            return []
 
     # --- FUNCIONES DE PERFIL DE USUARIO ---
 

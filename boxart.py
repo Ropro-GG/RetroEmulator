@@ -431,3 +431,31 @@ def leer_como_data_uri(ruta):
 # API pública para otros módulos (ra_client)
 analizar_titulo = _analizar
 firma_numerica = _firma_numerica
+
+
+def buscar_titulos(identificativo, nombre_consola, texto, limite=8):
+    """Sugiere títulos de juegos de una consola a partir de lo que se escribe.
+    Usa el mismo listado de Libretro que las carátulas (cacheado en disco)."""
+    palabras = [p for p in _analizar(texto)[0].split() if p]
+    if not palabras:
+        return []
+
+    resultados = {}
+    for sistema in SISTEMAS.get(identificativo) or [nombre_consola]:
+        with _lock_indices:
+            if _indices.get(sistema, 1) is None:   # un intento fallido anterior (sin red) no se queda para siempre
+                del _indices[sistema]
+        indice = obtener_indice(sistema)
+        if not indice:
+            continue
+        for clave, opciones in indice.por_clave.items():
+            if all(p in clave for p in palabras):
+                nombre = min(opciones, key=lambda o: (-_puntuar(set(), o[1]), len(o[0]), o[0]))[0]
+                titulo = re.sub(r'\s*[\(\[][^\)\]]*[\)\]]', '', nombre).strip()
+                titulo = re.sub(r'^(.+?), (The|A|An)\b(.*)$', r'\2 \1\3', titulo)   # "Legend, The" -> "The Legend"
+                resultados.setdefault(clave, titulo)
+        if resultados:
+            break
+
+    orden = sorted(resultados.items(), key=lambda kv: (not kv[0].startswith(palabras[0]), len(kv[0]), kv[0]))
+    return [titulo for _, titulo in orden[:limite]]

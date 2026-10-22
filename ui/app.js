@@ -696,6 +696,7 @@ function pintarDetalle(j) {
         j.portada_url ? `url("${j.portada_url}")` : 'none';
 
     opinionPuntuacion = (j.opinion && j.opinion.puntuacion) || 0;
+    document.getElementById('opinion-publica').checked = j.opinion ? !!j.opinion.publica : true;
     document.getElementById('opinion-text').value = (j.opinion && j.opinion.texto) || '';
     document.getElementById('opinion-msg').textContent = '';
     pintarEstrellas();
@@ -723,9 +724,16 @@ async function guardarOpinion() {
         const res = await window.pywebview.api.guardar_opinion(
             juegoDetalleActual.id,
             opinionPuntuacion,
-            document.getElementById('opinion-text').value
+            document.getElementById('opinion-text').value,
+            document.getElementById('opinion-publica').checked
         );
-        msg.textContent = res && res.exito ? '✔ Opinión guardada' : (res ? res.error : 'Error al guardar.');
+        if (res && res.exito) {
+            msg.textContent = res.aviso
+                ? `✔ Guardada en tu equipo. No se pudo publicar: ${res.aviso}`
+                : '✔ Opinión guardada';
+        } else {
+            msg.textContent = (res && res.error) || 'Error al guardar.';
+        }
     } catch (e) {
         msg.textContent = 'Error: ' + e;
     }
@@ -837,7 +845,8 @@ async function cargarAmigos(id) {
     pintarAmigos(document.getElementById('friends-played'), res && res.jugaron,
         'Ninguno de tus amigos jugó este juego todavía.');
     pintarAmigos(document.getElementById('friends-wishlist'), res && res.deseado,
-        'Aquí verás qué amigos lo tienen en su lista de deseados. Función en desarrollo.');
+        'Ninguno de tus amigos lo tiene en su lista de deseados.');
+    pintarOpinionesAmigos(document.getElementById('friends-opiniones'), res && res.opiniones);
 }
 
 function pintarAmigos(el, amigos, textoVacio) {
@@ -863,7 +872,9 @@ function pintarAmigos(el, amigos, textoVacio) {
         const nombre = document.createElement('span');
         nombre.textContent = a.username || String(a);
         const sub = document.createElement('small');
-        sub.textContent = a.veces ? `${a.veces} ${a.veces === 1 ? 'vez' : 'veces'} · ${formatearFecha(a.ultima_vez)}` : '';
+        sub.textContent = a.veces
+            ? `${a.veces} ${a.veces === 1 ? 'vez' : 'veces'} · ${formatearFecha(a.ultima_vez)}`
+            : (a.agregado_en ? `Lo quiere desde ${formatearFecha(a.agregado_en)}` : '');
         info.append(nombre, sub);
 
         fila.append(img, info);
@@ -933,14 +944,17 @@ function seleccionarSeccionSocial(nombre) {
         li.classList.toggle('active', li.dataset.social === nombre);
     });
 
-    const esAmigos = nombre === 'amigos';
-    document.getElementById('social-amigos').style.display = esAmigos ? 'block' : 'none';
-    document.getElementById('social-pronto').style.display = esAmigos ? 'none' : 'block';
+    const reales = { amigos: 'social-amigos', deseados: 'social-deseados' };
+    Object.values(reales).forEach(id => document.getElementById(id).style.display = 'none');
+    document.getElementById('social-pronto').style.display = 'none';
 
-    if (esAmigos) {
-        cargarSocial();
+    if (reales[nombre]) {
+        document.getElementById(reales[nombre]).style.display = 'block';
+        if (nombre === 'amigos') cargarSocial();
+        else abrirDeseados();
     } else {
         const info = SECCIONES_PRONTO[nombre];
+        document.getElementById('social-pronto').style.display = 'block';
         document.getElementById('pronto-icono').textContent = info.icono;
         document.getElementById('pronto-titulo').textContent = info.titulo;
         document.getElementById('pronto-texto').textContent = info.texto;
@@ -1157,6 +1171,7 @@ async function cargarPrivacidad() {
         const p = await window.pywebview.api.obtener_privacidad();
         document.getElementById('privacy-share').checked = !!p.actividad;
         document.getElementById('privacy-history').checked = !!p.historial;
+        document.getElementById('privacy-deseados').checked = !!p.deseados;
     } catch (e) {
         console.error(e);
     }
@@ -1184,6 +1199,7 @@ async function abrirPerfilAjeno(userId) {
     document.getElementById('pa-acciones').innerHTML = '';
     document.getElementById('pa-juegos').innerHTML = '';
     document.getElementById('pa-comun').innerHTML = '';
+    document.getElementById('pa-deseados').innerHTML = '';
     document.getElementById('pa-avatar').removeAttribute('src');
     await cargarPerfilAjeno();
 }
@@ -1309,23 +1325,24 @@ function reiniciarEstadoUI() {
 
     // Campos de texto
     ['login-email', 'login-pass', 'reg-username', 'reg-email', 'reg-pass', 'search-input', 'friend-search',
-     'opinion-text', 'profile-bio', 'ra-user', 'ra-key', 'code-input'].forEach(id => {
+     'opinion-text', 'profile-bio', 'ra-user', 'ra-key', 'code-input', 'wish-titulo', 'wish-consola'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
-    ['login-remember', 'privacy-share', 'privacy-history'].forEach(id => {
+    ['login-remember', 'privacy-share', 'privacy-history', 'privacy-deseados'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = false;
     });
 
     // Textos y listas que dependen de la cuenta
     ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
-     'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun'].forEach(id => {
+     'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun', 'pa-deseados',
+     'wish-list', 'wish-sugerencias', 'friends-opiniones'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });
     ['header-username', 'profile-username', 'opinion-msg', 'ra-status', 'pa-nombre', 'pa-estado', 'pa-bio',
-     'code-msg', 'scan-status', 'scan-status-config', 'auth-error', 'detail-title', 'detail-console'].forEach(id => {
+     'code-msg', 'scan-status', 'scan-status-config', 'auth-error', 'detail-title', 'detail-console', 'wish-msg'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.textContent = '';
     });
@@ -1344,6 +1361,7 @@ function reiniciarEstadoUI() {
     document.querySelector('.game-grid-container').style.display = '';
     document.getElementById('social-perfil').style.display = 'none';
     document.getElementById('social-pronto').style.display = 'none';
+    document.getElementById('social-deseados').style.display = 'none';
     document.getElementById('social-amigos').style.display = 'block';
     document.querySelectorAll('.social-nav li').forEach(li => li.classList.toggle('active', li.dataset.social === 'amigos'));
     document.querySelectorAll('.settings-section').forEach(s => s.style.display = (s.id === 'settings-paths') ? 'block' : 'none');
@@ -1380,12 +1398,15 @@ function filaJuego(titulo, subtitulo) {
 function pintarJuegosPerfil(res) {
     const jugados = document.getElementById('pa-juegos');
     const comun = document.getElementById('pa-comun');
+    const deseados = document.getElementById('pa-deseados');
     jugados.innerHTML = '';
     comun.innerHTML = '';
+    deseados.innerHTML = '';
 
     if (res.relacion !== 'amigos') {
         jugados.appendChild(mensajeVacio('Solo los amigos pueden ver los juegos que jugó.'));
         comun.appendChild(mensajeVacio('Agregalo a tus amigos para ver qué juegos tienen en común.'));
+        deseados.appendChild(mensajeVacio('Solo los amigos pueden ver su lista de deseados.'));
         return;
     }
 
@@ -1408,6 +1429,12 @@ function pintarJuegosPerfil(res) {
         comun.appendChild(resumen);
         enComun.forEach(j => comun.appendChild(filaJuego(j.titulo, j.consola)));
     }
+
+    const lista = res.deseados || [];
+    if (lista.length === 0) {
+        deseados.appendChild(mensajeVacio('No tiene juegos en su lista de deseados (o no la comparte).'));
+    }
+    lista.forEach(d => deseados.appendChild(filaJuego(d.titulo, d.consola)));
 }
 
 function irAPerfilAmigo(userId) {
@@ -1423,4 +1450,202 @@ async function guardarCompartirHistorial() {
         return;
     }
     await window.pywebview.api.guardar_compartir_historial(casilla.checked);
+}
+
+// ============================================================================
+// LISTA DE DESEADOS (Social → Deseados)
+// ============================================================================
+
+let consolasDeseadosCargadas = false;
+let sugerenciasTimer = null;
+
+async function abrirDeseados() {
+    await prepararConsolasDeseados();
+    await cargarDeseados();
+}
+
+async function prepararConsolasDeseados() {
+    if (consolasDeseadosCargadas) return;
+    const sel = document.getElementById('wish-consola');
+    let consolas = [];
+    try {
+        consolas = await window.pywebview.api.obtener_consolas();
+    } catch (e) { /* queda solo el texto de ayuda */ }
+
+    sel.innerHTML = '';
+    const vacio = document.createElement('option');
+    vacio.value = '';
+    vacio.textContent = '— Elegí la consola —';
+    sel.appendChild(vacio);
+    (consolas || []).forEach(c => {
+        const op = document.createElement('option');
+        op.value = c.identificativo;
+        op.textContent = c.nombre;
+        sel.appendChild(op);
+    });
+    consolasDeseadosCargadas = true;
+}
+
+function mensajeDeseados(texto, esError) {
+    const msg = document.getElementById('wish-msg');
+    msg.textContent = texto;
+    msg.style.color = esError ? '#ff4d4d' : '#66FCF1';
+}
+
+function buscarTitulosConRetraso() {
+    clearTimeout(sugerenciasTimer);
+    sugerenciasTimer = setTimeout(buscarTitulos, 300);
+}
+
+async function buscarTitulos() {
+    const ident = document.getElementById('wish-consola').value;
+    const texto = document.getElementById('wish-titulo').value.trim();
+    const cont = document.getElementById('wish-sugerencias');
+    cont.innerHTML = '';
+    if (!ident || texto.length < 2) return;
+
+    cont.appendChild(mensajeVacio('Buscando…'));
+    let lista = [];
+    try {
+        lista = await window.pywebview.api.buscar_titulos(ident, texto);
+    } catch (e) { /* sin sugerencias */ }
+
+    // Si mientras tanto cambió lo escrito, esta respuesta ya no sirve
+    if (document.getElementById('wish-titulo').value.trim() !== texto ||
+        document.getElementById('wish-consola').value !== ident) return;
+
+    cont.innerHTML = '';
+    if (!lista || lista.length === 0) {
+        cont.appendChild(mensajeVacio('Sin sugerencias. Podés agregarlo igual con el botón.'));
+        return;
+    }
+    lista.forEach(t => {
+        const item = document.createElement('div');
+        item.className = 'wish-sug';
+        item.textContent = t;
+        item.onclick = () => agregarDeseado(t);
+        cont.appendChild(item);
+    });
+}
+
+function agregarDeseadoEscrito() {
+    agregarDeseado(document.getElementById('wish-titulo').value);
+}
+
+async function agregarDeseado(titulo) {
+    const ident = document.getElementById('wish-consola').value;
+    titulo = (titulo || '').trim();
+    if (!ident) { mensajeDeseados('Elegí primero la consola.', true); return; }
+    if (!titulo) { mensajeDeseados('Escribí el nombre del juego.', true); return; }
+
+    let res;
+    try {
+        res = await window.pywebview.api.agregar_deseado(ident, titulo);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (res && res.exito) {
+        document.getElementById('wish-titulo').value = '';
+        document.getElementById('wish-sugerencias').innerHTML = '';
+        mensajeDeseados(`✔ "${titulo}" agregado a tu lista.`, false);
+        await cargarDeseados();
+    } else {
+        mensajeDeseados((res && res.error) || 'No se pudo agregar.', true);
+    }
+}
+
+async function quitarDeseado(clave) {
+    const res = await window.pywebview.api.quitar_deseado(clave);
+    if (!res || !res.exito) mensajeDeseados((res && res.error) || 'No se pudo quitar.', true);
+    await cargarDeseados();
+}
+
+async function cargarDeseados() {
+    const cont = document.getElementById('wish-list');
+    if (!cont.children.length) cont.appendChild(mensajeVacio('Cargando…'));
+
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_mis_deseados();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    cont.innerHTML = '';
+    if (!res || !res.exito) {
+        const err = document.createElement('p');
+        err.className = 'error-msg';
+        err.textContent = (res && res.error) || 'No se pudo cargar tu lista.';
+        cont.appendChild(err);
+        return;
+    }
+
+    cont.appendChild(tituloBloque('Tu lista', res.deseados.length));
+    if (res.deseados.length === 0) {
+        cont.appendChild(mensajeVacio('Todavía no agregaste ningún juego. Elegí una consola y buscá un título arriba.'));
+        return;
+    }
+    res.deseados.forEach(d => {
+        const fila = document.createElement('div');
+        fila.className = 'wish-row';
+        const info = document.createElement('div');
+        info.className = 'wish-row-info';
+        const t = document.createElement('strong');
+        t.textContent = d.titulo;
+        const s = document.createElement('small');
+        s.textContent = [d.consola, 'agregado ' + formatearFecha(d.agregado_en)].filter(Boolean).join(' · ');
+        info.append(t, s);
+        fila.append(info, boton('Quitar', 'btn-secondary-sm', () => quitarDeseado(d.clave)));
+        cont.appendChild(fila);
+    });
+}
+
+async function guardarCompartirDeseados() {
+    const casilla = document.getElementById('privacy-deseados');
+    const res = await window.pywebview.api.guardar_compartir_deseados(casilla.checked);
+    if (!res || !res.exito) {
+        alert((res && res.error) || 'No se pudo actualizar la visibilidad de tu lista.');
+        casilla.checked = !casilla.checked;   // vuelve a como estaba
+    }
+}
+
+// ============================================================================
+// OPINIONES DE AMIGOS (en el detalle de un juego)
+// ============================================================================
+
+function pintarOpinionesAmigos(el, opiniones) {
+    el.innerHTML = '';
+    if (!opiniones || opiniones.length === 0) {
+        el.appendChild(mensajeVacio('Ninguno de tus amigos dejó una opinión de este juego todavía.'));
+        return;
+    }
+    opiniones.forEach(o => {
+        const item = document.createElement('div');
+        item.className = 'opinion-item';
+
+        const cab = document.createElement('div');
+        cab.className = 'opinion-head';
+        const img = document.createElement('img');
+        img.src = avatarDe(o);
+        img.alt = '';
+        img.onerror = () => { img.style.visibility = 'hidden'; };
+        const nombre = document.createElement('strong');
+        nombre.textContent = o.username || 'Usuario';
+        nombre.className = 'clickable';
+        nombre.onclick = () => irAPerfilAmigo(o.user_id);
+        const estrellas = document.createElement('span');
+        estrellas.className = 'opinion-stars-static';
+        estrellas.textContent = o.puntuacion > 0 ? '★'.repeat(o.puntuacion) + '☆'.repeat(5 - o.puntuacion) : '';
+        const fecha = document.createElement('small');
+        fecha.textContent = formatearFecha(o.actualizado_en);
+        cab.append(img, nombre, estrellas, fecha);
+        item.appendChild(cab);
+
+        if (o.texto && o.texto.trim() !== '') {
+            const t = document.createElement('p');
+            t.className = 'opinion-text';
+            t.textContent = o.texto;
+            item.appendChild(t);
+        }
+        el.appendChild(item);
+    });
 }

@@ -108,8 +108,16 @@
                                 <span data-v="1" onclick="elegirPuntuacion(1)">★</span><span data-v="2" onclick="elegirPuntuacion(2)">★</span><span data-v="3" onclick="elegirPuntuacion(3)">★</span><span data-v="4" onclick="elegirPuntuacion(4)">★</span><span data-v="5" onclick="elegirPuntuacion(5)">★</span>
                             </div>
                             <textarea id="opinion-text" placeholder="¿Qué te pareció este juego?"></textarea>
+                            <label class="toggle-row opinion-visible">
+                                <input type="checkbox" id="opinion-publica" checked>
+                                Visible para mis amigos
+                            </label>
                             <button class="btn-primary-sm" onclick="guardarOpinion()">Guardar opinión</button>
                             <span id="opinion-msg" class="settings-msg"></span>
+                        </div>
+                        <div class="detail-card">
+                            <h3>💬 Opiniones de tus amigos</h3>
+                            <div id="friends-opiniones"></div>
                         </div>
                     </div>
                     <div class="detail-col-side">
@@ -132,6 +140,7 @@
                 <h3>Social</h3>
                 <ul>
                     <li class="active" data-social="amigos" onclick="seleccionarSeccionSocial('amigos')"><span>👥 Amigos</span><span id="social-amigos-badge" class="count-badge" style="display: none;"></span></li>
+                    <li data-social="deseados" onclick="seleccionarSeccionSocial('deseados')">⭐ Deseados</li>
                     <li data-social="chat" onclick="seleccionarSeccionSocial('chat')">💬 Chat <em>PRONTO</em></li>
                     <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')">📰 Publicaciones <em>PRONTO</em></li>
                     <li data-social="foros" onclick="seleccionarSeccionSocial('foros')">🗨️ Foros <em>PRONTO</em></li>
@@ -147,6 +156,22 @@
                     </div>
                     <div id="friend-search-results"></div>
                     <div id="friend-lists"></div>
+                </div>
+
+                <!-- MI LISTA DE DESEADOS -->
+                <div id="social-deseados" style="display: none;">
+                    <h2>Mi lista de deseados</h2>
+                    <p class="settings-help">Juegos que querés jugar. Tus amigos pueden verla (lo controlás en Configuración → Privacidad) y, cuando un amigo tiene uno de esos juegos, lo ve en el detalle del juego. Más adelante vas a poder agregar juegos desde el Catálogo.</p>
+                    <div class="wish-add">
+                        <select id="wish-consola" class="settings-input wish-consola" onchange="buscarTitulosConRetraso()"></select>
+                        <div class="wish-title-wrap">
+                            <input id="wish-titulo" class="settings-input" type="text" placeholder="Nombre del juego..." oninput="buscarTitulosConRetraso()" onkeydown="if (event.key === 'Enter') agregarDeseadoEscrito()" autocomplete="off">
+                            <div id="wish-sugerencias" class="wish-sugerencias"></div>
+                        </div>
+                        <button class="btn-primary-sm" onclick="agregarDeseadoEscrito()">Agregar</button>
+                    </div>
+                    <p id="wish-msg" class="settings-msg"></p>
+                    <div id="wish-list"></div>
                 </div>
 
                 <!-- PERFIL DE OTRO USUARIO -->
@@ -176,7 +201,7 @@
                     </div>
                     <div class="detail-card">
                         <h3>⭐ Lista de deseados</h3>
-                        <p class="empty-state">Próximamente: acá vas a ver los juegos que quiere jugar.</p>
+                        <div id="pa-deseados"></div>
                     </div>
                 </div>
 
@@ -303,6 +328,12 @@
                         Compartir mi historial de juegos con mis amigos
                     </label>
                     <p class="settings-help">Permite que tus amigos vean qué juegos jugaste (y cuántas veces) y qué juegos tienen en común con vos. Si lo desactivás, se borra el historial que ya habías publicado y no se vuelve a publicar nada.</p>
+
+                    <label class="toggle-row">
+                        <input type="checkbox" id="privacy-deseados" onchange="guardarCompartirDeseados()">
+                        Mostrar mi lista de deseados a mis amigos
+                    </label>
+                    <p class="settings-help">Si lo desactivás, tus amigos dejan de ver tu lista (ni en tu perfil ni en el detalle de los juegos). La lista sigue siendo tuya. Las opiniones se controlan una por una con "Visible para mis amigos".</p>
                 </section>
 
                 <section id="settings-info" class="settings-section" style="display: none;">

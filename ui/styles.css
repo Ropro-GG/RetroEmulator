@@ -932,3 +932,52 @@ body {
 .game-row:first-child { border-top: none; }
 .game-row strong { color: #FFFFFF; font-size: 0.92em; }
 .game-row small { color: #7d8590; font-size: 0.78em; }
+
+
+/* ============================================================
+   LISTA DE DESEADOS Y OPINIONES DE AMIGOS
+   ============================================================ */
+.wish-add { display: flex; gap: 8px; align-items: flex-start; max-width: 720px; margin-top: 6px; }
+.wish-consola { width: 220px; flex-shrink: 0; }
+.wish-title-wrap { position: relative; flex: 1; min-width: 0; }
+.wish-sugerencias {
+    position: absolute;
+    left: 0; right: 0; top: 100%;
+    z-index: 5;
+    background: #141722;
+    border: 1px solid #2a3544;
+    border-radius: 6px;
+    margin-top: 2px;
+}
+.wish-sugerencias:empty { display: none; }
+.wish-sugerencias .empty-state { padding: 8px 10px; }
+.wish-sug { padding: 8px 10px; font-size: 0.9em; cursor: pointer; border-top: 1px solid #1F2833; }
+.wish-sug:first-child { border-top: none; }
+.wish-sug:hover { background: #1F2833; color: #66FCF1; }
+
+.wish-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 720px;
+    background: #1F2833;
+    border: 1px solid #2a3544;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+}
+.wish-row-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wish-row-info strong { color: #FFFFFF; }
+.wish-row-info small { color: #7d8590; font-size: 0.78em; }
+
+.opinion-visible { margin-bottom: 10px; font-size: 0.85em; }
+.opinion-item { padding: 10px 0; border-top: 1px solid #2a3544; }
+.opinion-item:first-child { border-top: none; }
+.opinion-head { display: flex; align-items: center; gap: 8px; }
+.opinion-head img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; border: 1px solid #45A29E; }
+.opinion-head strong { color: #FFFFFF; font-size: 0.9em; }
+.opinion-head strong.clickable { cursor: pointer; }
+.opinion-head strong.clickable:hover { color: #66FCF1; }
+.opinion-head small { color: #7d8590; margin-left: auto; font-size: 0.75em; }
+.opinion-stars-static { color: #f5c518; font-size: 0.9em; letter-spacing: 1px; }
+.opinion-text { font-size: 0.9em; color: #E0E0E0; margin: 6px 0 0 36px; white-space: pre-wrap; line-height: 1.5; }
