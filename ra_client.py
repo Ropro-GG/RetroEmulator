@@ -19,6 +19,7 @@ import urllib.request
 from difflib import get_close_matches
 
 import boxart
+import contexto
 import db_local
 import session_store
 
@@ -54,8 +55,25 @@ class SinCredenciales(ErrorRA):
 # Credenciales
 # ----------------------------------------------------------------------------
 
+def _nombre_credenciales():
+    """Las credenciales son de cada cuenta de la app: no se mezclan al cambiar de usuario."""
+    uid = contexto.usuario_id()
+    return f"retroachievements_{uid}" if uid else None
+
+
+def adoptar_credenciales_antiguas(usuario_id):
+    """Antes las credenciales eran de todo el equipo: se pasan a la cuenta que entra primero."""
+    legado = session_store.cargar("retroachievements")
+    if legado:
+        nuevo = f"retroachievements_{usuario_id}"
+        if not session_store.cargar(nuevo):
+            session_store.guardar(nuevo, legado)
+        session_store.borrar("retroachievements")
+
+
 def obtener_credenciales():
-    c = session_store.cargar("retroachievements")
+    nombre = _nombre_credenciales()
+    c = session_store.cargar(nombre) if nombre else None
     if c and c.get("usuario") and c.get("api_key"):
         return c
     return None
@@ -78,13 +96,18 @@ def guardar_credenciales(usuario, api_key):
         return {"exito": False, "error": str(e)}
     if not isinstance(perfil, dict) or "User" not in perfil:
         return {"exito": False, "error": "No se encontró ese usuario en RetroAchievements."}
-    if not session_store.guardar("retroachievements", {"usuario": usuario, "api_key": api_key}):
+    nombre = _nombre_credenciales()
+    if not nombre:
+        return {"exito": False, "error": "Iniciá sesión para guardar tus credenciales."}
+    if not session_store.guardar(nombre, {"usuario": usuario, "api_key": api_key}):
         return {"exito": False, "error": "No se pudieron guardar las credenciales en este equipo."}
     return {"exito": True, "usuario": perfil.get("User", usuario)}
 
 
 def borrar_credenciales():
-    session_store.borrar("retroachievements")
+    nombre = _nombre_credenciales()
+    if nombre:
+        session_store.borrar(nombre)
     return {"exito": True}
 
 

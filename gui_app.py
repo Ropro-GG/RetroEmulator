@@ -9,6 +9,7 @@ from cloud_client import CloudClient
 import boxart
 import db_local
 import ra_client
+import contexto
 import webbrowser
 from urllib.parse import urlparse
 
@@ -24,15 +25,36 @@ class API:
         self.launcher = GameLauncher()
         self.cloud = CloudClient()
         self.window = None
+        self._juegos_activos = 0          # emuladores abiertos desde el launcher
+        self._lock_juegos = threading.Lock()
 
     def set_window(self, window):
         self.window = window
 
+    def _establecer_cuenta(self, resultado):
+        """Registra qué cuenta está activa para separar los datos por cuenta en este equipo."""
+        if resultado and resultado.get("exito"):
+            uid = (resultado.get("usuario") or {}).get("id")
+            if uid:
+                contexto.establecer(uid)
+                if db_local.adoptar_datos_antiguos(uid):
+                    ra_client.adoptar_credenciales_antiguas(uid)
+
     def registrar_usuario(self, email, password, username):
-        return self.cloud.registrar_usuario(email, password, username)
+        resultado = self.cloud.registrar_usuario(email, password, username)
+        self._establecer_cuenta(resultado)
+        return resultado
+
+    def _limpiar_presencia_vieja(self, resultado):
+        """Al entrar, borra un 'jugando ahora' que haya quedado colgado (por ejemplo tras un cierre brusco)."""
+        if resultado and resultado.get("exito") and self._juegos_activos == 0:
+            threading.Thread(target=self.cloud.limpiar_jugando, daemon=True).start()
 
     def iniciar_sesion(self, email, password, recordar=False):
-        return self.cloud.iniciar_sesion(email, password, recordar)
+        resultado = self.cloud.iniciar_sesion(email, password, recordar)
+        self._establecer_cuenta(resultado)
+        self._limpiar_presencia_vieja(resultado)
+        return resultado
 
     def confirmar_recordar(self, codigo):
         return self.cloud.confirmar_recordar(codigo)
@@ -41,10 +63,15 @@ class API:
         return self.cloud.reenviar_codigo_recordar()
 
     def restaurar_sesion(self):
-        return self.cloud.restaurar_sesion()
+        resultado = self.cloud.restaurar_sesion()
+        self._establecer_cuenta(resultado)
+        self._limpiar_presencia_vieja(resultado)
+        return resultado
 
     def cerrar_sesion(self):
-        return self.cloud.cerrar_sesion()
+        resultado = self.cloud.cerrar_sesion()
+        contexto.establecer("")   # nada de la cuenta anterior queda activo
+        return resultado
 
     def obtener_perfil(self, user_id=None):
         return self.cloud.obtener_perfil(user_id)
@@ -96,7 +123,71 @@ class API:
         return self.db.obtener_consolas()
 
     def lanzar_juego(self, game_id):
-        return self.launcher.lanzar_por_id(game_id)
+        return self.launcher.lanzar_por_id(
+            game_id, al_iniciar=self._al_iniciar_juego, al_cerrar=self._al_cerrar_juego)
+
+    def _al_iniciar_juego(self, titulo, consola):
+        """Avisa a tus amigos a qué jugás (si no lo desactivaste en Privacidad)."""
+        with self._lock_juegos:
+            self._juegos_activos += 1
+        if db_local.obtener_config_usuario("compartir_actividad", "1") == "1":
+            self.cloud.establecer_jugando(titulo, consola)
+        if db_local.obtener_config_usuario("compartir_historial", "1") == "1":
+            identificativo = db_local.obtener_identificativo_por_consola(consola)
+            self.cloud.registrar_jugada(identificativo, titulo, consola)
+
+    def _al_cerrar_juego(self):
+        # Solo se borra el aviso cuando ya no queda ningún emulador abierto
+        with self._lock_juegos:
+            self._juegos_activos = max(0, self._juegos_activos - 1)
+            quedan = self._juegos_activos
+        if quedan == 0:
+            self.cloud.limpiar_jugando()
+
+    # --- SOCIAL ---
+
+    def obtener_social(self):
+        return self.cloud.obtener_social()
+
+    def obtener_resumen_social(self):
+        """Datos livianos para la insignia de la pestaña SOCIAL."""
+        return self.cloud.contar_solicitudes()
+
+    def buscar_usuarios(self, texto):
+        return self.cloud.buscar_usuarios(texto)
+
+    def obtener_perfil_social(self, user_id):
+        return self.cloud.obtener_perfil_social(user_id)
+
+    def enviar_solicitud_amistad(self, user_id):
+        return self.cloud.enviar_solicitud_amistad(user_id)
+
+    def responder_solicitud_amistad(self, friendship_id, aceptar):
+        return self.cloud.responder_solicitud_amistad(friendship_id, aceptar)
+
+    def eliminar_amistad(self, friendship_id):
+        return self.cloud.eliminar_amistad(friendship_id)
+
+    # --- PRIVACIDAD ---
+
+    def obtener_privacidad(self):
+        """Ajustes de privacidad de la cuenta actual (cada cuenta tiene los suyos)."""
+        return {
+            "actividad": db_local.obtener_config_usuario("compartir_actividad", "1") == "1",
+            "historial": db_local.obtener_config_usuario("compartir_historial", "1") == "1",
+        }
+
+    def guardar_compartir_actividad(self, activo):
+        db_local.guardar_config_usuario("compartir_actividad", "1" if activo else "0")
+        if not activo:
+            self.cloud.limpiar_jugando()   # se borra lo que ya estuviera publicado
+        return {"exito": True}
+
+    def guardar_compartir_historial(self, activo):
+        db_local.guardar_config_usuario("compartir_historial", "1" if activo else "0")
+        if not activo:
+            self.cloud.borrar_historial()   # se borra lo que ya estuviera publicado
+        return {"exito": True}
 
     # --- CONFIGURACIÓN: RUTAS Y EMULADORES ---
 
@@ -178,8 +269,7 @@ class API:
             return {"exito": False, "jugaron": [], "deseado": []}
         return {
             "exito": True,
-            "pendiente": True,
-            "jugaron": self.cloud.obtener_amigos_que_jugaron(juego["titulo"], juego["consola"]),
+            "jugaron": self.cloud.obtener_amigos_que_jugaron(juego["identificativo"], juego["titulo"]),
             "deseado": self.cloud.obtener_amigos_con_deseado(juego["titulo"], juego["consola"]),
         }
 
@@ -208,6 +298,7 @@ def main():
     )
     api.set_window(window)
     webview.start(debug=True)
+    api.cloud.limpiar_jugando()   # al cerrar el launcher no queda un "jugando ahora" publicado
 
 if __name__ == '__main__':
     main()

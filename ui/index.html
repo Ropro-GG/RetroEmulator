@@ -39,17 +39,15 @@
         
         <!-- HEADER PRINCIPAL -->
         <header class="top-bar">
-            <div class="brand">RETRO<span>EMULATOR</span></div>
-            
-            <!-- BUSCADOR EN TIEMPO REAL -->
-            <div class="search-container">
-                <input type="text" id="search-input" placeholder="🔍 Buscar juego..." oninput="alBuscar()">
-            </div>
+            <nav class="top-nav">
+                <button class="nav-btn" data-view="social" onclick="mostrarVista('social')">SOCIAL<span id="nav-social-badge" class="nav-badge" style="display: none;"></span></button>
+                <button class="nav-btn active" data-view="biblioteca" onclick="mostrarVista('biblioteca')">BIBLIOTECA</button>
+                <button class="nav-btn" data-view="noticias" onclick="mostrarVista('noticias')">NOTICIAS</button>
+                <button class="nav-btn" data-view="catalogo" onclick="mostrarVista('catalogo')">CATÁLOGO</button>
+            </nav>
             
             <div class="header-right">
                 <span id="scan-status" class="scan-status"></span>
-                <button id="btn-scan" class="btn-scan" onclick="escanearRoms()">🔍 Escanear ROMs</button>
-                
                 <!-- CÁPSULA DE USUARIO (ESTILO STEAM CIRCULAR/ELONGADO) -->
                 <div class="user-pill" onclick="abrirPerfil()">
                     <div class="user-avatar-wrapper">
@@ -62,12 +60,17 @@
         </header>
 
         <!-- CONTENIDO PRINCIPAL -->
-        <main class="main-content">
+        <main id="view-biblioteca" class="main-content view">
             <aside class="sidebar">
-                <h3>Consolas</h3>
-                <ul id="console-list">
-                    <li class="active" onclick="seleccionarConsola('todas', this)">Todas</li>
-                </ul>
+                <div class="search-container sidebar-search">
+                    <input type="text" id="search-input" placeholder="🔍 Buscar juego..." oninput="alBuscar()">
+                </div>
+                <div class="sidebar-list">
+                    <h3>Consolas</h3>
+                    <ul id="console-list">
+                        <li class="active" onclick="seleccionarConsola('todas', this)">Todas</li>
+                    </ul>
+                </div>
             </aside>
 
             <section class="game-grid-container">
@@ -122,6 +125,81 @@
                 </div>
             </section>
         </main>
+
+        <!-- SOCIAL -->
+        <div id="view-social" class="view social-view" style="display: none;">
+            <aside class="social-nav">
+                <h3>Social</h3>
+                <ul>
+                    <li class="active" data-social="amigos" onclick="seleccionarSeccionSocial('amigos')"><span>👥 Amigos</span><span id="social-amigos-badge" class="count-badge" style="display: none;"></span></li>
+                    <li data-social="chat" onclick="seleccionarSeccionSocial('chat')">💬 Chat <em>PRONTO</em></li>
+                    <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')">📰 Publicaciones <em>PRONTO</em></li>
+                    <li data-social="foros" onclick="seleccionarSeccionSocial('foros')">🗨️ Foros <em>PRONTO</em></li>
+                    <li data-social="llamadas" onclick="seleccionarSeccionSocial('llamadas')">📞 Llamadas <em>PRONTO</em></li>
+                </ul>
+            </aside>
+
+            <section class="social-content">
+                <div id="social-amigos">
+                    <h2>Amigos</h2>
+                    <div class="friend-search-box">
+                        <input type="text" id="friend-search" placeholder="🔍 Buscar usuarios por nombre..." oninput="buscarUsuariosConRetraso()" onkeydown="if (event.key === 'Enter') buscarUsuarios()" autocomplete="off">
+                    </div>
+                    <div id="friend-search-results"></div>
+                    <div id="friend-lists"></div>
+                </div>
+
+                <!-- PERFIL DE OTRO USUARIO -->
+                <div id="social-perfil" style="display: none;">
+                    <button class="btn-back" onclick="cerrarPerfilAjeno()">← Amigos</button>
+
+                    <div class="profile-hero">
+                        <img id="pa-avatar" class="pa-avatar" alt="">
+                        <div class="pa-main">
+                            <h2 id="pa-nombre"></h2>
+                            <p id="pa-estado" class="pa-estado"></p>
+                            <div id="pa-acciones" class="pa-acciones"></div>
+                        </div>
+                    </div>
+
+                    <div class="detail-card">
+                        <h3>Biografía</h3>
+                        <p id="pa-bio" class="pa-bio"></p>
+                    </div>
+                    <div class="detail-card">
+                        <h3>🎮 Juegos jugados recientemente</h3>
+                        <div id="pa-juegos"></div>
+                    </div>
+                    <div class="detail-card">
+                        <h3>🤝 Juegos en común</h3>
+                        <div id="pa-comun"></div>
+                    </div>
+                    <div class="detail-card">
+                        <h3>⭐ Lista de deseados</h3>
+                        <p class="empty-state">Próximamente: acá vas a ver los juegos que quiere jugar.</p>
+                    </div>
+                </div>
+
+                <div id="social-pronto" class="social-soon" style="display: none;">
+                    <div class="soon-icon" id="pronto-icono"></div>
+                    <h2 id="pronto-titulo"></h2>
+                    <p id="pronto-texto"></p>
+                    <span class="soon-tag">PRÓXIMAMENTE</span>
+                </div>
+            </section>
+        </div>
+
+        <!-- NOTICIAS (vacía por ahora) -->
+        <div id="view-noticias" class="view empty-view" style="display: none;">
+            <h2>NOTICIAS</h2>
+            <p>Próximamente</p>
+        </div>
+
+        <!-- CATÁLOGO (vacío por ahora) -->
+        <div id="view-catalogo" class="view empty-view" style="display: none;">
+            <h2>CATÁLOGO</h2>
+            <p>Próximamente</p>
+        </div>
     </div>
 
     <!-- MODAL DE PERFIL DE USUARIO -->
@@ -175,6 +253,7 @@
                 <ul>
                     <li class="active" data-section="paths" onclick="seleccionarSeccionConfig('paths')">📁 Rutas y Emuladores</li>
                     <li data-section="ra" onclick="seleccionarSeccionConfig('ra')">🏆 RetroAchievements</li>
+                    <li data-section="privacy" onclick="seleccionarSeccionConfig('privacy')">🔒 Privacidad</li>
                     <li data-section="info" onclick="seleccionarSeccionConfig('info')">ℹ️ Información</li>
                 </ul>
                 <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesión</button>
@@ -185,6 +264,14 @@
 
                 <section id="settings-paths" class="settings-section">
                     <h2>Rutas y Emuladores</h2>
+                    <div class="scan-box">
+                        <div>
+                            <strong>Escanear ROMs</strong>
+                            <p class="settings-help">Busca juegos nuevos en las carpetas de ROMs y descarga sus carátulas.</p>
+                        </div>
+                        <button id="btn-scan" class="btn-primary-sm" onclick="escanearRoms()">🔍 Escanear ROMs</button>
+                    </div>
+                    <p id="scan-status-config" class="settings-msg"></p>
                     <div id="paths-content"></div>
                 </section>
 
@@ -201,6 +288,21 @@
                     </div>
                     <p id="ra-status" class="settings-msg"></p>
                     <p class="settings-help">Los logros se desbloquean desde el emulador: cada emulador (RetroArch, DuckStation, etc.) debe tener iniciada tu sesión de RetroAchievements. El launcher solo muestra tu progreso.</p>
+                </section>
+
+                <section id="settings-privacy" class="settings-section" style="display: none;">
+                    <h2>Privacidad</h2>
+                    <label class="toggle-row">
+                        <input type="checkbox" id="privacy-share" onchange="guardarCompartirActividad()">
+                        Mostrar a mis amigos a qué juego estoy jugando
+                    </label>
+                    <p class="settings-help">Solo lo ven tus amigos aceptados. Se borra al cerrar el emulador (o solo, pasadas unas horas). Si lo desactivás, nadie ve tu actividad.</p>
+
+                    <label class="toggle-row">
+                        <input type="checkbox" id="privacy-history" onchange="guardarCompartirHistorial()">
+                        Compartir mi historial de juegos con mis amigos
+                    </label>
+                    <p class="settings-help">Permite que tus amigos vean qué juegos jugaste (y cuántas veces) y qué juegos tienen en común con vos. Si lo desactivás, se borra el historial que ya habías publicado y no se vuelve a publicar nada.</p>
                 </section>
 
                 <section id="settings-info" class="settings-section" style="display: none;">
