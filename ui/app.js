@@ -107,6 +107,7 @@ async function cargarPerfilUsuario() {
 
 function abrirPerfil() {
     document.getElementById('profile-modal').style.display = 'flex';
+    cargarMiActividad();
 }
 
 function cerrarPerfil() {
@@ -901,8 +902,12 @@ function mostrarVista(nombre) {
         b.classList.toggle('active', b.dataset.view === nombre);
     });
 
-    if (nombre === 'social') abrirSocial();
-    else detenerSocial();
+    if (nombre === 'social') {
+        abrirSocial();
+    } else {
+        detenerSocial();
+        detenerChat();
+    }
 }
 
 // ============================================================================
@@ -910,7 +915,6 @@ function mostrarVista(nombre) {
 // ============================================================================
 
 const SECCIONES_PRONTO = {
-    chat:           { icono: '💬', titulo: 'Chat',          texto: 'Mensajes directos con tus amigos.' },
     publicaciones:  { icono: '📰', titulo: 'Publicaciones', texto: 'Mirá lo que publican tus amigos y compartí tus propias capturas y opiniones.' },
     foros:          { icono: '🗨️', titulo: 'Foros',         texto: 'Foros por juego y por consola para preguntar, recomendar y debatir.' },
     llamadas:       { icono: '📞', titulo: 'Llamadas',      texto: 'Llamadas de voz con tus amigos.' },
@@ -938,20 +942,23 @@ function detenerSocial() {
 
 function seleccionarSeccionSocial(nombre) {
     socialSeccion = nombre;
+    if (nombre !== 'chat') detenerChat();
+    document.querySelector('.social-content').classList.toggle('chat-vista', nombre === 'chat');
     perfilAjenoId = null;
     document.getElementById('social-perfil').style.display = 'none';
     document.querySelectorAll('.social-nav li').forEach(li => {
         li.classList.toggle('active', li.dataset.social === nombre);
     });
 
-    const reales = { amigos: 'social-amigos', deseados: 'social-deseados' };
+    const reales = { amigos: 'social-amigos', deseados: 'social-deseados', chat: 'social-chat' };
     Object.values(reales).forEach(id => document.getElementById(id).style.display = 'none');
     document.getElementById('social-pronto').style.display = 'none';
 
     if (reales[nombre]) {
         document.getElementById(reales[nombre]).style.display = 'block';
         if (nombre === 'amigos') cargarSocial();
-        else abrirDeseados();
+        else if (nombre === 'deseados') abrirDeseados();
+        else if (nombre === 'chat') abrirChat();
     } else {
         const info = SECCIONES_PRONTO[nombre];
         document.getElementById('social-pronto').style.display = 'block';
@@ -1068,6 +1075,7 @@ async function cargarSocial() {
     res.amigos.forEach(u => {
         const jugando = u.jugando ? `🎮 Jugando a ${u.jugando.titulo}` + (u.jugando.consola ? ` · ${u.jugando.consola}` : '') : '';
         cont.appendChild(filaUsuario(u, jugando, !!u.jugando, [
+            boton('💬 Mensaje', 'btn-primary-sm', () => irAlChat(u.user_id)),
             boton('Quitar', 'btn-secondary-sm', () => quitarAmistad(u.friendship_id, u.username)),
         ]));
     });
@@ -1269,6 +1277,7 @@ async function cargarPerfilAjeno() {
             boton('Rechazar', 'btn-secondary-sm', () => responderSolicitud(res.friendship_id, false))
         );
     } else if (res.relacion === 'amigos') {
+        acciones.appendChild(boton('💬 Enviar mensaje', 'btn-primary-sm', () => irAlChat(p.user_id)));
         acciones.appendChild(boton('Quitar de amigos', 'btn-secondary-sm', () => quitarAmistad(res.friendship_id, p.username)));
     }
 }
@@ -1279,8 +1288,14 @@ async function cargarPerfilAjeno() {
 
 let insigniaTimer = null;
 
-function pintarInsignias(n) {
-    ['nav-social-badge', 'social-amigos-badge'].forEach(id => {
+const insignias = { solicitudes: 0, mensajes: 0 };
+
+function pintarInsignias(solicitudes, mensajes) {
+    if (solicitudes !== undefined) insignias.solicitudes = solicitudes;
+    if (mensajes !== undefined) insignias.mensajes = mensajes;
+    const total = insignias.solicitudes + insignias.mensajes;
+    [['nav-social-badge', total], ['social-amigos-badge', insignias.solicitudes],
+     ['social-chat-badge', insignias.mensajes]].forEach(([id, n]) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.textContent = n;
@@ -1291,20 +1306,20 @@ function pintarInsignias(n) {
 async function actualizarInsignias() {
     try {
         const r = await window.pywebview.api.obtener_resumen_social();
-        if (r && r.exito) pintarInsignias(r.solicitudes);
+        if (r && r.exito) pintarInsignias(r.solicitudes, r.mensajes);
     } catch (e) { /* sin conexión: se deja como estaba */ }
 }
 
 function iniciarInsignias() {
     detenerInsignias();
     actualizarInsignias();
-    insigniaTimer = setInterval(actualizarInsignias, 60000);
+    insigniaTimer = setInterval(actualizarInsignias, 20000);
 }
 
 function detenerInsignias() {
     if (insigniaTimer) clearInterval(insigniaTimer);
     insigniaTimer = null;
-    pintarInsignias(0);
+    pintarInsignias(0, 0);
 }
 
 // ============================================================================
@@ -1321,11 +1336,11 @@ function reiniciarEstadoUI() {
     perfilAjenoId = null;
     socialSeccion = 'amigos';
     clearTimeout(busquedaTimer);
-    pintarInsignias(0);
+    pintarInsignias(0, 0);
 
     // Campos de texto
     ['login-email', 'login-pass', 'reg-username', 'reg-email', 'reg-pass', 'search-input', 'friend-search',
-     'opinion-text', 'profile-bio', 'ra-user', 'ra-key', 'code-input', 'wish-titulo', 'wish-consola'].forEach(id => {
+     'opinion-text', 'profile-bio', 'ra-user', 'ra-key', 'code-input', 'wish-titulo', 'wish-consola', 'chat-texto'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
@@ -1337,7 +1352,7 @@ function reiniciarEstadoUI() {
     // Textos y listas que dependen de la cuenta
     ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
      'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun', 'pa-deseados',
-     'wish-list', 'wish-sugerencias', 'friends-opiniones'].forEach(id => {
+     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });
@@ -1366,6 +1381,8 @@ function reiniciarEstadoUI() {
     document.querySelectorAll('.social-nav li').forEach(li => li.classList.toggle('active', li.dataset.social === 'amigos'));
     document.querySelectorAll('.settings-section').forEach(s => s.style.display = (s.id === 'settings-paths') ? 'block' : 'none');
     document.querySelectorAll('.settings-nav li').forEach(li => li.classList.toggle('active', li.dataset.section === 'paths'));
+    document.getElementById('social-chat').style.display = 'none';
+    reiniciarChat();
     mostrarVista('biblioteca');
 }
 
@@ -1384,14 +1401,19 @@ function formatearFecha(iso) {
     return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function filaJuego(titulo, subtitulo) {
+function filaJuego(titulo, subtitulo, identificativo) {
     const fila = document.createElement('div');
     fila.className = 'game-row';
+    if (identificativo) fila.appendChild(crearMiniPortada(identificativo, titulo));
+
+    const info = document.createElement('div');
+    info.className = 'game-row-info';
     const t = document.createElement('strong');
     t.textContent = titulo;
-    const s = document.createElement('small');
-    s.textContent = subtitulo;
-    fila.append(t, s);
+    const sub = document.createElement('small');
+    sub.textContent = subtitulo;
+    info.append(t, sub);
+    fila.appendChild(info);
     return fila;
 }
 
@@ -1416,7 +1438,7 @@ function pintarJuegosPerfil(res) {
     }
     recientes.forEach(j => {
         const veces = `${j.veces} ${j.veces === 1 ? 'vez' : 'veces'}`;
-        jugados.appendChild(filaJuego(j.titulo, [j.consola, veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · ')));
+        jugados.appendChild(filaJuego(j.titulo, [j.consola, veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
     });
 
     const enComun = res.en_comun || [];
@@ -1427,14 +1449,14 @@ function pintarJuegosPerfil(res) {
         resumen.className = 'settings-help';
         resumen.textContent = `${enComun.length} ${enComun.length === 1 ? 'juego' : 'juegos'} en común`;
         comun.appendChild(resumen);
-        enComun.forEach(j => comun.appendChild(filaJuego(j.titulo, j.consola)));
+        enComun.forEach(j => comun.appendChild(filaJuego(j.titulo, j.consola, j.identificativo)));
     }
 
     const lista = res.deseados || [];
     if (lista.length === 0) {
         deseados.appendChild(mensajeVacio('No tiene juegos en su lista de deseados (o no la comparte).'));
     }
-    lista.forEach(d => deseados.appendChild(filaJuego(d.titulo, d.consola)));
+    lista.forEach(d => deseados.appendChild(filaJuego(d.titulo, d.consola, d.identificativo)));
 }
 
 function irAPerfilAmigo(userId) {
@@ -1469,7 +1491,7 @@ async function prepararConsolasDeseados() {
     const sel = document.getElementById('wish-consola');
     let consolas = [];
     try {
-        consolas = await window.pywebview.api.obtener_consolas();
+        consolas = await window.pywebview.api.obtener_consolas_catalogo();
     } catch (e) { /* queda solo el texto de ayuda */ }
 
     sel.innerHTML = '';
@@ -1522,7 +1544,9 @@ async function buscarTitulos() {
     lista.forEach(t => {
         const item = document.createElement('div');
         item.className = 'wish-sug';
-        item.textContent = t;
+        const nombre = document.createElement('span');
+        nombre.textContent = t;
+        item.append(crearMiniPortada(ident, t, true), nombre);
         item.onclick = () => agregarDeseado(t);
         cont.appendChild(item);
     });
@@ -1594,7 +1618,7 @@ async function cargarDeseados() {
         const s = document.createElement('small');
         s.textContent = [d.consola, 'agregado ' + formatearFecha(d.agregado_en)].filter(Boolean).join(' · ');
         info.append(t, s);
-        fila.append(info, boton('Quitar', 'btn-secondary-sm', () => quitarDeseado(d.clave)));
+        fila.append(crearMiniPortada(d.identificativo, d.titulo), info, boton('Quitar', 'btn-secondary-sm', () => quitarDeseado(d.clave)));
         cont.appendChild(fila);
     });
 }
@@ -1648,4 +1672,726 @@ function pintarOpinionesAmigos(el, opiniones) {
         }
         el.appendChild(item);
     });
+}
+
+// ============================================================================
+// CARÁTULAS PEQUEÑAS (juegos que no están en tu biblioteca)
+// ============================================================================
+
+const cachePortadas = new Map();   // "psx|Silent Hill" -> promesa con {url, path} o null
+const colaPortadas = [];
+let portadasActivas = 0;
+
+function procesarColaPortadas() {
+    while (portadasActivas < 3 && colaPortadas.length > 0) {
+        const tarea = colaPortadas.shift();
+        portadasActivas++;
+        window.pywebview.api.obtener_portada_juego(tarea.ident, tarea.titulo)
+            .then(r => tarea.resolver(r && r.url ? r : null))
+            .catch(() => tarea.resolver(null))
+            .finally(() => { portadasActivas--; procesarColaPortadas(); });
+    }
+}
+
+function solicitarPortada(ident, titulo) {
+    const clave = ident + '|' + titulo;
+    if (cachePortadas.has(clave)) return cachePortadas.get(clave);
+    const promesa = new Promise(resolver => {
+        colaPortadas.push({ ident, titulo, resolver });
+        procesarColaPortadas();
+    });
+    cachePortadas.set(clave, promesa);
+    // Si no hubo carátula (por ejemplo sin conexión) se vuelve a intentar más tarde
+    promesa.then(r => { if (!r) setTimeout(() => cachePortadas.delete(clave), 60000); });
+    return promesa;
+}
+
+function crearMiniPortada(identificativo, titulo, chica) {
+    const caja = document.createElement('div');
+    caja.className = 'mini-cover' + (chica ? ' mini-cover-sm' : '');
+    caja.textContent = '🎮';
+    if (!identificativo) return caja;
+
+    solicitarPortada(identificativo, titulo).then(info => {
+        if (!info) return;
+        const img = document.createElement('img');
+        img.alt = '';
+        let reintentado = false;
+        img.onerror = async () => {
+            if (!reintentado && info.path) {
+                reintentado = true;
+                try {
+                    const dataUri = await window.pywebview.api.obtener_portada_data_uri(info.path);
+                    if (dataUri) { img.src = dataUri; return; }
+                } catch (e) { /* queda el emoji */ }
+            }
+            img.remove();
+            caja.textContent = '🎮';
+        };
+        img.src = info.url;
+        caja.textContent = '';
+        caja.appendChild(img);
+    });
+    return caja;
+}
+
+// ============================================================================
+// MI PERFIL: juegos jugados y deseados
+// ============================================================================
+
+async function cargarMiActividad() {
+    const recientes = document.getElementById('mi-recientes');
+    const deseados = document.getElementById('mi-deseados');
+    if (!recientes.children.length) recientes.appendChild(mensajeVacio('Cargando…'));
+    if (!deseados.children.length) deseados.appendChild(mensajeVacio('Cargando…'));
+
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_mi_actividad();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    recientes.innerHTML = '';
+    deseados.innerHTML = '';
+    if (!res || !res.exito) {
+        recientes.appendChild(mensajeVacio((res && res.error) || 'No se pudo cargar.'));
+        return;
+    }
+
+    if (res.recientes.length === 0) {
+        recientes.appendChild(mensajeVacio('Todavía no jugaste nada desde el launcher.'));
+    }
+    res.recientes.forEach(j => {
+        const veces = `${j.veces} ${j.veces === 1 ? 'vez' : 'veces'}`;
+        recientes.appendChild(filaJuego(j.titulo, [j.consola, veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
+    });
+
+    if (res.deseados.length === 0) {
+        deseados.appendChild(mensajeVacio('Tu lista está vacía. Podés agregar juegos en Social → Deseados.'));
+    }
+    res.deseados.forEach(d => deseados.appendChild(filaJuego(d.titulo, d.consola, d.identificativo)));
+}
+
+// ============================================================================
+// CHAT
+// ============================================================================
+
+let chatAmigo = null;               // conversación abierta
+let chatConversaciones = [];
+let chatMensajes = [];              // mensajes de la conversación abierta, en orden
+let chatIds = new Set();
+let chatPendientes = new Set();     // mis mensajes que el otro todavía no vio
+let chatUltimoId = 0;
+let chatHayMas = false;
+let chatTimer = null;
+let chatListaTimer = null;
+let chatOcupado = false;
+
+function abrirChat() {
+    detenerChat();
+    cargarConversaciones();
+    if (chatAmigo) abrirConversacion(chatAmigo.user_id);   // se refresca lo que quedó abierto
+    chatTimer = setInterval(sincronizarChat, 4000);
+    chatListaTimer = setInterval(cargarConversaciones, 10000);
+}
+
+function detenerChat() {
+    if (chatTimer) clearInterval(chatTimer);
+    if (chatListaTimer) clearInterval(chatListaTimer);
+    chatTimer = null;
+    chatListaTimer = null;
+}
+
+function reiniciarChat() {
+    detenerChat();
+    chatAmigo = null;
+    chatConversaciones = [];
+    chatMensajes = [];
+    chatIds = new Set();
+    chatPendientes = new Set();
+    chatUltimoId = 0;
+    chatHayMas = false;
+    chatOcupado = false;
+    imagenesChat.clear();
+    imagenesChatPendientes.clear();
+    imagenesChatFallidas.clear();
+    ['imagen-modal', 'sticker-modal', 'visor-modal', 'sticker-tray'].forEach(id => document.getElementById(id).style.display = 'none');
+    document.getElementById('chat-activo').style.display = 'none';
+    document.getElementById('chat-vacio').style.display = '';
+    document.getElementById('chat-error').textContent = '';
+    document.querySelector('.social-content').classList.remove('chat-vista');
+}
+
+function etiquetaDia(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const hoy = new Date();
+    const dias = Math.round((new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()) -
+                             new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+    if (dias === 0) return 'Hoy';
+    if (dias === 1) return 'Ayer';
+    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function horaDe(iso) {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function cargarConversaciones() {
+    const cont = document.getElementById('chat-list');
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_conversaciones();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) {
+        if (!cont.children.length) {
+            cont.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar las conversaciones.'));
+        }
+        return;
+    }
+
+    chatConversaciones = res.conversaciones || [];
+    pintarInsignias(undefined, chatConversaciones.reduce((n, c) => n + c.no_leidos, 0));
+
+    cont.innerHTML = '';
+    if (chatConversaciones.length === 0) {
+        cont.appendChild(mensajeVacio('Todavía no tenés amigos con quienes chatear. Agregalos en la sección Amigos.'));
+        return;
+    }
+    chatConversaciones.forEach(c => {
+        const item = document.createElement('div');
+        item.className = 'chat-item' + (chatAmigo && chatAmigo.user_id === c.user_id ? ' active' : '');
+        item.onclick = () => abrirConversacion(c.user_id);
+
+        const img = document.createElement('img');
+        img.src = avatarDe(c);
+        img.alt = '';
+        img.onerror = () => { img.style.visibility = 'hidden'; };
+
+        const info = document.createElement('div');
+        info.className = 'chat-item-info';
+        const nombre = document.createElement('strong');
+        nombre.textContent = c.username + (c.jugando ? ' 🎮' : '');
+        const previo = document.createElement('small');
+        previo.textContent = c.ultimo ? (c.ultimo.mio ? 'Tú: ' : '') + c.ultimo.texto : 'Sin mensajes todavía';
+        info.append(nombre, previo);
+
+        const meta = document.createElement('div');
+        meta.className = 'chat-item-meta';
+        if (c.ultimo) {
+            const hora = document.createElement('small');
+            hora.textContent = etiquetaDia(c.ultimo.creado_en) === 'Hoy' ? horaDe(c.ultimo.creado_en) : etiquetaDia(c.ultimo.creado_en);
+            meta.appendChild(hora);
+        }
+        if (c.no_leidos > 0) {
+            const b = document.createElement('span');
+            b.className = 'count-badge';
+            b.textContent = c.no_leidos;
+            meta.appendChild(b);
+        }
+        item.append(img, info, meta);
+        cont.appendChild(item);
+    });
+}
+
+function registrarMensaje(m) {
+    if (chatIds.has(m.id)) return false;
+    chatIds.add(m.id);
+    chatMensajes.push(m);
+    chatMensajes.sort((a, b) => a.id - b.id);
+    if (m.id > chatUltimoId) chatUltimoId = m.id;
+    if (m.mio && !m.leido) chatPendientes.add(m.id);
+    return true;
+}
+
+function crearBurbuja(m) {
+    const fila = document.createElement('div');
+    fila.className = 'msg ' + (m.mio ? 'msg-mio' : 'msg-otro');
+
+    const burbuja = document.createElement('div');
+    burbuja.className = 'msg-burbuja';
+    if (m.tipo === 'imagen' || m.tipo === 'sticker') {
+        burbuja.className = 'msg-burbuja msg-media' + (m.tipo === 'sticker' ? ' msg-sticker' : '');
+        const img = document.createElement('img');
+        img.alt = '';
+        img.className = m.tipo === 'sticker' ? 'chat-sticker' : 'chat-imagen';
+        img.onload = () => {
+            if (chatPegadoAbajo) {   // al cargar la imagen el hilo crece: se sigue pegado al final
+                const c = document.getElementById('chat-mensajes');
+                c.scrollTop = c.scrollHeight;
+            }
+        };
+        if (m.tipo === 'imagen') img.onclick = () => abrirVisor(img.src);
+        cargarImagenEn(img, m.contenido);
+        burbuja.appendChild(img);
+    } else {
+        burbuja.textContent = m.tipo === 'texto' ? m.contenido : '📎 Contenido que esta versión todavía no puede mostrar';
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    const hora = document.createElement('span');
+    hora.textContent = horaDe(m.creado_en);
+    meta.appendChild(hora);
+    if (m.mio) {
+        const estado = document.createElement('span');
+        estado.className = 'msg-estado' + (m.leido ? ' visto' : '');
+        estado.textContent = m.leido ? '✓✓ Visto' : '✓';
+        meta.appendChild(estado);
+    }
+    fila.append(burbuja, meta);
+    return fila;
+}
+
+// modo: 'fondo' baja al último mensaje; 'normal' respeta dónde estabas leyendo;
+// 'anteriores' mantiene la posición al agregar mensajes viejos arriba
+function renderizarChat(modo, alturaAntes) {
+    const cont = document.getElementById('chat-mensajes');
+    const distanciaAlFondo = cont.scrollHeight - cont.scrollTop - cont.clientHeight;
+    cont.innerHTML = '';
+
+    if (chatHayMas) {
+        cont.appendChild(boton('Cargar mensajes anteriores', 'btn-secondary-sm chat-mas', cargarAnteriores));
+    }
+    if (chatMensajes.length === 0) {
+        cont.appendChild(mensajeVacio('Todavía no hay mensajes. ¡Escribí el primero!'));
+    }
+    let dia = '';
+    chatMensajes.forEach(m => {
+        const etiqueta = etiquetaDia(m.creado_en);
+        if (etiqueta !== dia) {
+            const sep = document.createElement('div');
+            sep.className = 'msg-dia';
+            sep.textContent = etiqueta;
+            cont.appendChild(sep);
+            dia = etiqueta;
+        }
+        cont.appendChild(crearBurbuja(m));
+    });
+
+    chatPegadoAbajo = (modo === 'fondo' || distanciaAlFondo < 80);
+    if (modo === 'fondo' || distanciaAlFondo < 80) cont.scrollTop = cont.scrollHeight;
+    else if (modo === 'anteriores') cont.scrollTop = cont.scrollHeight - alturaAntes;
+}
+
+async function abrirConversacion(amigoId) {
+    const conv = chatConversaciones.find(c => c.user_id === amigoId) || chatAmigo;
+    if (!conv || conv.user_id !== amigoId) return;
+    chatAmigo = conv;
+
+    document.getElementById('chat-vacio').style.display = 'none';
+    document.getElementById('chat-activo').style.display = 'flex';
+    document.getElementById('chat-error').textContent = '';
+    document.getElementById('sticker-tray').style.display = 'none';
+    document.getElementById('chat-nombre').textContent = conv.username;
+    document.getElementById('chat-estado').textContent = conv.jugando ? `🎮 Jugando a ${conv.jugando.titulo}` : '';
+    const avatar = document.getElementById('chat-avatar');
+    avatar.src = avatarDe(conv);
+    document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
+
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_mensajes(amigoId, null);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!chatAmigo || chatAmigo.user_id !== amigoId) return;   // cambió de conversación mientras cargaba
+    if (!res || !res.exito) {
+        document.getElementById('chat-error').textContent = (res && res.error) || 'No se pudieron cargar los mensajes.';
+        return;
+    }
+
+    chatMensajes = [];
+    chatIds = new Set();
+    chatPendientes = new Set();
+    chatUltimoId = 0;
+    res.mensajes.forEach(registrarMensaje);
+    chatHayMas = !!res.hay_mas;
+    renderizarChat('fondo');
+    document.getElementById('chat-texto').focus();
+    cargarConversaciones();   // refresca "sin leer"
+}
+
+async function cargarAnteriores() {
+    if (!chatAmigo || chatMensajes.length === 0) return;
+    const id = chatAmigo.user_id;
+    const primero = chatMensajes[0].id;
+    const cont = document.getElementById('chat-mensajes');
+    const alturaAntes = cont.scrollHeight;
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_mensajes(id, primero);
+    } catch (e) {
+        return;
+    }
+    if (!chatAmigo || chatAmigo.user_id !== id || !res || !res.exito) return;
+    res.mensajes.forEach(registrarMensaje);
+    chatHayMas = !!res.hay_mas;
+    renderizarChat('anteriores', alturaAntes);
+}
+
+async function sincronizarChat() {
+    if (chatOcupado || !chatAmigo) return;
+    chatOcupado = true;
+    const id = chatAmigo.user_id;
+    try {
+        const res = await window.pywebview.api.sincronizar_chat(id, chatUltimoId, Array.from(chatPendientes));
+        if (!chatAmigo || chatAmigo.user_id !== id || !res || !res.exito) return;
+
+        let cambio = false, llegaron = false;
+        (res.nuevos || []).forEach(m => {
+            if (registrarMensaje(m)) { cambio = true; if (!m.mio) llegaron = true; }
+        });
+        (res.vistos || []).forEach(vid => {
+            chatPendientes.delete(vid);
+            const m = chatMensajes.find(x => x.id === vid);
+            if (m && !m.leido) { m.leido = true; cambio = true; }
+        });
+        if (cambio) renderizarChat('normal');
+        if (llegaron) cargarConversaciones();
+    } catch (e) {
+        /* sin conexión: se reintenta en la próxima vuelta */
+    } finally {
+        chatOcupado = false;
+    }
+}
+
+async function enviarMensaje() {
+    if (!chatAmigo) return;
+    const caja = document.getElementById('chat-texto');
+    const texto = caja.value.trim();
+    if (!texto) return;
+    const id = chatAmigo.user_id;
+    const btn = document.getElementById('chat-enviar');
+    const error = document.getElementById('chat-error');
+    btn.disabled = true;
+    error.textContent = '';
+
+    let res;
+    try {
+        res = await window.pywebview.api.enviar_mensaje(id, texto);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    btn.disabled = false;
+
+    if (res && res.exito) {
+        caja.value = '';
+        autoAjustarChat(caja);
+        if (chatAmigo && chatAmigo.user_id === id) {
+            registrarMensaje(res.mensaje);
+            renderizarChat('fondo');
+        }
+        cargarConversaciones();
+    } else {
+        error.textContent = (res && res.error) || 'No se pudo enviar el mensaje.';
+    }
+    caja.focus();
+}
+
+function teclaChat(ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+        ev.preventDefault();
+        enviarMensaje();
+    }
+}
+
+function autoAjustarChat(caja) {
+    caja.style.height = 'auto';
+    caja.style.height = Math.min(caja.scrollHeight, 100) + 'px';
+}
+
+function verPerfilDelChat() {
+    if (chatAmigo) irAPerfilAmigo(chatAmigo.user_id);
+}
+
+async function irAlChat(userId) {
+    mostrarVista('social');
+    seleccionarSeccionSocial('chat');
+    await cargarConversaciones();
+    abrirConversacion(userId);
+}
+
+// ============================================================================
+// CHAT: IMÁGENES Y STICKERS
+// ============================================================================
+
+const imagenesChat = new Map();             // ruta -> data URI ya descargado
+const imagenesChatPendientes = new Map();   // ruta -> promesa en curso
+const imagenesChatFallidas = new Map();     // ruta -> cuándo falló (no se insiste durante un minuto)
+const colaImagenesChat = [];
+let imagenesChatActivas = 0;
+let chatPegadoAbajo = true;
+let vistaStickerToken = 0;
+
+function alScrollChat() {
+    const c = document.getElementById('chat-mensajes');
+    chatPegadoAbajo = (c.scrollHeight - c.scrollTop - c.clientHeight) < 80;
+}
+
+function procesarColaImagenesChat() {
+    while (imagenesChatActivas < 3 && colaImagenesChat.length > 0) {
+        const tarea = colaImagenesChat.shift();
+        imagenesChatActivas++;
+        window.pywebview.api.obtener_imagen_chat(tarea.ruta)
+            .then(r => tarea.resolver(r || null))
+            .catch(() => tarea.resolver(null))
+            .finally(() => { imagenesChatActivas--; procesarColaImagenesChat(); });
+    }
+}
+
+function obtenerImagenChat(ruta) {
+    if (imagenesChat.has(ruta)) return Promise.resolve(imagenesChat.get(ruta));
+    if (imagenesChatPendientes.has(ruta)) return imagenesChatPendientes.get(ruta);
+    if (Date.now() - (imagenesChatFallidas.get(ruta) || 0) < 60000) return Promise.resolve(null);
+    const promesa = new Promise(resolver => {
+        colaImagenesChat.push({ ruta, resolver });
+        procesarColaImagenesChat();
+    });
+    imagenesChatPendientes.set(ruta, promesa);
+    promesa.then(uri => {
+        imagenesChatPendientes.delete(ruta);
+        if (uri) imagenesChat.set(ruta, uri);
+        else imagenesChatFallidas.set(ruta, Date.now());
+    });
+    return promesa;
+}
+
+function cargarImagenEn(img, ruta) {
+    if (imagenesChat.has(ruta)) {          // ya la tenemos: sin parpadeo al redibujar el hilo
+        img.src = imagenesChat.get(ruta);
+        return;
+    }
+    obtenerImagenChat(ruta).then(uri => {
+        if (uri) {
+            img.src = uri;
+        } else {
+            img.classList.add('rota');
+            img.alt = '⚠️ No se pudo cargar la imagen';
+        }
+    });
+}
+
+function mostrarErrorChat(res) {
+    if (res && res.error && res.error !== 'cancelado') {
+        document.getElementById('chat-error').textContent = res.error;
+    }
+}
+
+function abrirVisor(src) {
+    if (!src) return;
+    document.getElementById('visor-img').src = src;
+    document.getElementById('visor-modal').style.display = 'flex';
+}
+
+function cerrarVisor() {
+    document.getElementById('visor-modal').style.display = 'none';
+}
+
+// --- Enviar una imagen ---
+
+async function elegirImagenChat() {
+    if (!chatAmigo) return;
+    document.getElementById('chat-error').textContent = '';
+    let res;
+    try {
+        res = await window.pywebview.api.seleccionar_imagen();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) { mostrarErrorChat(res); return; }
+
+    document.getElementById('imagen-vista').src = res.vista;
+    document.getElementById('imagen-nombre').textContent = res.nombre;
+    document.getElementById('imagen-msg').textContent = '';
+    document.getElementById('imagen-enviar').disabled = false;
+    document.getElementById('imagen-modal').style.display = 'flex';
+}
+
+function cerrarImagenModal() {
+    document.getElementById('imagen-modal').style.display = 'none';
+    window.pywebview.api.descartar_imagen();
+}
+
+async function confirmarEnvioImagen() {
+    if (!chatAmigo) return;
+    const id = chatAmigo.user_id;
+    const btn = document.getElementById('imagen-enviar');
+    const msg = document.getElementById('imagen-msg');
+    btn.disabled = true;
+    msg.textContent = 'Enviando…';
+
+    let res;
+    try {
+        res = await window.pywebview.api.enviar_imagen(id);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    btn.disabled = false;
+    if (!res || !res.exito) {
+        msg.textContent = (res && res.error) || 'No se pudo enviar la imagen.';
+        return;
+    }
+    document.getElementById('imagen-modal').style.display = 'none';
+    if (chatAmigo && chatAmigo.user_id === id) {
+        registrarMensaje(res.mensaje);
+        renderizarChat('fondo');
+    }
+    cargarConversaciones();
+}
+
+// --- Stickers ---
+
+function convertirImagenEnSticker() {
+    document.getElementById('imagen-modal').style.display = 'none';   // la imagen elegida se conserva
+    abrirEditorSticker();
+}
+
+async function crearStickerNuevo() {
+    let res;
+    try {
+        res = await window.pywebview.api.seleccionar_imagen();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) { mostrarErrorChat(res); return; }
+    abrirEditorSticker();
+}
+
+function abrirEditorSticker() {
+    document.getElementById('sticker-msg').textContent = '';
+    document.getElementById('sticker-vista').removeAttribute('src');
+    document.getElementById('sticker-modal').style.display = 'flex';
+    actualizarVistaSticker();
+}
+
+function cerrarStickerModal() {
+    document.getElementById('sticker-modal').style.display = 'none';
+    window.pywebview.api.descartar_imagen();
+}
+
+function opcionesSticker() {
+    return [document.getElementById('sticker-forma').value,
+            document.getElementById('sticker-ajuste').value,
+            document.getElementById('sticker-contorno').checked];
+}
+
+async function actualizarVistaSticker() {
+    const token = ++vistaStickerToken;
+    const msg = document.getElementById('sticker-msg');
+    let res;
+    try {
+        res = await window.pywebview.api.previsualizar_sticker(...opcionesSticker());
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (token !== vistaStickerToken) return;   // cambió una opción mientras se generaba
+    if (res && res.exito) {
+        msg.textContent = '';
+        document.getElementById('sticker-vista').src = res.vista;
+    } else {
+        msg.textContent = (res && res.error) || 'No se pudo generar la vista previa.';
+    }
+}
+
+async function guardarSticker(enviar) {
+    const msg = document.getElementById('sticker-msg');
+    const botones = [document.getElementById('sticker-guardar'), document.getElementById('sticker-guardar-enviar')];
+    botones.forEach(b => b.disabled = true);
+    msg.textContent = 'Guardando…';
+
+    let res;
+    try {
+        res = await window.pywebview.api.crear_sticker(...opcionesSticker());
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    botones.forEach(b => b.disabled = false);
+    if (!res || !res.exito) {
+        msg.textContent = (res && res.error) || 'No se pudo guardar el sticker.';
+        return;
+    }
+
+    cerrarStickerModal();
+    if (document.getElementById('sticker-tray').style.display !== 'none') cargarStickers();
+    if (enviar && chatAmigo) enviarStickerChat(res.sticker.ruta);
+}
+
+async function alternarStickers() {
+    const bandeja = document.getElementById('sticker-tray');
+    const abrir = bandeja.style.display === 'none';
+    bandeja.style.display = abrir ? 'block' : 'none';
+    if (abrir) await cargarStickers();
+}
+
+async function cargarStickers() {
+    const grilla = document.getElementById('sticker-grid');
+    if (!grilla.children.length) grilla.appendChild(mensajeVacio('Cargando…'));
+
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_stickers();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    grilla.innerHTML = '';
+    if (!res || !res.exito) {
+        grilla.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar tus stickers.'));
+        return;
+    }
+    res.stickers = res.stickers || [];
+    if (res.stickers.length === 0) {
+        grilla.appendChild(mensajeVacio('Todavía no tenés stickers. Tocá "＋ Crear sticker" para hacer el primero con una de tus imágenes.'));
+        return;
+    }
+    res.stickers.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'sticker-item';
+        item.title = 'Enviar';
+        item.onclick = () => enviarStickerChat(s.ruta);
+
+        const img = document.createElement('img');
+        img.alt = '';
+        cargarImagenEn(img, s.ruta);
+
+        const x = document.createElement('button');
+        x.className = 'sticker-borrar';
+        x.textContent = '✕';
+        x.title = 'Quitar de mi colección';
+        x.onclick = ev => { ev.stopPropagation(); quitarStickerPropio(s.id); };
+
+        item.append(img, x);
+        grilla.appendChild(item);
+    });
+}
+
+async function quitarStickerPropio(id) {
+    if (!confirm('¿Quitar este sticker de tu colección? Los que ya enviaste se siguen viendo.')) return;
+    await window.pywebview.api.eliminar_sticker(id);
+    cargarStickers();
+}
+
+async function enviarStickerChat(ruta) {
+    if (!chatAmigo) return;
+    const id = chatAmigo.user_id;
+    document.getElementById('sticker-tray').style.display = 'none';
+
+    let res;
+    try {
+        res = await window.pywebview.api.enviar_sticker(id, ruta);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) {
+        document.getElementById('chat-error').textContent = (res && res.error) || 'No se pudo enviar el sticker.';
+        return;
+    }
+    if (chatAmigo && chatAmigo.user_id === id) {
+        registrarMensaje(res.mensaje);
+        renderizarChat('fondo');
+    }
+    cargarConversaciones();
 }

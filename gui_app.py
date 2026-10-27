@@ -10,6 +10,7 @@ import boxart
 import db_local
 import ra_client
 import contexto
+import imagenes
 import webbrowser
 from urllib.parse import urlparse
 
@@ -26,6 +27,7 @@ class API:
         self.cloud = CloudClient()
         self.window = None
         self._juegos_activos = 0          # emuladores abiertos desde el launcher
+        self._imagen_elegida = ""         # archivo que elegiste para enviar o convertir en sticker
         self._lock_juegos = threading.Lock()
 
     def set_window(self, window):
@@ -150,8 +152,90 @@ class API:
         return self.cloud.obtener_social()
 
     def obtener_resumen_social(self):
-        """Datos livianos para la insignia de la pestaña SOCIAL."""
-        return self.cloud.contar_solicitudes()
+        """Datos livianos para las insignias: solicitudes pendientes y mensajes sin leer."""
+        return self.cloud.resumen_social()
+
+    # --- CHAT ---
+
+    def obtener_conversaciones(self):
+        return self.cloud.obtener_conversaciones()
+
+    def obtener_mensajes(self, amigo_id, antes_id=None):
+        return self.cloud.obtener_mensajes(amigo_id, antes_id)
+
+    def sincronizar_chat(self, amigo_id, ultimo_id, ids_pendientes):
+        return self.cloud.sincronizar_chat(amigo_id, ultimo_id, ids_pendientes or [])
+
+    def enviar_mensaje(self, amigo_id, texto):
+        return self.cloud.enviar_mensaje(amigo_id, texto)
+
+    # --- CHAT: IMÁGENES Y STICKERS ---
+
+    def seleccionar_imagen(self):
+        """Abre el selector de archivos. Queda guardada la ruta elegida (Python no acepta rutas desde la página)."""
+        if not self.window:
+            return {"exito": False, "error": "Ventana no inicializada."}
+        if not imagenes.disponible():
+            return {"exito": False, "error": "Falta instalar Pillow: ejecutá  pip install pillow  y reiniciá el launcher."}
+        resultado = self.window.create_file_dialog(
+            FileDialog.OPEN, allow_multiple=False,
+            file_types=('Imágenes (*.png;*.jpg;*.jpeg;*.webp;*.bmp)', 'Todos los archivos (*.*)'))
+        if not resultado:
+            return {"exito": False, "error": "cancelado"}
+        ruta = resultado[0]
+        try:
+            vista = imagenes.miniatura_data_uri(ruta)
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        self._imagen_elegida = ruta
+        return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
+
+    def descartar_imagen(self):
+        self._imagen_elegida = ""
+        return {"exito": True}
+
+    def enviar_imagen(self, amigo_id):
+        if not self._imagen_elegida:
+            return {"exito": False, "error": "Primero elegí una imagen."}
+        try:
+            datos, mime, extension = imagenes.preparar_para_chat(self._imagen_elegida)
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        resultado = self.cloud.enviar_imagen(amigo_id, datos, mime, extension)
+        if resultado.get("exito"):
+            self._imagen_elegida = ""
+        return resultado
+
+    def previsualizar_sticker(self, forma, ajuste, contorno):
+        if not self._imagen_elegida:
+            return {"exito": False, "error": "Primero elegí una imagen."}
+        try:
+            return {"exito": True, "vista": imagenes.vista_sticker(self._imagen_elegida, forma, ajuste, contorno)}
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+
+    def crear_sticker(self, forma, ajuste, contorno):
+        if not self._imagen_elegida:
+            return {"exito": False, "error": "Primero elegí una imagen."}
+        try:
+            datos, mime, extension = imagenes.crear_sticker(self._imagen_elegida, forma, ajuste, contorno)
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        return self.cloud.guardar_sticker(datos, mime, extension)
+
+    def obtener_stickers(self):
+        return self.cloud.obtener_stickers()
+
+    def eliminar_sticker(self, sticker_id):
+        return self.cloud.eliminar_sticker(sticker_id)
+
+    def enviar_sticker(self, amigo_id, ruta):
+        return self.cloud.enviar_sticker(amigo_id, ruta)
+
+    def obtener_imagen_chat(self, ruta):
+        """Imagen o sticker de un mensaje, listo para mostrar (data URI), o None."""
+        datos = self.cloud.descargar_imagen_chat(ruta)
+        return imagenes.a_data_uri(datos) or None if datos else None
 
     def buscar_usuarios(self, texto):
         return self.cloud.buscar_usuarios(texto)
@@ -179,9 +263,36 @@ class API:
         return self.cloud.obtener_mis_deseados()
 
     def agregar_deseado(self, identificativo, titulo):
+        """Solo se aceptan juegos que existan en el catálogo de la consola; se guarda con su nombre oficial."""
         nombre = db_local.obtener_nombre_consola(identificativo)
+        if not (titulo or "").strip():
+            return {"exito": False, "error": "Escribí el nombre del juego y elegí uno de los sugeridos."}
+        oficial, motivo = boxart.validar_titulo(identificativo, nombre, titulo)
+        if not oficial:
+            mensajes = {
+                "no_existe": f'No encontramos "{(titulo or "").strip()}" en el catálogo de {nombre}. '
+                             'Elegí uno de los juegos sugeridos.',
+                "sin_conexion": "No se pudo consultar el catálogo (sin conexión). Probá de nuevo en un momento.",
+                "sin_catalogo": "Todavía no hay catálogo de juegos para esta consola.",
+            }
+            return {"exito": False, "error": mensajes.get(motivo, "No se pudo verificar el juego.")}
         publica = db_local.obtener_config_usuario("compartir_deseados", "1") == "1"
-        return self.cloud.agregar_deseado(identificativo, titulo, nombre, publica)
+        return self.cloud.agregar_deseado(identificativo, oficial, nombre, publica)
+
+    def obtener_consolas_catalogo(self):
+        """Solo las consolas que tienen catálogo de juegos (para elegir en la lista de deseados)."""
+        con_catalogo = boxart.consolas_con_catalogo()
+        return [c for c in self.db.obtener_consolas() if c["identificativo"] in con_catalogo]
+
+    def obtener_portada_juego(self, identificativo, titulo):
+        """Carátula de un juego por título (también para juegos que no tenés)."""
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        ruta = boxart.portada_de_juego(identificativo, nombre, titulo)
+        url = boxart.ruta_a_uri(ruta) if ruta else ""
+        return {"url": url, "path": ruta} if url else None
+
+    def obtener_mi_actividad(self):
+        return self.cloud.obtener_mi_actividad()
 
     def quitar_deseado(self, clave):
         return self.cloud.quitar_deseado(clave)

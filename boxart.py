@@ -433,7 +433,35 @@ analizar_titulo = _analizar
 firma_numerica = _firma_numerica
 
 
-def buscar_titulos(identificativo, nombre_consola, texto, limite=8):
+_fallos_indice = {}   # sistema -> momento del último intento fallido (evita reintentar sin parar sin red)
+
+
+def _indice_para_ui(sistema):
+    """Índice del sistema para las pantallas (sugerencias, validación, carátulas).
+    Si falló hace poco no se reintenta en seguida; pasado un minuto sí."""
+    with _lock_indices:
+        if _indices.get(sistema, 1) is None:
+            if time.time() - _fallos_indice.get(sistema, 0) < 60:
+                return None
+            del _indices[sistema]
+    indice = obtener_indice(sistema)
+    if indice is None:
+        _fallos_indice[sistema] = time.time()
+    return indice
+
+
+def _titulo_limpio(nombre):
+    """Nombre de archivo de Libretro -> título para mostrar (sin región/versión)."""
+    titulo = re.sub(r'\s*[\(\[][^\)\]]*[\)\]]', '', nombre).strip()
+    return re.sub(r'^(.+?), (The|A|An)\b(.*)$', r'\2 \1\3', titulo)   # "Legend, The" -> "The Legend"
+
+
+def consolas_con_catalogo():
+    """Identificativos de las consolas que tienen catálogo de juegos conocido."""
+    return set(SISTEMAS)
+
+
+def buscar_titulos(identificativo, nombre_consola, texto, limite=6):
     """Sugiere títulos de juegos de una consola a partir de lo que se escribe.
     Usa el mismo listado de Libretro que las carátulas (cacheado en disco)."""
     palabras = [p for p in _analizar(texto)[0].split() if p]
@@ -442,20 +470,60 @@ def buscar_titulos(identificativo, nombre_consola, texto, limite=8):
 
     resultados = {}
     for sistema in SISTEMAS.get(identificativo) or [nombre_consola]:
-        with _lock_indices:
-            if _indices.get(sistema, 1) is None:   # un intento fallido anterior (sin red) no se queda para siempre
-                del _indices[sistema]
-        indice = obtener_indice(sistema)
+        indice = _indice_para_ui(sistema)
         if not indice:
             continue
         for clave, opciones in indice.por_clave.items():
             if all(p in clave for p in palabras):
-                nombre = min(opciones, key=lambda o: (-_puntuar(set(), o[1]), len(o[0]), o[0]))[0]
-                titulo = re.sub(r'\s*[\(\[][^\)\]]*[\)\]]', '', nombre).strip()
-                titulo = re.sub(r'^(.+?), (The|A|An)\b(.*)$', r'\2 \1\3', titulo)   # "Legend, The" -> "The Legend"
-                resultados.setdefault(clave, titulo)
+                nombre = indice._mejor(opciones, set())
+                resultados.setdefault(clave, _titulo_limpio(nombre))
         if resultados:
             break
 
     orden = sorted(resultados.items(), key=lambda kv: (not kv[0].startswith(palabras[0]), len(kv[0]), kv[0]))
     return [titulo for _, titulo in orden[:limite]]
+
+
+def validar_titulo(identificativo, nombre_consola, texto):
+    """Comprueba que un juego exista en el catálogo de la consola.
+    Devuelve (titulo_oficial, motivo). Si existe, motivo es ''. Si no: 'sin_catalogo' (la consola
+    no tiene catálogo), 'sin_conexion' (no se pudo consultar) o 'no_existe'.
+    Solo acepta coincidencias exactas del título (sin región/mayúsculas/puntuación)."""
+    if identificativo not in SISTEMAS:
+        return None, "sin_catalogo"
+    clave, tags = _analizar(texto or "")
+    if not clave:
+        return None, "no_existe"
+    hubo_catalogo = False
+    for sistema in SISTEMAS[identificativo]:
+        indice = _indice_para_ui(sistema)
+        if not indice:
+            continue
+        hubo_catalogo = True
+        if clave in indice.por_clave:
+            return _titulo_limpio(indice._mejor(indice.por_clave[clave], tags)), ""
+    return None, ("no_existe" if hubo_catalogo else "sin_conexion")
+
+
+def portada_de_juego(identificativo, nombre_consola, titulo):
+    """Ruta local de la carátula de un juego por su título (se descarga a roms/boxarts si
+    hace falta). Sirve para juegos que no están en tu biblioteca (deseados, juegos de amigos).
+    Devuelve '' si no hay carátula o no se pudo conseguir."""
+    if not titulo:
+        return ""
+    tags_rom = _analizar(titulo)[1]
+    for sistema in SISTEMAS.get(identificativo) or [nombre_consola]:
+        indice = _indice_para_ui(sistema)
+        if not indice:
+            continue
+        hallado = indice.buscar([titulo], tags_rom)
+        if not hallado:
+            continue
+        try:
+            ruta = _bajar(identificativo, sistema, hallado)
+        except Exception as e:
+            print(f"[BOXART] No se pudo bajar la carátula de '{titulo}': {e}")
+            return ""
+        if ruta:
+            return ruta
+    return ""

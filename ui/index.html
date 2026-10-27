@@ -141,7 +141,7 @@
                 <ul>
                     <li class="active" data-social="amigos" onclick="seleccionarSeccionSocial('amigos')"><span>👥 Amigos</span><span id="social-amigos-badge" class="count-badge" style="display: none;"></span></li>
                     <li data-social="deseados" onclick="seleccionarSeccionSocial('deseados')">⭐ Deseados</li>
-                    <li data-social="chat" onclick="seleccionarSeccionSocial('chat')">💬 Chat <em>PRONTO</em></li>
+                    <li data-social="chat" onclick="seleccionarSeccionSocial('chat')"><span>💬 Chat</span><span id="social-chat-badge" class="count-badge" style="display: none;"></span></li>
                     <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')">📰 Publicaciones <em>PRONTO</em></li>
                     <li data-social="foros" onclick="seleccionarSeccionSocial('foros')">🗨️ Foros <em>PRONTO</em></li>
                     <li data-social="llamadas" onclick="seleccionarSeccionSocial('llamadas')">📞 Llamadas <em>PRONTO</em></li>
@@ -158,10 +158,48 @@
                     <div id="friend-lists"></div>
                 </div>
 
+                <!-- CHAT -->
+                <div id="social-chat" style="display: none;">
+                    <div class="chat-layout">
+                        <aside id="chat-list" class="chat-list"></aside>
+                        <section class="chat-window">
+                            <div id="chat-vacio" class="chat-empty">
+                                <div class="soon-icon">💬</div>
+                                <p>Elegí una conversación para empezar a chatear.</p>
+                            </div>
+                            <div id="chat-activo" class="chat-activo" style="display: none;">
+                                <header class="chat-header">
+                                    <img id="chat-avatar" alt="">
+                                    <div class="chat-header-info">
+                                        <strong id="chat-nombre"></strong>
+                                        <small id="chat-estado"></small>
+                                    </div>
+                                    <button class="btn-secondary-sm" onclick="verPerfilDelChat()">Ver perfil</button>
+                                </header>
+                                <div id="chat-mensajes" class="chat-mensajes" onscroll="alScrollChat()"></div>
+                                <p id="chat-error" class="chat-error"></p>
+                                <div id="sticker-tray" class="sticker-tray" style="display: none;">
+                                    <div class="sticker-tray-head">
+                                        <strong>Mis stickers</strong>
+                                        <button class="btn-secondary-sm" onclick="crearStickerNuevo()">＋ Crear sticker</button>
+                                    </div>
+                                    <div id="sticker-grid" class="sticker-grid"></div>
+                                </div>
+                                <div class="chat-composer">
+                                    <button class="chat-icono" title="Enviar una imagen" onclick="elegirImagenChat()">🖼️</button>
+                                    <button class="chat-icono" title="Stickers" onclick="alternarStickers()">😀</button>
+                                    <textarea id="chat-texto" rows="1" maxlength="1000" placeholder="Escribí un mensaje..." oninput="autoAjustarChat(this)" onkeydown="teclaChat(event)"></textarea>
+                                    <button id="chat-enviar" class="btn-primary-sm" onclick="enviarMensaje()">Enviar</button>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
                 <!-- MI LISTA DE DESEADOS -->
                 <div id="social-deseados" style="display: none;">
                     <h2>Mi lista de deseados</h2>
-                    <p class="settings-help">Juegos que querés jugar. Tus amigos pueden verla (lo controlás en Configuración → Privacidad) y, cuando un amigo tiene uno de esos juegos, lo ve en el detalle del juego. Más adelante vas a poder agregar juegos desde el Catálogo.</p>
+                    <p class="settings-help">Juegos que querés jugar. Tus amigos pueden verla (lo controlás en Configuración → Privacidad) y, cuando un amigo tiene uno de esos juegos, lo ve en el detalle del juego. Solo se pueden agregar juegos que existan en el catálogo de la consola: elegí uno de los sugeridos. Más adelante vas a poder agregar juegos desde el Catálogo.</p>
                     <div class="wish-add">
                         <select id="wish-consola" class="settings-input wish-consola" onchange="buscarTitulosConRetraso()"></select>
                         <div class="wish-title-wrap">
@@ -250,6 +288,15 @@
                 <h3>Biografía</h3>
                 <textarea id="profile-bio" placeholder="Escribí algo sobre vos..."></textarea>
                 <button class="btn-save-bio" onclick="guardarPerfil()">Guardar Cambios</button>
+
+                <div class="profile-section">
+                    <h3>🎮 Jugados recientemente</h3>
+                    <div id="mi-recientes"></div>
+                </div>
+                <div class="profile-section">
+                    <h3>⭐ Lista de deseados</h3>
+                    <div id="mi-deseados"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -268,6 +315,56 @@
                 <button class="btn-secondary-sm" onclick="omitirCodigo()">Ahora no</button>
             </div>
         </div>
+    </div>
+
+    <!-- MODAL: ENVIAR UNA IMAGEN -->
+    <div id="imagen-modal" class="modal" style="display: none;">
+        <div class="dialog-card">
+            <h2>Enviar imagen</h2>
+            <img id="imagen-vista" class="dialog-preview" alt="">
+            <p id="imagen-nombre" class="settings-help"></p>
+            <p id="imagen-msg" class="code-msg"></p>
+            <div class="code-actions">
+                <button id="imagen-enviar" class="btn-primary-sm" onclick="confirmarEnvioImagen()">Enviar</button>
+                <button class="btn-secondary-sm" onclick="convertirImagenEnSticker()">Crear sticker con esta imagen</button>
+                <button class="btn-secondary-sm" onclick="cerrarImagenModal()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CREAR UN STICKER -->
+    <div id="sticker-modal" class="modal" style="display: none;">
+        <div class="dialog-card">
+            <h2>Crear sticker</h2>
+            <div class="sticker-preview-wrap"><img id="sticker-vista" alt=""></div>
+            <div class="sticker-opciones">
+                <label>Forma
+                    <select id="sticker-forma" class="settings-input" onchange="actualizarVistaSticker()">
+                        <option value="redondeado">Redondeado</option>
+                        <option value="circulo">Círculo</option>
+                        <option value="cuadrado">Cuadrado</option>
+                    </select>
+                </label>
+                <label>Ajuste
+                    <select id="sticker-ajuste" class="settings-input" onchange="actualizarVistaSticker()">
+                        <option value="recortar">Recortar al centro</option>
+                        <option value="ajustar">Mostrar entera</option>
+                    </select>
+                </label>
+                <label class="toggle-row"><input type="checkbox" id="sticker-contorno" checked onchange="actualizarVistaSticker()"> Contorno blanco</label>
+            </div>
+            <p id="sticker-msg" class="code-msg"></p>
+            <div class="code-actions">
+                <button id="sticker-guardar" class="btn-primary-sm" onclick="guardarSticker(false)">Guardar en mis stickers</button>
+                <button id="sticker-guardar-enviar" class="btn-primary-sm" onclick="guardarSticker(true)">Guardar y enviar</button>
+                <button class="btn-secondary-sm" onclick="cerrarStickerModal()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VISOR DE IMÁGENES -->
+    <div id="visor-modal" class="modal" style="display: none;" onclick="cerrarVisor()">
+        <img id="visor-img" class="visor-img" alt="">
     </div>
 
     <!-- VENTANA DE CONFIGURACIÓN (estilo Parámetros de Steam) -->

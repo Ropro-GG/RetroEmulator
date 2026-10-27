@@ -1,5 +1,8 @@
+import hashlib
 import os
 import mimetypes
+import uuid
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -428,6 +431,287 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    # --- CHAT (mensajes entre amigos aceptados) ---
+    # Requiere la tabla mensajes de supabase_social.sql.
+
+    LIMITE_MENSAJE = 1000
+    _COLUMNAS_MENSAJE = "id, de, para, tipo, contenido, creado_en, leido_en"
+
+    def _mensaje_para_ui(self, m):
+        return {
+            "id": m["id"],
+            "mio": m["de"] == self._yo(),
+            "tipo": m.get("tipo", "texto"),
+            "contenido": m.get("contenido", ""),
+            "creado_en": m.get("creado_en"),
+            "leido": bool(m.get("leido_en")),
+        }
+
+    def _filtro_par(self, amigo):
+        yo = self._yo()
+        return f"and(de.eq.{yo},para.eq.{amigo}),and(de.eq.{amigo},para.eq.{yo})"
+
+    @staticmethod
+    def _resumen_mensaje(m):
+        tipo = m.get("tipo", "texto")
+        if tipo == "texto":
+            return m.get("contenido", "")
+        return {"imagen": "📷 Imagen", "sticker": "Sticker", "gif": "GIF"}.get(tipo, "Mensaje")
+
+    def _amigos_aceptados(self):
+        yo = self._yo()
+        return [f["addressee_id"] if f["requester_id"] == yo else f["requester_id"]
+                for f in self._amistades() if f["status"] == "accepted"]
+
+    def resumen_social(self):
+        """Datos livianos para las insignias: solicitudes pendientes y mensajes sin leer de amigos."""
+        if not self.client or not self.usuario_actual:
+            return {"exito": False, "solicitudes": 0, "mensajes": 0}
+        solicitudes = self.contar_solicitudes().get("solicitudes", 0)
+        mensajes = 0
+        try:
+            amigos = set(self._amigos_aceptados())
+            res = self.client.table("mensajes").select("de") \
+                .eq("para", self._yo()).is_("leido_en", "null").limit(1000).execute()
+            mensajes = sum(1 for r in (res.data or []) if r["de"] in amigos)
+        except Exception as e:
+            print(f"[SOCIAL] Sin datos de mensajes: {self._error_social(e)}")
+        return {"exito": True, "solicitudes": solicitudes, "mensajes": mensajes}
+
+    def obtener_conversaciones(self):
+        """Un renglón por amigo: último mensaje, cuántos sin leer y si está jugando."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            yo = self._yo()
+            amigos = self._amigos_aceptados()
+            perfiles = self._perfiles_por_id(amigos)
+            presencias = self._presencias(amigos)
+
+            res = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
+                .or_(f"de.eq.{yo},para.eq.{yo}").order("id", desc=True).limit(300).execute()
+            ultimos = {}
+            for m in res.data or []:                       # vienen del más nuevo al más viejo
+                otro = m["para"] if m["de"] == yo else m["de"]
+                ultimos.setdefault(otro, m)
+
+            sin_leer = Counter()
+            res2 = self.client.table("mensajes").select("de") \
+                .eq("para", yo).is_("leido_en", "null").limit(1000).execute()
+            for r in res2.data or []:
+                sin_leer[r["de"]] += 1
+
+            conversaciones = []
+            for amigo in amigos:
+                p = perfiles.get(amigo, {})
+                u = ultimos.get(amigo)
+                conversaciones.append({
+                    "user_id": amigo,
+                    "username": p.get("username") or "Usuario",
+                    "avatar_url": p.get("avatar_url") or "",
+                    "jugando": presencias.get(amigo),
+                    "no_leidos": sin_leer.get(amigo, 0),
+                    "ultimo": {"id": u["id"], "mio": u["de"] == yo, "texto": self._resumen_mensaje(u),
+                               "creado_en": u.get("creado_en")} if u else None,
+                })
+            conversaciones.sort(key=lambda c: (c["ultimo"] is None, -(c["ultimo"]["id"] if c["ultimo"] else 0),
+                                               c["username"].lower()))
+            return {"exito": True, "conversaciones": conversaciones}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def marcar_leidos(self, amigo_id):
+        """Marca como leídos los mensajes que ese amigo te envió."""
+        if not self.client or not self.usuario_actual:
+            return
+        try:
+            self.client.table("mensajes") \
+                .update({"leido_en": datetime.now(timezone.utc).isoformat()}) \
+                .eq("de", amigo_id).eq("para", self._yo()).is_("leido_en", "null").execute()
+        except Exception as e:
+            print(f"[SOCIAL] No se pudo marcar como leído: {self._error_social(e)}")
+
+    def obtener_mensajes(self, amigo_id, antes_id=None, limite=40):
+        """Mensajes de la conversación (los últimos, o los anteriores a 'antes_id')."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            consulta = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
+                .or_(self._filtro_par(amigo_id)).order("id", desc=True).limit(limite)
+            if antes_id:
+                consulta = consulta.lt("id", antes_id)
+            filas = list(reversed(consulta.execute().data or []))
+            if not antes_id:
+                self.marcar_leidos(amigo_id)
+            return {"exito": True, "mensajes": [self._mensaje_para_ui(m) for m in filas],
+                    "hay_mas": len(filas) >= limite}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def sincronizar_chat(self, amigo_id, ultimo_id, ids_pendientes):
+        """Una consulta periódica: mensajes nuevos del amigo y cuáles de los míos ya vio."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            res = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
+                .or_(self._filtro_par(amigo_id)).gt("id", ultimo_id or 0).order("id").limit(100).execute()
+            nuevos = res.data or []
+            if any(m["de"] != self._yo() for m in nuevos):
+                self.marcar_leidos(amigo_id)
+
+            vistos = []
+            if ids_pendientes:
+                res2 = self.client.table("mensajes").select("id, leido_en") \
+                    .in_("id", list(ids_pendientes)).execute()
+                vistos = [r["id"] for r in (res2.data or []) if r.get("leido_en")]
+            return {"exito": True, "nuevos": [self._mensaje_para_ui(m) for m in nuevos], "vistos": vistos}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def _insertar_mensaje(self, amigo_id, tipo, contenido):
+        try:
+            res = self.client.table("mensajes").insert({
+                "de": self._yo(), "para": amigo_id, "tipo": tipo, "contenido": contenido,
+            }).execute()
+            fila = (res.data or [None])[0]
+            if not fila:
+                return {"exito": False, "error": "No se pudo enviar el mensaje."}
+            return {"exito": True, "mensaje": self._mensaje_para_ui(fila)}
+        except Exception as e:
+            bajo = str(e).lower()
+            if "row-level security" in bajo or "42501" in bajo:
+                return {"exito": False, "error": "No podés escribirle a esta persona (¿siguen siendo amigos?)."}
+            return {"exito": False, "error": self._error_social(e)}
+
+    def enviar_mensaje(self, amigo_id, texto):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        texto = (texto or "").strip()
+        if not texto:
+            return {"exito": False, "error": "Escribí un mensaje."}
+        if len(texto) > self.LIMITE_MENSAJE:
+            return {"exito": False, "error": f"El mensaje es demasiado largo (máximo {self.LIMITE_MENSAJE} caracteres)."}
+        return self._insertar_mensaje(amigo_id, "texto", texto)
+
+    # --- IMÁGENES Y STICKERS (espacio privado "chat" de Supabase Storage) ---
+    # Requiere la sección 8 de supabase_social.sql (bucket, permisos y tabla stickers_usuario).
+
+    BUCKET_CHAT = "chat"
+    MAX_STICKERS = 60
+
+    def _error_subida(self, e):
+        bajo = str(e).lower()
+        if "bucket not found" in bajo or ("bucket" in bajo and "not found" in bajo):
+            return "Falta crear el espacio de imágenes en Supabase. Ejecutá la versión más reciente de supabase_social.sql."
+        if "payload too large" in bajo or "exceeded" in bajo or "413" in bajo:
+            return "La imagen es demasiado pesada."
+        if "mime" in bajo or "not supported" in bajo or "invalid" in bajo and "type" in bajo:
+            return "Ese tipo de archivo no está permitido (usá PNG, JPG o WEBP)."
+        return self._error_social(e)
+
+    def _subir_a_chat(self, ruta, datos, mime):
+        self.client.storage.from_(self.BUCKET_CHAT).upload(
+            path=ruta, file=datos, file_options={"content-type": mime, "upsert": "false"})
+
+    def enviar_imagen(self, amigo_id, datos, mime, extension):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        ruta = f"{self._yo()}/imagenes/{uuid.uuid4().hex}.{extension}"
+        try:
+            self._subir_a_chat(ruta, datos, mime)
+        except Exception as e:
+            return {"exito": False, "error": self._error_subida(e)}
+        resultado = self._insertar_mensaje(amigo_id, "imagen", ruta)
+        if not resultado.get("exito"):
+            try:   # no dejar el archivo huérfano si el mensaje no se pudo enviar
+                self.client.storage.from_(self.BUCKET_CHAT).remove([ruta])
+            except Exception:
+                pass
+        return resultado
+
+    def guardar_sticker(self, datos, mime, extension):
+        """Sube el sticker a tu carpeta y lo suma a tu colección."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            existentes = self.client.table("stickers_usuario").select("id").eq("user_id", self._yo()).execute()
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+        if len(existentes.data or []) >= self.MAX_STICKERS:
+            return {"exito": False, "error": f"Llegaste al máximo de {self.MAX_STICKERS} stickers: quitá alguno para crear otro."}
+
+        ruta = f"{self._yo()}/stickers/{uuid.uuid4().hex}.{extension}"
+        try:
+            self._subir_a_chat(ruta, datos, mime)
+            res = self.client.table("stickers_usuario").insert({"user_id": self._yo(), "ruta": ruta}).execute()
+            fila = (res.data or [None])[0]
+            return {"exito": True, "sticker": {"id": fila["id"] if fila else None, "ruta": ruta}}
+        except Exception as e:
+            return {"exito": False, "error": self._error_subida(e)}
+
+    def obtener_stickers(self):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            res = self.client.table("stickers_usuario").select("id, ruta, creado_en").eq("user_id", self._yo()).execute()
+            filas = sorted(res.data or [], key=lambda r: r.get("creado_en") or "", reverse=True)
+            return {"exito": True, "stickers": [{"id": r["id"], "ruta": r["ruta"]} for r in filas]}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def eliminar_sticker(self, sticker_id):
+        """Lo saca de tu colección. El archivo queda, así los que ya enviaste se siguen viendo."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            self.client.table("stickers_usuario").delete().eq("id", sticker_id).eq("user_id", self._yo()).execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def enviar_sticker(self, amigo_id, ruta):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        if not (ruta or "").startswith(f"{self._yo()}/stickers/"):
+            return {"exito": False, "error": "Ese sticker no es tuyo."}
+        return self._insertar_mensaje(amigo_id, "sticker", ruta)
+
+    def descargar_imagen_chat(self, ruta):
+        """Bytes de una imagen o sticker del chat. Se guarda una copia en cache/chat/<usuario>/."""
+        if not self.client or not self.usuario_actual or not ruta:
+            return None
+        carpeta = os.path.join("cache", "chat", self._yo())
+        archivo = os.path.join(carpeta, hashlib.sha1(ruta.encode("utf-8")).hexdigest() + ".bin")
+        try:
+            if os.path.isfile(archivo):
+                with open(archivo, "rb") as f:
+                    return f.read()
+        except OSError:
+            pass
+        try:
+            datos = self.client.storage.from_(self.BUCKET_CHAT).download(ruta)
+        except Exception as e:
+            print(f"[CHAT] No se pudo descargar la imagen: {self._error_subida(e)}")
+            return None
+        if datos and len(datos) <= 8 * 1024 * 1024:
+            try:
+                os.makedirs(carpeta, exist_ok=True)
+                with open(archivo + ".part", "wb") as f:
+                    f.write(datos)
+                os.replace(archivo + ".part", archivo)
+            except OSError:
+                pass
+        return datos
+
     def establecer_jugando(self, titulo, consola):
         """Publica (solo para tus amigos) a qué estás jugando."""
         if not self.client or not self.usuario_actual:
@@ -481,7 +765,7 @@ class CloudClient:
         las filas propias y las de amigos, y las de un amigo solo si comparte su historial."""
         try:
             res = self.client.table("juegos_jugados") \
-                .select("user_id, clave, titulo, consola, veces, ultima_vez") \
+                .select("user_id, clave, titulo, consola, identificativo, veces, ultima_vez") \
                 .in_("user_id", [yo, amigo]).execute()
         except Exception as e:
             print(f"[SOCIAL] Sin historial disponible: {self._error_social(e)}")
@@ -491,10 +775,34 @@ class CloudClient:
         suyos = sorted((r for r in filas if r["user_id"] == amigo),
                        key=lambda r: r.get("ultima_vez") or "", reverse=True)
         recientes = [{"titulo": r["titulo"], "consola": r.get("consola", ""),
+                      "identificativo": r.get("identificativo", ""),
                       "veces": r.get("veces", 1), "ultima_vez": r.get("ultima_vez")} for r in suyos[:8]]
-        en_comun = sorted(({"titulo": r["titulo"], "consola": r.get("consola", "")}
+        en_comun = sorted(({"titulo": r["titulo"], "consola": r.get("consola", ""),
+                            "identificativo": r.get("identificativo", "")}
                            for r in suyos if r["clave"] in mios), key=lambda j: j["titulo"].lower())
         return recientes, en_comun
+
+    def obtener_mi_actividad(self, limite=6):
+        """Mis juegos jugados recientemente y mi lista de deseados (para mi perfil)."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        recientes, deseados = [], []
+        try:
+            res = self.client.table("juegos_jugados") \
+                .select("titulo, consola, identificativo, veces, ultima_vez") \
+                .eq("user_id", self._yo()).execute()
+            filas = sorted(res.data or [], key=lambda r: r.get("ultima_vez") or "", reverse=True)
+            recientes = [{"titulo": r["titulo"], "consola": r.get("consola", ""),
+                          "identificativo": r.get("identificativo", ""),
+                          "veces": r.get("veces", 1), "ultima_vez": r.get("ultima_vez")} for r in filas[:limite]]
+        except Exception as e:
+            print(f"[SOCIAL] Sin historial propio: {self._error_social(e)}")
+        try:
+            deseados = self._lista_deseados_de(self._yo())[:limite]
+        except Exception as e:
+            print(f"[SOCIAL] Sin lista de deseados propia: {self._error_social(e)}")
+        return {"exito": True, "recientes": recientes, "deseados": deseados}
 
     def obtener_amigos_que_jugaron(self, identificativo, titulo):
         """Amigos que ya jugaron este juego (con cuántas veces y cuándo fue la última)."""
