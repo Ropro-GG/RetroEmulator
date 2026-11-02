@@ -45,7 +45,7 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
       </ul>
     </td>
     <td width="50%">
-      <h3>🌐 Comunidad & Social</h3>
+      <h3>🌍 Comunidad & Social</h3>
       <ul>
         <li><strong>Perfiles Personalizables:</strong> Muestra tus estadísticas, logros y juegos favoritos.</li>
         <li><strong>Lista de Amigos & Chats:</strong> Mensajería directa y chat de voz / llamadas en tiempo real.</li>
@@ -78,7 +78,7 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
 
 ---
 
-## 🚀 Requisitos e Instalación
+## ⤵ Requisitos e Instalación
 
 ### Requisitos Previos
 * **Python 3.10+** (si lo ejecutas desde el código fuente)
