@@ -4,12 +4,14 @@ import mimetypes
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 import session_store
 from pathlib import Path
 
+import gifs
 from boxart import analizar_titulo
 
 # El .env se busca junto a este archivo, sin importar desde dónde se ejecute la app
@@ -456,7 +458,8 @@ class CloudClient:
         tipo = m.get("tipo", "texto")
         if tipo == "texto":
             return m.get("contenido", "")
-        return {"imagen": "📷 Imagen", "sticker": "Sticker", "gif": "GIF"}.get(tipo, "Mensaje")
+        return {"imagen": "📷 Imagen", "sticker": "Sticker", "gif": "GIF",
+                "publicacion": "📰 Publicación"}.get(tipo, "Mensaje")
 
     def _amigos_aceptados(self):
         yo = self._yo()
@@ -584,6 +587,8 @@ class CloudClient:
             bajo = str(e).lower()
             if "row-level security" in bajo or "42501" in bajo:
                 return {"exito": False, "error": "No podés escribirle a esta persona (¿siguen siendo amigos?)."}
+            if tipo == "publicacion" and ("check constraint" in bajo or "23514" in bajo):
+                return {"exito": False, "error": "Falta actualizar el chat en Supabase. Ejecutá supabase_social.sql en el SQL Editor."}
             return {"exito": False, "error": self._error_social(e)}
 
     def enviar_mensaje(self, amigo_id, texto):
@@ -596,6 +601,15 @@ class CloudClient:
         if len(texto) > self.LIMITE_MENSAJE:
             return {"exito": False, "error": f"El mensaje es demasiado largo (máximo {self.LIMITE_MENSAJE} caracteres)."}
         return self._insertar_mensaje(amigo_id, "texto", texto)
+
+    def enviar_gif(self, amigo_id, url):
+        """Un GIF viaja como su dirección de internet (solo servidores de KLIPY)."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        if not gifs.url_permitida(url):
+            return {"exito": False, "error": "Ese GIF no es válido."}
+        return self._insertar_mensaje(amigo_id, "gif", url)
 
     # --- IMÁGENES Y STICKERS (espacio privado "chat" de Supabase Storage) ---
     # Requiere la sección 8 de supabase_social.sql (bucket, permisos y tabla stickers_usuario).
@@ -971,6 +985,289 @@ class CloudClient:
         except Exception as e:
             print(f"[SOCIAL] No se pudieron cargar las opiniones: {self._error_social(e)}")
             return []
+
+    # --- PUBLICACIONES (públicas: las ve cualquier usuario con sesión) ---
+    # Requiere supabase_social.sql (tablas, funciones listar_publicaciones / alternar_reaccion
+    # y el bucket "publicaciones").
+
+    BUCKET_PUBLICACIONES = "publicaciones"
+    LIMITE_PUBLICACION = 2000
+    LIMITE_COMENTARIO = 500
+    POR_PAGINA_PUBLICACIONES = 15
+    REACCIONES = ("like", "dislike")
+
+    def _error_publicaciones(self, e):
+        bajo = str(e).lower()
+        falta_algo = any(x in bajo for x in ("does not exist", "could not find", "schema cache", "pgrst202", "pgrst205"))
+        if falta_algo and ("publicaciones" in bajo or "alternar_reaccion" in bajo):
+            return "Faltan las tablas de Publicaciones en Supabase. Ejecutá el archivo supabase_social.sql en el SQL Editor."
+        if "bucket" in bajo and "not found" in bajo:
+            return "Falta crear el espacio de imágenes de Publicaciones. Ejecutá supabase_social.sql en el SQL Editor."
+        if "payload too large" in bajo or "exceeded" in bajo or "413" in bajo:
+            return "La imagen es demasiado pesada."
+        if "mime" in bajo and ("not supported" in bajo or "not allowed" in bajo):
+            return "Ese tipo de archivo no está permitido (usá PNG, JPG o WEBP)."
+        return self._error_social(e)
+
+    def _url_media(self, fila):
+        """Dirección para mostrar la imagen/GIF de una publicación ('' si no es válida)."""
+        tipo, media = fila.get("tipo_media"), fila.get("media")
+        if not media:
+            return ""
+        if tipo == "gif":
+            return media if gifs.url_permitida(media) else ""
+        if tipo == "imagen" and SUPABASE_URL:
+            ruta = "/".join(quote(parte, safe="") for parte in media.split("/"))
+            return f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/{self.BUCKET_PUBLICACIONES}/{ruta}"
+        return ""
+
+    def _publicacion_para_ui(self, f):
+        url = self._url_media(f)
+        return {
+            "id": f["id"],
+            "autor_id": f["autor_id"],
+            "mia": f["autor_id"] == self._yo(),
+            "username": f.get("username") or "Usuario",
+            "avatar_url": f.get("avatar_url") or "",
+            "texto": f.get("texto") or "",
+            "tipo_media": (f.get("tipo_media") or "") if url else "",
+            "media_url": url,
+            "creado_en": f.get("creado_en"),
+            "likes": f.get("likes") or 0,
+            "dislikes": f.get("dislikes") or 0,
+            "compartidos": f.get("compartidos") or 0,
+            "comentarios": f.get("comentarios") or 0,
+            "mi_like": bool(f.get("mi_like")),
+            "mi_dislike": bool(f.get("mi_dislike")),
+            "mi_compartido": bool(f.get("mi_compartido")),
+        }
+
+    def _consultar_publicaciones(self, antes_id=None, autor_id=None, pub_id=None):
+        res = self.client.rpc("listar_publicaciones", {
+            "p_antes": int(antes_id) if antes_id else None,
+            "p_limite": self.POR_PAGINA_PUBLICACIONES,
+            "p_autor": autor_id or None,
+            "p_id": int(pub_id) if pub_id else None,
+        }).execute()
+        return res.data or []
+
+    def _devolver_publicacion(self, pub_id, **extra):
+        filas = self._consultar_publicaciones(pub_id=pub_id)
+        if not filas:
+            return {"exito": False, "no_existe": True, "error": "Esa publicación ya no existe."}
+        return {"exito": True, "publicacion": self._publicacion_para_ui(filas[0]), **extra}
+
+    def obtener_publicaciones(self, antes_id=None, autor_id=None):
+        """Publicaciones de todos, de la más nueva a la más vieja (o solo las de 'autor_id')."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            filas = self._consultar_publicaciones(antes_id=antes_id, autor_id=autor_id)
+            return {"exito": True,
+                    "publicaciones": [self._publicacion_para_ui(f) for f in filas],
+                    "hay_mas": len(filas) >= self.POR_PAGINA_PUBLICACIONES}
+        except Exception as e:
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def obtener_publicacion(self, pub_id):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            return self._devolver_publicacion(pub_id)
+        except Exception as e:
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def crear_publicacion(self, texto, imagen=None, gif_url=None):
+        """'imagen' es (bytes, mime, extension) ya preparada; 'gif_url' una dirección de KLIPY.
+        Una publicación lleva como máximo una imagen o un GIF."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        texto = (texto or "").strip()
+        if len(texto) > self.LIMITE_PUBLICACION:
+            return {"exito": False, "error": f"El texto es demasiado largo (máximo {self.LIMITE_PUBLICACION} caracteres)."}
+        if gif_url and not gifs.url_permitida(gif_url):
+            return {"exito": False, "error": "Ese GIF no es válido."}
+        if not texto and not gif_url and not imagen:
+            return {"exito": False, "error": "Escribí algo o agregá una imagen o un GIF."}
+
+        tipo_media, media, subida = None, None, None
+        try:
+            if gif_url:
+                tipo_media, media = "gif", gif_url
+            elif imagen:
+                datos, mime, extension = imagen
+                subida = f"{self._yo()}/{uuid.uuid4().hex}.{extension}"
+                self.client.storage.from_(self.BUCKET_PUBLICACIONES).upload(
+                    path=subida, file=datos, file_options={"content-type": mime, "upsert": "false"})
+                tipo_media, media = "imagen", subida
+
+            res = self.client.table("publicaciones").insert({
+                "autor_id": self._yo(), "texto": texto, "tipo_media": tipo_media, "media": media,
+            }).execute()
+            fila = (res.data or [None])[0]
+            if not fila:
+                raise RuntimeError("No se pudo publicar.")
+            return self._devolver_publicacion(fila["id"])
+        except Exception as e:
+            if subida:   # no dejar la imagen huérfana si la publicación no se pudo crear
+                try:
+                    self.client.storage.from_(self.BUCKET_PUBLICACIONES).remove([subida])
+                except Exception:
+                    pass
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def eliminar_publicacion(self, pub_id):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            res = self.client.table("publicaciones").select("id, tipo_media, media") \
+                .eq("id", pub_id).eq("autor_id", self._yo()).execute()
+            if not res.data:
+                return {"exito": False, "error": "No se encontró la publicación (o no es tuya)."}
+            fila = res.data[0]
+            self.client.table("publicaciones").delete().eq("id", pub_id).eq("autor_id", self._yo()).execute()
+            if fila.get("tipo_media") == "imagen" and fila.get("media"):
+                try:
+                    self.client.storage.from_(self.BUCKET_PUBLICACIONES).remove([fila["media"]])
+                except Exception as e:
+                    print(f"[PUBLICACIONES] No se pudo borrar la imagen: {self._error_publicaciones(e)}")
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def alternar_reaccion(self, pub_id, tipo):
+        """Like / dislike como interruptor (dar y quitar). Devuelve la publicación con contadores al día."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        if tipo not in self.REACCIONES:
+            return {"exito": False, "error": "Reacción no válida."}
+        try:
+            self.client.rpc("alternar_reaccion", {"p_publicacion": int(pub_id), "p_tipo": tipo}).execute()
+            return self._devolver_publicacion(pub_id)
+        except Exception as e:
+            bajo = str(e).lower()
+            if "foreign key" in bajo or "23503" in bajo:   # la publicación se borró mientras tanto
+                return {"exito": False, "no_existe": True, "error": "Esa publicación ya no existe."}
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def compartir_publicacion(self, pub_id, amigos_ids):
+        """La envía por chat a los amigos elegidos y, si salió a alguno, suma tu 'compartido'."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        ids = [a for a in dict.fromkeys(amigos_ids or []) if isinstance(a, str) and a]
+        if not ids:
+            return {"exito": False, "error": "Elegí al menos un amigo."}
+        try:
+            existe = self._devolver_publicacion(pub_id)
+            if not existe.get("exito"):
+                return existe
+            validos = set(self._amigos_aceptados())
+            enviados, fallidos, ultimo_error = 0, 0, ""
+            for amigo in ids:
+                if amigo not in validos:
+                    fallidos += 1
+                    ultimo_error = "Solo podés compartir con tus amigos."
+                    continue
+                r = self._insertar_mensaje(amigo, "publicacion", str(int(pub_id)))
+                if r.get("exito"):
+                    enviados += 1
+                else:
+                    fallidos += 1
+                    ultimo_error = r.get("error", "")
+            if enviados == 0:
+                return {"exito": False, "error": ultimo_error or "No se pudo enviar la publicación."}
+
+            ya = self.client.table("publicaciones_reacciones").select("tipo") \
+                .eq("publicacion_id", pub_id).eq("user_id", self._yo()).eq("tipo", "compartir").execute()
+            if not ya.data:
+                self.client.table("publicaciones_reacciones").insert({
+                    "publicacion_id": int(pub_id), "user_id": self._yo(), "tipo": "compartir"}).execute()
+            return self._devolver_publicacion(pub_id, enviados=enviados, fallidos=fallidos)
+        except Exception as e:
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def quitar_compartido(self, pub_id):
+        """Quita tu 'compartido' (baja el contador). Los mensajes que ya enviaste por chat quedan."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            self.client.table("publicaciones_reacciones").delete() \
+                .eq("publicacion_id", pub_id).eq("user_id", self._yo()).eq("tipo", "compartir").execute()
+            return self._devolver_publicacion(pub_id)
+        except Exception as e:
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    # --- PUBLICACIONES: COMENTARIOS ---
+
+    def obtener_comentarios(self, pub_id):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            res = self.client.table("publicaciones_comentarios").select("id, autor_id, texto, creado_en") \
+                .eq("publicacion_id", pub_id).order("id").limit(200).execute()
+            filas = res.data or []
+            perfiles = self._perfiles_por_id({f["autor_id"] for f in filas})
+            yo = self._yo()
+            return {"exito": True, "comentarios": [{
+                "id": f["id"],
+                "autor_id": f["autor_id"],
+                "username": perfiles.get(f["autor_id"], {}).get("username") or "Usuario",
+                "avatar_url": perfiles.get(f["autor_id"], {}).get("avatar_url") or "",
+                "texto": f.get("texto") or "",
+                "creado_en": f.get("creado_en"),
+                "mio": f["autor_id"] == yo,
+            } for f in filas]}
+        except Exception as e:
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def comentar_publicacion(self, pub_id, texto):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        texto = (texto or "").strip()
+        if not texto:
+            return {"exito": False, "error": "Escribí un comentario."}
+        if len(texto) > self.LIMITE_COMENTARIO:
+            return {"exito": False, "error": f"El comentario es demasiado largo (máximo {self.LIMITE_COMENTARIO} caracteres)."}
+        try:
+            res = self.client.table("publicaciones_comentarios").insert({
+                "publicacion_id": int(pub_id), "autor_id": self._yo(), "texto": texto}).execute()
+            fila = (res.data or [None])[0]
+            if not fila:
+                return {"exito": False, "error": "No se pudo comentar."}
+            yo = self._perfiles_por_id([self._yo()]).get(self._yo(), {})
+            comentario = {
+                "id": fila["id"], "autor_id": self._yo(),
+                "username": yo.get("username") or "Usuario", "avatar_url": yo.get("avatar_url") or "",
+                "texto": fila.get("texto") or texto, "creado_en": fila.get("creado_en"), "mio": True,
+            }
+            return self._devolver_publicacion(pub_id, comentario=comentario)
+        except Exception as e:
+            bajo = str(e).lower()
+            if "foreign key" in bajo or "23503" in bajo:
+                return {"exito": False, "no_existe": True, "error": "Esa publicación ya no existe."}
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def eliminar_comentario(self, comentario_id, pub_id):
+        """Podés borrar tus comentarios y los que te hicieron en tus publicaciones."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            res = self.client.table("publicaciones_comentarios").delete().eq("id", comentario_id).execute()
+            if not res.data:
+                return {"exito": False, "error": "No podés borrar ese comentario."}
+            return self._devolver_publicacion(pub_id)
+        except Exception as e:
+            return {"exito": False, "error": self._error_publicaciones(e)}
 
     # --- FUNCIONES DE PERFIL DE USUARIO ---
 

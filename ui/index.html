@@ -142,7 +142,7 @@
                     <li class="active" data-social="amigos" onclick="seleccionarSeccionSocial('amigos')"><span>👥 Amigos</span><span id="social-amigos-badge" class="count-badge" style="display: none;"></span></li>
                     <li data-social="deseados" onclick="seleccionarSeccionSocial('deseados')">⭐ Deseados</li>
                     <li data-social="chat" onclick="seleccionarSeccionSocial('chat')"><span>💬 Chat</span><span id="social-chat-badge" class="count-badge" style="display: none;"></span></li>
-                    <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')">📰 Publicaciones <em>PRONTO</em></li>
+                    <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')">📰 Publicaciones</li>
                     <li data-social="foros" onclick="seleccionarSeccionSocial('foros')">🗨️ Foros <em>PRONTO</em></li>
                     <li data-social="llamadas" onclick="seleccionarSeccionSocial('llamadas')">📞 Llamadas <em>PRONTO</em></li>
                 </ul>
@@ -178,16 +178,36 @@
                                 </header>
                                 <div id="chat-mensajes" class="chat-mensajes" onscroll="alScrollChat()"></div>
                                 <p id="chat-error" class="chat-error"></p>
-                                <div id="sticker-tray" class="sticker-tray" style="display: none;">
-                                    <div class="sticker-tray-head">
-                                        <strong>Mis stickers</strong>
-                                        <button class="btn-secondary-sm" onclick="crearStickerNuevo()">＋ Crear sticker</button>
+                                <div id="picker" class="picker" style="display: none;">
+                                    <div class="picker-tabs">
+                                        <button class="picker-tab active" data-tab="emojis" onclick="elegirPestanaPicker('emojis')">😀 Emojis</button>
+                                        <button class="picker-tab" data-tab="stickers" onclick="elegirPestanaPicker('stickers')">🏷️ Stickers</button>
+                                        <button class="picker-tab" data-tab="gifs" onclick="elegirPestanaPicker('gifs')">GIF</button>
                                     </div>
-                                    <div id="sticker-grid" class="sticker-grid"></div>
+                                    <div id="picker-emojis" class="picker-body">
+                                        <div id="emoji-cats" class="emoji-cats"></div>
+                                        <div id="emoji-grid" class="emoji-grid"></div>
+                                    </div>
+                                    <div id="picker-stickers" class="picker-body" style="display: none;">
+                                        <div class="sticker-tray-head">
+                                            <strong>Mis stickers</strong>
+                                            <button class="btn-secondary-sm" onclick="crearStickerNuevo()">＋ Crear sticker</button>
+                                        </div>
+                                        <div id="sticker-grid" class="sticker-grid"></div>
+                                    </div>
+                                    <div id="picker-gifs" class="picker-body" style="display: none;">
+                                        <input id="gif-busqueda" class="settings-input" type="text" placeholder="Search KLIPY" oninput="gifBuscarConRetraso()" autocomplete="off">
+                                        <p id="gif-estado" class="empty-state"></p>
+                                        <div id="gif-grid" class="gif-grid"></div>
+                                        <div class="gif-pie">
+                                            <span>Powered by KLIPY</span>
+                                            <button id="gif-mas" class="btn-secondary-sm" style="display: none;" onclick="gifMas()">Ver más</button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="chat-composer">
                                     <button class="chat-icono" title="Enviar una imagen" onclick="elegirImagenChat()">🖼️</button>
-                                    <button class="chat-icono" title="Stickers" onclick="alternarStickers()">😀</button>
+                                    <button class="chat-icono" title="Emojis, stickers y GIFs" onclick="alternarPicker()">😀</button>
                                     <textarea id="chat-texto" rows="1" maxlength="1000" placeholder="Escribí un mensaje..." oninput="autoAjustarChat(this)" onkeydown="teclaChat(event)"></textarea>
                                     <button id="chat-enviar" class="btn-primary-sm" onclick="enviarMensaje()">Enviar</button>
                                 </div>
@@ -240,6 +260,45 @@
                     <div class="detail-card">
                         <h3>⭐ Lista de deseados</h3>
                         <div id="pa-deseados"></div>
+                    </div>
+                </div>
+
+                <!-- PUBLICACIONES -->
+                <div id="social-publicaciones" style="display: none;">
+                    <div class="posts-wrap">
+                        <div class="posts-head">
+                            <h2>Publicaciones</h2>
+                            <div id="posts-tabs" class="posts-tabs">
+                                <button class="posts-tab active" data-filtro="todas" onclick="cambiarFiltroPosts('todas')">Todas</button>
+                                <button class="posts-tab" data-filtro="mias" onclick="cambiarFiltroPosts('mias')">Mías</button>
+                                <button class="btn-secondary-sm" title="Actualizar" onclick="cargarPublicaciones(true)">↻ Actualizar</button>
+                            </div>
+                            <button id="posts-volver" class="btn-back" style="display: none;" onclick="cambiarFiltroPosts('todas')">← Todas las publicaciones</button>
+                        </div>
+
+                        <div id="post-composer" class="post-composer">
+                            <div class="post-composer-top">
+                                <img id="post-composer-avatar" class="post-avatar" alt="">
+                                <textarea id="post-texto" rows="2" maxlength="2000" placeholder="¿Qué estás pensando?" oninput="autoAjustarPost(this)"></textarea>
+                            </div>
+                            <div id="post-adjunto" class="post-adjunto" style="display: none;">
+                                <img id="post-adjunto-img" alt="">
+                                <button class="post-adjunto-quitar" title="Quitar" onclick="quitarAdjuntoPost()">✕</button>
+                            </div>
+                            <div id="post-picker-slot"></div>
+                            <p id="post-error" class="post-error"></p>
+                            <div class="post-composer-bar">
+                                <div class="post-composer-tools">
+                                    <button class="chat-icono" title="Agregar una imagen" onclick="elegirImagenPost()">🖼️</button>
+                                    <button class="chat-icono" title="Emojis y GIFs" onclick="alternarPickerPost()">😀</button>
+                                    <span id="post-contador" class="post-contador">0 / 2000</span>
+                                </div>
+                                <button id="post-publicar" class="btn-primary-sm" onclick="publicar()">Publicar</button>
+                            </div>
+                        </div>
+
+                        <div id="post-lista"></div>
+                        <div class="posts-pie"><button id="post-mas" class="btn-secondary-sm" style="display: none;" onclick="cargarMasPublicaciones()">Ver más</button></div>
                     </div>
                 </div>
 
@@ -358,6 +417,20 @@
                 <button id="sticker-guardar" class="btn-primary-sm" onclick="guardarSticker(false)">Guardar en mis stickers</button>
                 <button id="sticker-guardar-enviar" class="btn-primary-sm" onclick="guardarSticker(true)">Guardar y enviar</button>
                 <button class="btn-secondary-sm" onclick="cerrarStickerModal()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: COMPARTIR UNA PUBLICACIÓN CON AMIGOS -->
+    <div id="compartir-modal" class="modal" style="display: none;">
+        <div class="dialog-card">
+            <h2>Compartir con amigos</h2>
+            <p class="settings-help">La publicación les llega por el chat. Elegí a quién enviársela.</p>
+            <div id="compartir-lista" class="compartir-lista"></div>
+            <p id="compartir-msg" class="code-msg"></p>
+            <div class="code-actions">
+                <button id="compartir-enviar" class="btn-primary-sm" onclick="confirmarCompartir()">Enviar</button>
+                <button class="btn-secondary-sm" onclick="cerrarCompartir()">Cancelar</button>
             </div>
         </div>
     </div>

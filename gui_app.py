@@ -1,5 +1,6 @@
 import webview
 from webview import FileDialog
+import json
 import os
 import threading
 from db_local import LocalDB
@@ -10,6 +11,7 @@ import boxart
 import db_local
 import ra_client
 import contexto
+import gifs
 import imagenes
 import webbrowser
 from urllib.parse import urlparse
@@ -28,6 +30,7 @@ class API:
         self.window = None
         self._juegos_activos = 0          # emuladores abiertos desde el launcher
         self._imagen_elegida = ""         # archivo que elegiste para enviar o convertir en sticker
+        self._imagen_publicacion = ""     # imagen elegida para la publicación que estás escribiendo
         self._lock_juegos = threading.Lock()
 
     def set_window(self, window):
@@ -73,6 +76,8 @@ class API:
     def cerrar_sesion(self):
         resultado = self.cloud.cerrar_sesion()
         contexto.establecer("")   # nada de la cuenta anterior queda activo
+        self._imagen_elegida = ""
+        self._imagen_publicacion = ""
         return resultado
 
     def obtener_perfil(self, user_id=None):
@@ -171,22 +176,29 @@ class API:
 
     # --- CHAT: IMÁGENES Y STICKERS ---
 
-    def seleccionar_imagen(self):
-        """Abre el selector de archivos. Queda guardada la ruta elegida (Python no acepta rutas desde la página)."""
+    def _elegir_archivo_imagen(self):
+        """Selector de imagen compartido. Devuelve (ruta, vista, None) o (None, None, error)."""
         if not self.window:
-            return {"exito": False, "error": "Ventana no inicializada."}
+            return None, None, {"exito": False, "error": "Ventana no inicializada."}
         if not imagenes.disponible():
-            return {"exito": False, "error": "Falta instalar Pillow: ejecutá  pip install pillow  y reiniciá el launcher."}
+            return None, None, {"exito": False, "error": "Falta instalar Pillow: ejecutá  pip install pillow  y reiniciá el launcher."}
         resultado = self.window.create_file_dialog(
             FileDialog.OPEN, allow_multiple=False,
             file_types=('Imágenes (*.png;*.jpg;*.jpeg;*.webp;*.bmp)', 'Todos los archivos (*.*)'))
         if not resultado:
-            return {"exito": False, "error": "cancelado"}
+            return None, None, {"exito": False, "error": "cancelado"}
         ruta = resultado[0]
         try:
             vista = imagenes.miniatura_data_uri(ruta)
         except imagenes.ErrorImagen as e:
-            return {"exito": False, "error": str(e)}
+            return None, None, {"exito": False, "error": str(e)}
+        return ruta, vista, None
+
+    def seleccionar_imagen(self):
+        """Abre el selector de archivos. Queda guardada la ruta elegida (Python no acepta rutas desde la página)."""
+        ruta, vista, error = self._elegir_archivo_imagen()
+        if error:
+            return error
         self._imagen_elegida = ruta
         return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
 
@@ -232,10 +244,93 @@ class API:
     def enviar_sticker(self, amigo_id, ruta):
         return self.cloud.enviar_sticker(amigo_id, ruta)
 
+    # --- CHAT: GIFS Y EMOJIS ---
+
+    def buscar_gifs(self, texto, pagina=1):
+        """Busca en KLIPY (sin texto devuelve los GIFs del momento)."""
+        try:
+            resultado = gifs.buscar(texto, pagina, contexto.usuario_id())
+        except gifs.ErrorGifs as e:
+            return {"exito": False, "error": str(e)}
+        except Exception:
+            return {"exito": False, "error": "No se pudieron buscar GIFs. Probá de nuevo en un momento."}
+        return {"exito": True, **resultado}
+
+    def enviar_gif(self, amigo_id, url):
+        return self.cloud.enviar_gif(amigo_id, url)
+
+    def obtener_emojis_recientes(self):
+        try:
+            lista = json.loads(db_local.obtener_config_usuario("emojis_recientes", "[]"))
+        except ValueError:
+            lista = []
+        return [e for e in lista if isinstance(e, str)][:24]
+
+    def registrar_emoji_reciente(self, emoji):
+        if not isinstance(emoji, str) or not emoji or len(emoji) > 16:
+            return {"exito": False}
+        lista = [e for e in self.obtener_emojis_recientes() if e != emoji]
+        lista.insert(0, emoji)
+        db_local.guardar_config_usuario("emojis_recientes", json.dumps(lista[:24], ensure_ascii=False))
+        return {"exito": True}
+
     def obtener_imagen_chat(self, ruta):
         """Imagen o sticker de un mensaje, listo para mostrar (data URI), o None."""
         datos = self.cloud.descargar_imagen_chat(ruta)
         return imagenes.a_data_uri(datos) or None if datos else None
+
+    # --- PUBLICACIONES ---
+
+    def seleccionar_imagen_publicacion(self):
+        ruta, vista, error = self._elegir_archivo_imagen()
+        if error:
+            return error
+        self._imagen_publicacion = ruta
+        return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
+
+    def descartar_imagen_publicacion(self):
+        self._imagen_publicacion = ""
+        return {"exito": True}
+
+    def crear_publicacion(self, texto, gif_url=None):
+        """Publica texto + (una imagen elegida antes, o un GIF de KLIPY). Es pública para todos."""
+        imagen = None
+        if not gif_url and self._imagen_publicacion:
+            try:
+                imagen = imagenes.preparar_para_chat(self._imagen_publicacion)
+            except imagenes.ErrorImagen as e:
+                return {"exito": False, "error": str(e)}
+        resultado = self.cloud.crear_publicacion(texto, imagen, gif_url)
+        if resultado.get("exito"):
+            self._imagen_publicacion = ""
+        return resultado
+
+    def obtener_publicaciones(self, antes_id=None, autor_id=None):
+        return self.cloud.obtener_publicaciones(antes_id, autor_id)
+
+    def obtener_publicacion(self, pub_id):
+        return self.cloud.obtener_publicacion(pub_id)
+
+    def eliminar_publicacion(self, pub_id):
+        return self.cloud.eliminar_publicacion(pub_id)
+
+    def alternar_reaccion(self, pub_id, tipo):
+        return self.cloud.alternar_reaccion(pub_id, tipo)
+
+    def compartir_publicacion(self, pub_id, amigos_ids):
+        return self.cloud.compartir_publicacion(pub_id, amigos_ids or [])
+
+    def quitar_compartido(self, pub_id):
+        return self.cloud.quitar_compartido(pub_id)
+
+    def obtener_comentarios(self, pub_id):
+        return self.cloud.obtener_comentarios(pub_id)
+
+    def comentar_publicacion(self, pub_id, texto):
+        return self.cloud.comentar_publicacion(pub_id, texto)
+
+    def eliminar_comentario(self, comentario_id, pub_id):
+        return self.cloud.eliminar_comentario(comentario_id, pub_id)
 
     def buscar_usuarios(self, texto):
         return self.cloud.buscar_usuarios(texto)

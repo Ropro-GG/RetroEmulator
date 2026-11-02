@@ -907,6 +907,7 @@ function mostrarVista(nombre) {
     } else {
         detenerSocial();
         detenerChat();
+        cerrarPicker();
     }
 }
 
@@ -915,7 +916,6 @@ function mostrarVista(nombre) {
 // ============================================================================
 
 const SECCIONES_PRONTO = {
-    publicaciones:  { icono: '📰', titulo: 'Publicaciones', texto: 'Mirá lo que publican tus amigos y compartí tus propias capturas y opiniones.' },
     foros:          { icono: '🗨️', titulo: 'Foros',         texto: 'Foros por juego y por consola para preguntar, recomendar y debatir.' },
     llamadas:       { icono: '📞', titulo: 'Llamadas',      texto: 'Llamadas de voz con tus amigos.' },
 };
@@ -943,6 +943,7 @@ function detenerSocial() {
 function seleccionarSeccionSocial(nombre) {
     socialSeccion = nombre;
     if (nombre !== 'chat') detenerChat();
+    if (nombre !== 'publicaciones') cerrarPicker();
     document.querySelector('.social-content').classList.toggle('chat-vista', nombre === 'chat');
     perfilAjenoId = null;
     document.getElementById('social-perfil').style.display = 'none';
@@ -950,7 +951,7 @@ function seleccionarSeccionSocial(nombre) {
         li.classList.toggle('active', li.dataset.social === nombre);
     });
 
-    const reales = { amigos: 'social-amigos', deseados: 'social-deseados', chat: 'social-chat' };
+    const reales = { amigos: 'social-amigos', deseados: 'social-deseados', chat: 'social-chat', publicaciones: 'social-publicaciones' };
     Object.values(reales).forEach(id => document.getElementById(id).style.display = 'none');
     document.getElementById('social-pronto').style.display = 'none';
 
@@ -959,6 +960,7 @@ function seleccionarSeccionSocial(nombre) {
         if (nombre === 'amigos') cargarSocial();
         else if (nombre === 'deseados') abrirDeseados();
         else if (nombre === 'chat') abrirChat();
+        else if (nombre === 'publicaciones') abrirPublicaciones();
     } else {
         const info = SECCIONES_PRONTO[nombre];
         document.getElementById('social-pronto').style.display = 'block';
@@ -1383,6 +1385,7 @@ function reiniciarEstadoUI() {
     document.querySelectorAll('.settings-nav li').forEach(li => li.classList.toggle('active', li.dataset.section === 'paths'));
     document.getElementById('social-chat').style.display = 'none';
     reiniciarChat();
+    reiniciarPublicaciones();
     mostrarVista('biblioteca');
 }
 
@@ -1804,6 +1807,7 @@ function detenerChat() {
 
 function reiniciarChat() {
     detenerChat();
+    cerrarPicker();
     chatAmigo = null;
     chatConversaciones = [];
     chatMensajes = [];
@@ -1815,7 +1819,8 @@ function reiniciarChat() {
     imagenesChat.clear();
     imagenesChatPendientes.clear();
     imagenesChatFallidas.clear();
-    ['imagen-modal', 'sticker-modal', 'visor-modal', 'sticker-tray'].forEach(id => document.getElementById(id).style.display = 'none');
+    categoriaEmojiElegida = false;
+    ['imagen-modal', 'sticker-modal', 'visor-modal', 'picker'].forEach(id => document.getElementById(id).style.display = 'none');
     document.getElementById('chat-activo').style.display = 'none';
     document.getElementById('chat-vacio').style.display = '';
     document.getElementById('chat-error').textContent = '';
@@ -1913,22 +1918,36 @@ function crearBurbuja(m) {
 
     const burbuja = document.createElement('div');
     burbuja.className = 'msg-burbuja';
-    if (m.tipo === 'imagen' || m.tipo === 'sticker') {
+    if (m.tipo === 'imagen' || m.tipo === 'sticker' || m.tipo === 'gif') {
         burbuja.className = 'msg-burbuja msg-media' + (m.tipo === 'sticker' ? ' msg-sticker' : '');
         const img = document.createElement('img');
         img.alt = '';
-        img.className = m.tipo === 'sticker' ? 'chat-sticker' : 'chat-imagen';
+        img.className = m.tipo === 'sticker' ? 'chat-sticker' : (m.tipo === 'gif' ? 'chat-gif' : 'chat-imagen');
         img.onload = () => {
             if (chatPegadoAbajo) {   // al cargar la imagen el hilo crece: se sigue pegado al final
                 const c = document.getElementById('chat-mensajes');
                 c.scrollTop = c.scrollHeight;
             }
         };
-        if (m.tipo === 'imagen') img.onclick = () => abrirVisor(img.src);
-        cargarImagenEn(img, m.contenido);
+        if (m.tipo !== 'sticker') img.onclick = () => abrirVisor(img.src);
+        if (m.tipo === 'gif') {
+            if (urlGifPermitida(m.contenido)) {
+                img.src = m.contenido;
+                img.onerror = () => { img.classList.add('rota'); img.alt = '⚠️ No se pudo cargar el GIF'; };
+            } else {
+                img.classList.add('rota');
+                img.alt = '⚠️ GIF no válido';
+            }
+        } else {
+            cargarImagenEn(img, m.contenido);
+        }
         burbuja.appendChild(img);
+    } else if (m.tipo === 'publicacion') {
+        burbuja.className = 'msg-burbuja msg-publicacion';
+        burbuja.appendChild(crearTarjetaCompartida(m.contenido));
     } else {
         burbuja.textContent = m.tipo === 'texto' ? m.contenido : '📎 Contenido que esta versión todavía no puede mostrar';
+        if (m.tipo === 'texto' && esSoloEmojis(m.contenido)) burbuja.classList.add('msg-emoji');
     }
 
     const meta = document.createElement('div');
@@ -1985,7 +2004,7 @@ async function abrirConversacion(amigoId) {
     document.getElementById('chat-vacio').style.display = 'none';
     document.getElementById('chat-activo').style.display = 'flex';
     document.getElementById('chat-error').textContent = '';
-    document.getElementById('sticker-tray').style.display = 'none';
+    document.getElementById('picker').style.display = 'none';
     document.getElementById('chat-nombre').textContent = conv.username;
     document.getElementById('chat-estado').textContent = conv.jugando ? `🎮 Jugando a ${conv.jugando.titulo}` : '';
     const avatar = document.getElementById('chat-avatar');
@@ -2316,15 +2335,8 @@ async function guardarSticker(enviar) {
     }
 
     cerrarStickerModal();
-    if (document.getElementById('sticker-tray').style.display !== 'none') cargarStickers();
+    if (document.getElementById('picker').style.display !== 'none') cargarStickers();
     if (enviar && chatAmigo) enviarStickerChat(res.sticker.ruta);
-}
-
-async function alternarStickers() {
-    const bandeja = document.getElementById('sticker-tray');
-    const abrir = bandeja.style.display === 'none';
-    bandeja.style.display = abrir ? 'block' : 'none';
-    if (abrir) await cargarStickers();
 }
 
 async function cargarStickers() {
@@ -2377,7 +2389,7 @@ async function quitarStickerPropio(id) {
 async function enviarStickerChat(ruta) {
     if (!chatAmigo) return;
     const id = chatAmigo.user_id;
-    document.getElementById('sticker-tray').style.display = 'none';
+    document.getElementById('picker').style.display = 'none';
 
     let res;
     try {
@@ -2394,4 +2406,931 @@ async function enviarStickerChat(ruta) {
         renderizarChat('fondo');
     }
     cargarConversaciones();
+}
+
+// ============================================================================
+// CHAT: PANEL DE EMOJIS, STICKERS Y GIFS
+// ============================================================================
+
+const EMOJIS = {
+    'Caritas': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'],
+    'Gestos': ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','💪','🫶','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗','💖','💘','💝'],
+    'Juegos': ['🎮','🕹️','👾','🏆','🥇','🥈','🥉','🎲','🎯','🧩','♟️','🃏','🎰','🎳','⚔️','🛡️','🗡️','🏹','💣','🔫','🪄','👑','💎','🍄','⭐','🌟','✨','⚡','🔥','💥','🚀','🛸','🕶️','📼','💾','📺','🎧','🎵','🎶','🎤','🎸','🥁','🎹'],
+    'Animales': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐢','🐍','🦎','🐙','🦑','🦀','🐠','🐬','🐳','🦈','🐘','🦒','🦘','🐕','🐈'],
+    'Comida': ['🍎','🍌','🍇','🍓','🍉','🍑','🍒','🍍','🥝','🍅','🥑','🌽','🥕','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🍝','🍜','🍣','🍤','🍩','🍪','🎂','🍰','🍫','🍬','🍭','🍿','☕','🍵','🍺','🍻','🥂','🍷','🥤','🧉','🍾'],
+    'Objetos': ['⚽','🏀','🏈','⚾','🎾','🏐','🏓','🥊','🎬','🎨','🎭','🎪','🎉','🎊','🎁','🎈','📷','📱','💻','⌨️','🖥️','🔋','💡','📚','✏️','📌','🔒','🔑','⏰','💰','🚗','✈️','🌍','🌈','☀️','🌙','☁️','❄️','🌊'],
+    'Símbolos': ['✅','❌','⭕','❗','❓','‼️','💯','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','➕','➖','➡️','⬅️','⬆️','⬇️','🔄','▶️','⏸️','⏹️','⏩','⏪','🔔','🔇','💤','💢','💬','💭','🆗','🆒','🆕','🔝','⚠️','🚫','♻️'],
+};
+const ICONOS_EMOJI = { 'Recientes': '🕘', 'Caritas': '😀', 'Gestos': '👍', 'Juegos': '🎮', 'Animales': '🐶', 'Comida': '🍔', 'Objetos': '🎁', 'Símbolos': '✅' };
+
+let pestanaPicker = 'emojis';
+let categoriaEmoji = 'Caritas';
+let emojisRecientes = [];
+let categoriaEmojiElegida = false;   // mientras no elijas una, se abre en "Recientes" si tenés
+
+function esSoloEmojis(texto) {
+    const t = (texto || '').trim();
+    if (!t || [...t].length > 10) return false;
+    return /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\uFE0F\u200D\s]+$/u.test(t) && /\p{Extended_Pictographic}/u.test(t);
+}
+
+// El mismo panel (emojis · stickers · GIFs) sirve para el chat, para redactar una publicación
+// y para comentar: se mueve al lugar donde se abre y recuerda a quién entrega lo que elegís.
+//   destino = { id, caja: <input/textarea donde van los emojis>, gif: función(url) | null, stickers: bool }
+let pickerDestino = null;
+
+function ajustarPestanasPicker() {
+    const d = pickerDestino || {};
+    const visibles = { emojis: true, stickers: !!d.stickers, gifs: !!d.gif };
+    document.querySelectorAll('.picker-tab').forEach(b => {
+        b.style.display = visibles[b.dataset.tab] ? '' : 'none';
+    });
+    if (!visibles[pestanaPicker]) pestanaPicker = 'emojis';
+}
+
+function abrirPickerEn(contenedor, destino, antesDe) {
+    const panel = document.getElementById('picker');
+    if (panel.style.display !== 'none' && pickerDestino && pickerDestino.id === destino.id) {
+        cerrarPicker();   // el mismo botón lo abre y lo cierra
+        return;
+    }
+    contenedor.insertBefore(panel, antesDe || null);
+    pickerDestino = destino;
+    ajustarPestanasPicker();
+    panel.style.display = 'block';
+    return elegirPestanaPicker(pestanaPicker);
+}
+
+function moverPickerAChat() {
+    const panel = document.getElementById('picker');
+    const activo = document.getElementById('chat-activo');
+    if (panel.parentElement !== activo) activo.insertBefore(panel, activo.querySelector('.chat-composer'));
+}
+
+function cerrarPicker() {
+    document.getElementById('picker').style.display = 'none';
+    pickerDestino = null;
+    moverPickerAChat();
+}
+
+function alternarPicker() {
+    const activo = document.getElementById('chat-activo');
+    const destino = { id: 'chat', caja: document.getElementById('chat-texto'), gif: enviarGifChat, stickers: true };
+    return abrirPickerEn(activo, destino, activo.querySelector('.chat-composer'));
+}
+
+function elegirPestanaPicker(nombre) {
+    pestanaPicker = nombre;
+    ['emojis', 'stickers', 'gifs'].forEach(n => {
+        document.getElementById('picker-' + n).style.display = (n === nombre) ? 'block' : 'none';
+    });
+    document.querySelectorAll('.picker-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === nombre));
+    if (nombre === 'emojis') return abrirEmojis();
+    if (nombre === 'stickers') return cargarStickers();
+    return abrirGifs();
+}
+
+// --- Emojis ---
+
+async function abrirEmojis() {
+    try {
+        emojisRecientes = (await window.pywebview.api.obtener_emojis_recientes()) || [];
+    } catch (e) {
+        emojisRecientes = [];
+    }
+    if (emojisRecientes.length && !categoriaEmojiElegida) categoriaEmoji = 'Recientes';
+    pintarCategoriasEmoji();
+    pintarEmojis();
+}
+
+function pintarCategoriasEmoji() {
+    const cont = document.getElementById('emoji-cats');
+    cont.innerHTML = '';
+    const cats = (emojisRecientes.length ? ['Recientes'] : []).concat(Object.keys(EMOJIS));
+    if (!cats.includes(categoriaEmoji)) categoriaEmoji = cats[0];
+    cats.forEach(c => {
+        const b = document.createElement('button');
+        b.className = 'emoji-cat' + (c === categoriaEmoji ? ' active' : '');
+        b.textContent = ICONOS_EMOJI[c] || c;
+        b.title = c;
+        b.onclick = () => { categoriaEmoji = c; categoriaEmojiElegida = true; pintarCategoriasEmoji(); pintarEmojis(); };
+        cont.appendChild(b);
+    });
+}
+
+function pintarEmojis() {
+    const grilla = document.getElementById('emoji-grid');
+    grilla.innerHTML = '';
+    const lista = categoriaEmoji === 'Recientes' ? emojisRecientes : (EMOJIS[categoriaEmoji] || []);
+    lista.forEach(e => {
+        const b = document.createElement('button');
+        b.className = 'emoji-item';
+        b.textContent = e;
+        b.onclick = () => insertarEmoji(e);
+        grilla.appendChild(b);
+    });
+}
+
+function insertarEmoji(e) {
+    const caja = pickerDestino && pickerDestino.caja;
+    if (!caja) return;
+    const limite = caja.maxLength > 0 ? caja.maxLength : 1000;
+    if (caja.value.length + e.length > limite) return;
+    const ini = typeof caja.selectionStart === 'number' ? caja.selectionStart : caja.value.length;
+    const fin = typeof caja.selectionEnd === 'number' ? caja.selectionEnd : ini;
+    caja.value = caja.value.slice(0, ini) + e + caja.value.slice(fin);
+    caja.selectionStart = caja.selectionEnd = ini + e.length;
+    caja.dispatchEvent(new Event('input'));   // que cada caja ajuste su altura / contador
+    caja.focus();
+    emojisRecientes = [e].concat(emojisRecientes.filter(x => x !== e)).slice(0, 24);
+    window.pywebview.api.registrar_emoji_reciente(e);
+}
+
+// --- GIFs (KLIPY) ---
+
+let gifPagina = 1;
+let gifToken = 0;
+let gifTimer = null;
+
+function urlGifPermitida(url) {
+    if (typeof url !== 'string' || url.length > 1000 || /[\s<>"'`\\]/.test(url)) return false;
+    try {
+        const u = new URL(url);
+        const h = u.hostname.toLowerCase();
+        return u.protocol === 'https:' &&
+            (h === 'klipy.com' || h.endsWith('.klipy.com') || h === 'klipy.co' || h.endsWith('.klipy.co'));
+    } catch (e) {
+        return false;
+    }
+}
+
+function abrirGifs() {
+    if (!document.getElementById('gif-grid').children.length) cargarGifs(true);
+    document.getElementById('gif-busqueda').focus();
+}
+
+function gifBuscarConRetraso() {
+    clearTimeout(gifTimer);
+    gifTimer = setTimeout(() => cargarGifs(true), 450);
+}
+
+function gifMas() {
+    gifPagina++;
+    cargarGifs(false);
+}
+
+async function cargarGifs(reiniciar) {
+    const token = ++gifToken;
+    const grilla = document.getElementById('gif-grid');
+    const estado = document.getElementById('gif-estado');
+    const mas = document.getElementById('gif-mas');
+    const consulta = document.getElementById('gif-busqueda').value.trim();
+    if (reiniciar) {
+        gifPagina = 1;
+        grilla.innerHTML = '';
+    }
+    mas.style.display = 'none';
+    estado.textContent = 'Buscando…';
+
+    let res;
+    try {
+        res = await window.pywebview.api.buscar_gifs(consulta, gifPagina);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (token !== gifToken) return;   // se escribió otra cosa mientras buscaba
+
+    if (!res || !res.exito) {
+        estado.textContent = (res && res.error) || 'No se pudo buscar GIFs.';
+        return;
+    }
+    const validos = res.gifs.filter(g => urlGifPermitida(g.url));
+    estado.textContent = (validos.length === 0 && reiniciar)
+        ? (consulta ? 'No se encontraron GIFs para esa búsqueda.' : 'No hay GIFs para mostrar.') : '';
+
+    validos.forEach(g => {
+        const item = document.createElement('div');
+        item.className = 'gif-item';
+        item.title = g.titulo;
+        const img = document.createElement('img');
+        img.alt = g.titulo;
+        img.loading = 'lazy';
+        img.src = urlGifPermitida(g.miniatura) ? g.miniatura : g.url;
+        // al pasar el mouse se anima
+        item.onmouseenter = () => { if (urlGifPermitida(g.vista)) img.src = g.vista; };
+        item.onmouseleave = () => { img.src = urlGifPermitida(g.miniatura) ? g.miniatura : g.url; };
+        item.onclick = () => { if (pickerDestino && pickerDestino.gif) pickerDestino.gif(g.url); };
+        item.appendChild(img);
+        grilla.appendChild(item);
+    });
+    mas.style.display = res.hay_mas ? '' : 'none';
+}
+
+async function enviarGifChat(url) {
+    if (!chatAmigo) return;
+    const id = chatAmigo.user_id;
+    document.getElementById('picker').style.display = 'none';
+
+    let res;
+    try {
+        res = await window.pywebview.api.enviar_gif(id, url);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) {
+        document.getElementById('chat-error').textContent = (res && res.error) || 'No se pudo enviar el GIF.';
+        return;
+    }
+    if (chatAmigo && chatAmigo.user_id === id) {
+        registrarMensaje(res.mensaje);
+        renderizarChat('fondo');
+    }
+    cargarConversaciones();
+}
+
+
+// ============================================================================
+// PUBLICACIONES (públicas: las ve cualquier usuario)
+// ============================================================================
+
+let postsFiltro = 'todas';        // 'todas' | 'mias' | 'una' (una sola, al abrirla desde el chat)
+let postsUnaId = null;
+let postsUnaPendiente = null;     // publicación a mostrar al entrar a la sección
+let postsUltimoId = null;         // id de la última cargada (para "Ver más")
+let postsToken = 0;
+let postsCargando = false;
+let postsPublicando = false;
+let postAdjunto = null;           // { tipo: 'imagen' | 'gif', vista, url? }
+const postsCache = new Map();     // id -> publicación (la usan también las tarjetas del chat)
+
+const ICONOS_POST = {
+    like: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path class="detalle" d="M7 10v12"/></svg>',
+    dislike: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path class="detalle" d="M17 14V2"/></svg>',
+    comentar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>',
+    compartir: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path class="detalle" d="M22 2 11 13"/></svg>',
+};
+
+function nodo(etiqueta, clase, texto) {
+    const n = document.createElement(etiqueta);
+    if (clase) n.className = clase;
+    if (texto !== undefined) n.textContent = texto;
+    return n;
+}
+
+function abreviarNumero(n) {
+    n = Math.max(0, n || 0);
+    if (n < 1000) return String(n);
+    if (n >= 999500 && n < 1000000) return '1M';
+    if (n < 1000000) return (n / 1000).toFixed(n < 10000 ? 1 : 0).replace('.', ',').replace(/,0$/, '') + 'K';
+    return (n / 1000000).toFixed(1).replace('.', ',').replace(/,0$/, '') + 'M';
+}
+
+function fechaPublicacion(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + horaDe(iso);
+}
+
+function avisoPost(texto, esError) {
+    document.querySelectorAll('.post-toast').forEach(t => t.remove());
+    const t = nodo('div', 'post-toast' + (esError ? ' error' : ''), texto);
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+}
+
+function mediaPostPermitida(p) {
+    if (!p.media_url) return false;
+    if (p.tipo_media === 'gif') return urlGifPermitida(p.media_url);
+    return /^https:\/\//i.test(p.media_url);
+}
+
+// --- Entrar / salir de la sección ---
+
+function abrirPublicaciones() {
+    if (postsUnaPendiente) {
+        postsFiltro = 'una';
+        postsUnaId = postsUnaPendiente;
+        postsUnaPendiente = null;
+    } else if (postsFiltro === 'una') {
+        postsFiltro = 'todas';
+    }
+    const avatar = document.getElementById('post-composer-avatar');
+    avatar.src = avatarDe(perfilActual || {});
+    avatar.onerror = () => { avatar.style.visibility = 'hidden'; };
+    pintarCabeceraPosts();
+    cargarPublicaciones(true);
+}
+
+function reiniciarPublicaciones() {
+    postsToken++;
+    postsFiltro = 'todas';
+    postsUnaId = null;
+    postsUnaPendiente = null;
+    postsUltimoId = null;
+    postsCargando = false;
+    postsPublicando = false;
+    postAdjunto = null;
+    postsCache.clear();
+    cerrarPicker();
+    document.getElementById('post-lista').innerHTML = '';
+    document.getElementById('post-texto').value = '';
+    document.getElementById('post-error').textContent = '';
+    document.getElementById('post-mas').style.display = 'none';
+    document.getElementById('post-publicar').disabled = false;
+    document.getElementById('post-publicar').textContent = 'Publicar';
+    document.getElementById('social-publicaciones').style.display = 'none';
+    document.getElementById('compartir-modal').style.display = 'none';
+    pintarAdjuntoPost();
+    autoAjustarPost(document.getElementById('post-texto'));
+    try { window.pywebview.api.descartar_imagen_publicacion(); } catch (e) { /* aún sin puente */ }
+    pintarCabeceraPosts();
+}
+
+function pintarCabeceraPosts() {
+    const unica = postsFiltro === 'una';
+    document.getElementById('posts-tabs').style.display = unica ? 'none' : '';
+    document.getElementById('posts-volver').style.display = unica ? '' : 'none';
+    document.getElementById('post-composer').style.display = unica ? 'none' : '';
+    document.querySelectorAll('.posts-tab').forEach(b => b.classList.toggle('active', b.dataset.filtro === postsFiltro));
+}
+
+function cambiarFiltroPosts(filtro) {
+    if (filtro === postsFiltro && filtro !== 'todas') return;
+    postsFiltro = filtro;
+    postsUnaId = null;
+    pintarCabeceraPosts();
+    cargarPublicaciones(true);
+}
+
+// Desde una publicación compartida en el chat
+function irAPublicacion(id) {
+    postsUnaPendiente = id;
+    mostrarVista('social');
+    seleccionarSeccionSocial('publicaciones');
+}
+
+// --- Cargar el feed ---
+
+async function cargarPublicaciones(reiniciar) {
+    const token = ++postsToken;
+    const lista = document.getElementById('post-lista');
+    const mas = document.getElementById('post-mas');
+    if (reiniciar) {
+        postsUltimoId = null;
+        lista.innerHTML = '';
+        lista.appendChild(mensajeVacio('Cargando…'));
+    }
+    mas.style.display = 'none';
+    postsCargando = true;
+
+    let res;
+    try {
+        if (postsFiltro === 'una') {
+            const r = await window.pywebview.api.obtener_publicacion(postsUnaId);
+            res = r && r.exito ? { exito: true, publicaciones: [r.publicacion], hay_mas: false } : r;
+        } else {
+            const autor = postsFiltro === 'mias' && usuarioActual ? usuarioActual.id : null;
+            res = await window.pywebview.api.obtener_publicaciones(reiniciar ? null : postsUltimoId, autor);
+        }
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (token !== postsToken) return;   // cambió de pestaña o de cuenta mientras cargaba
+    postsCargando = false;
+
+    if (reiniciar) lista.innerHTML = '';
+    else lista.querySelectorAll('.empty-state').forEach(n => n.remove());
+
+    if (!res || !res.exito) {
+        lista.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar las publicaciones.'));
+        return;
+    }
+    res.publicaciones.forEach(p => lista.appendChild(crearTarjetaPost(p)));
+    if (res.publicaciones.length) postsUltimoId = res.publicaciones[res.publicaciones.length - 1].id;
+    if (!lista.children.length) {
+        lista.appendChild(mensajeVacio(postsFiltro === 'mias'
+            ? 'Todavía no publicaste nada. ¡Escribí tu primera publicación!'
+            : 'Todavía no hay publicaciones. ¡Sé el primero en publicar!'));
+    }
+    mas.style.display = res.hay_mas ? '' : 'none';
+}
+
+async function cargarMasPublicaciones() {
+    if (postsCargando) return;
+    const mas = document.getElementById('post-mas');
+    mas.disabled = true;
+    await cargarPublicaciones(false);
+    mas.disabled = false;
+}
+
+// --- Redactar ---
+
+function autoAjustarPost(caja) {
+    caja.style.height = 'auto';
+    caja.style.height = Math.min(caja.scrollHeight, 220) + 'px';
+    const largo = caja.value.length;
+    const c = document.getElementById('post-contador');
+    c.textContent = `${largo} / 2000`;
+    c.classList.toggle('casi', largo > 1800);
+}
+
+function pintarAdjuntoPost() {
+    const cont = document.getElementById('post-adjunto');
+    if (!postAdjunto) {
+        cont.style.display = 'none';
+        document.getElementById('post-adjunto-img').removeAttribute('src');
+        return;
+    }
+    document.getElementById('post-adjunto-img').src = postAdjunto.vista;
+    cont.style.display = '';
+}
+
+async function elegirImagenPost() {
+    document.getElementById('post-error').textContent = '';
+    let res;
+    try {
+        res = await window.pywebview.api.seleccionar_imagen_publicacion();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) {
+        if (res && res.error && res.error !== 'cancelado') document.getElementById('post-error').textContent = res.error;
+        return;
+    }
+    postAdjunto = { tipo: 'imagen', vista: res.vista };   // una publicación lleva una imagen o un GIF
+    pintarAdjuntoPost();
+}
+
+function adjuntarGifPost(url) {
+    if (!urlGifPermitida(url)) return;
+    window.pywebview.api.descartar_imagen_publicacion();
+    postAdjunto = { tipo: 'gif', vista: url, url };
+    pintarAdjuntoPost();
+    cerrarPicker();
+}
+
+function quitarAdjuntoPost() {
+    window.pywebview.api.descartar_imagen_publicacion();
+    postAdjunto = null;
+    pintarAdjuntoPost();
+}
+
+function alternarPickerPost() {
+    const caja = document.getElementById('post-texto');
+    abrirPickerEn(document.getElementById('post-picker-slot'), { id: 'post', caja, gif: adjuntarGifPost, stickers: false });
+}
+
+async function publicar() {
+    if (postsPublicando) return;
+    const caja = document.getElementById('post-texto');
+    const error = document.getElementById('post-error');
+    const btn = document.getElementById('post-publicar');
+    const texto = caja.value.trim();
+    if (!texto && !postAdjunto) {
+        error.textContent = 'Escribí algo o agregá una imagen o un GIF.';
+        return;
+    }
+    postsPublicando = true;
+    btn.disabled = true;
+    btn.textContent = 'Publicando…';
+    error.textContent = '';
+
+    const token = postsToken;
+    let res;
+    try {
+        res = await window.pywebview.api.crear_publicacion(texto, postAdjunto && postAdjunto.tipo === 'gif' ? postAdjunto.url : null);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    postsPublicando = false;
+    btn.disabled = false;
+    btn.textContent = 'Publicar';
+    if (token !== postsToken) return;   // se cambió de cuenta mientras publicaba
+
+    if (!res || !res.exito) {
+        error.textContent = (res && res.error) || 'No se pudo publicar.';
+        return;
+    }
+    caja.value = '';
+    autoAjustarPost(caja);
+    postAdjunto = null;
+    pintarAdjuntoPost();
+    cerrarPicker();
+
+    const lista = document.getElementById('post-lista');
+    lista.querySelectorAll('.empty-state').forEach(n => n.remove());
+    lista.insertBefore(crearTarjetaPost(res.publicacion), lista.firstChild);
+    avisoPost('Publicación creada');
+}
+
+// --- Tarjeta de una publicación ---
+
+function crearTarjetaPost(p) {
+    postsCache.set(p.id, p);
+    const tarjeta = nodo('article', 'post');
+    tarjeta.dataset.id = p.id;
+
+    // Cabecera: autor y fecha de publicación
+    const cab = nodo('div', 'post-cab');
+    const avatar = nodo('img', 'post-avatar');
+    avatar.src = avatarDe(p);
+    avatar.alt = '';
+    avatar.onerror = () => { avatar.style.visibility = 'hidden'; };
+    const info = nodo('div', 'post-cab-info');
+    const autor = nodo('span', 'post-autor', p.username);
+    const fecha = nodo('span', 'post-fecha', fechaPublicacion(p.creado_en));
+    info.append(autor, fecha);
+    const irAlPerfil = () => (p.mia ? abrirPerfil() : irAPerfilAmigo(p.autor_id));
+    avatar.onclick = autor.onclick = irAlPerfil;
+    cab.append(avatar, info);
+    if (p.mia) {
+        const borrar = nodo('button', 'post-borrar', '🗑️');
+        borrar.title = 'Eliminar publicación';
+        borrar.onclick = () => eliminarPost(p, tarjeta);
+        cab.appendChild(borrar);
+    }
+    tarjeta.appendChild(cab);
+
+    // Contenido: texto (con emojis) e imagen o GIF
+    if (p.texto) {
+        const t = nodo('div', 'post-texto' + (esSoloEmojis(p.texto) ? ' post-emoji' : ''), p.texto);
+        tarjeta.appendChild(t);
+    }
+    if (mediaPostPermitida(p)) {
+        const m = nodo('img', 'post-media' + (p.tipo_media === 'gif' ? ' post-gif' : ''));
+        m.alt = '';
+        m.loading = 'lazy';
+        m.src = p.media_url;
+        m.onclick = () => abrirVisor(m.src);
+        m.onerror = () => { m.classList.add('rota'); m.alt = '⚠️ No se pudo cargar el contenido'; };
+        tarjeta.appendChild(m);
+    }
+
+    // Acciones: cada una con su contador
+    const barra = nodo('div', 'post-acciones');
+    const acciones = [
+        ['like', 'Me gusta', () => reaccionarPost(p, 'like', tarjeta)],
+        ['dislike', 'No me gusta', () => reaccionarPost(p, 'dislike', tarjeta)],
+        ['comentar', 'Comentarios', () => alternarComentarios(p, tarjeta)],
+        ['compartir', 'Compartir con amigos', () => alternarCompartido(p, tarjeta)],
+    ];
+    acciones.forEach(([tipo, titulo, accion]) => {
+        const b = nodo('button', `post-accion accion-${tipo}`);
+        b.dataset.accion = tipo;
+        b.title = titulo;
+        b.innerHTML = ICONOS_POST[tipo];
+        b.appendChild(nodo('span', 'post-cuenta', '0'));
+        b.onclick = accion;
+        barra.appendChild(b);
+    });
+    tarjeta.appendChild(barra);
+    pintarAcciones(tarjeta, p);
+    return tarjeta;
+}
+
+function pintarAcciones(tarjeta, p) {
+    const estado = {
+        like: [p.mi_like, p.likes],
+        dislike: [p.mi_dislike, p.dislikes],
+        comentar: [false, p.comentarios],
+        compartir: [p.mi_compartido, p.compartidos],
+    };
+    Object.entries(estado).forEach(([tipo, [activo, cuenta]]) => {
+        const b = tarjeta.querySelector(`.post-accion[data-accion="${tipo}"]`);
+        if (!b) return;
+        b.classList.toggle('activa', !!activo);
+        b.setAttribute('aria-pressed', activo ? 'true' : 'false');
+        b.querySelector('.post-cuenta').textContent = abreviarNumero(cuenta);
+    });
+}
+
+// Cuando el servidor responde, se toman sus números (son los reales de toda la gente)
+function aplicarPublicacion(p, nueva, tarjeta) {
+    ['likes', 'dislikes', 'compartidos', 'comentarios', 'mi_like', 'mi_dislike', 'mi_compartido'].forEach(k => { p[k] = nueva[k]; });
+    pintarAcciones(tarjeta, p);
+}
+
+function quitarTarjetaPost(p, tarjeta) {
+    postsCache.delete(p.id);
+    if (pickerDestino && pickerDestino.id === 'comentario-' + p.id) cerrarPicker();
+    tarjeta.remove();
+    const lista = document.getElementById('post-lista');
+    if (!lista.children.length) lista.appendChild(mensajeVacio('No hay publicaciones para mostrar.'));
+}
+
+async function eliminarPost(p, tarjeta) {
+    if (!confirm('¿Eliminar esta publicación? Se borran también sus comentarios y reacciones.')) return;
+    let res;
+    try {
+        res = await window.pywebview.api.eliminar_publicacion(p.id);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (res && res.exito) quitarTarjetaPost(p, tarjeta);
+    else avisoPost((res && res.error) || 'No se pudo eliminar la publicación.', true);
+}
+
+// --- Me gusta / No me gusta: interruptor con contador ---
+// Un clic da la reacción (el ícono se rellena y el contador sube); otro clic la quita
+// (se vacía y baja). Like y dislike se excluyen, como en YouTube.
+
+async function reaccionarPost(p, tipo, tarjeta) {
+    if (p._ocupado) return;
+    p._ocupado = true;
+    const antes = { mi_like: p.mi_like, mi_dislike: p.mi_dislike, likes: p.likes, dislikes: p.dislikes };
+    const [miCampo, cuenta] = tipo === 'like' ? ['mi_like', 'likes'] : ['mi_dislike', 'dislikes'];
+    const [opCampo, opCuenta] = tipo === 'like' ? ['mi_dislike', 'dislikes'] : ['mi_like', 'likes'];
+    if (p[miCampo]) {
+        p[miCampo] = false;
+        p[cuenta] = Math.max(0, p[cuenta] - 1);
+    } else {
+        p[miCampo] = true;
+        p[cuenta]++;
+        if (p[opCampo]) { p[opCampo] = false; p[opCuenta] = Math.max(0, p[opCuenta] - 1); }
+    }
+    pintarAcciones(tarjeta, p);   // se ve al instante; el servidor confirma enseguida
+
+    let res;
+    try {
+        res = await window.pywebview.api.alternar_reaccion(p.id, tipo);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (res && res.exito) {
+        aplicarPublicacion(p, res.publicacion, tarjeta);
+    } else if (res && res.no_existe) {
+        avisoPost(res.error, true);
+        quitarTarjetaPost(p, tarjeta);
+    } else {
+        Object.assign(p, antes);
+        pintarAcciones(tarjeta, p);
+        avisoPost((res && res.error) || 'No se pudo registrar tu reacción.', true);
+    }
+    p._ocupado = false;
+}
+
+// --- Compartir con amigos ---
+
+let compartirActual = null;   // { p, tarjeta }
+
+async function alternarCompartido(p, tarjeta) {
+    if (!p.mi_compartido) {
+        abrirCompartir(p, tarjeta);
+        return;
+    }
+    // Ya lo compartiste: un segundo clic quita tu "compartido" (los mensajes ya enviados quedan en el chat)
+    if (p._ocupado) return;
+    p._ocupado = true;
+    const antes = { mi_compartido: p.mi_compartido, compartidos: p.compartidos };
+    p.mi_compartido = false;
+    p.compartidos = Math.max(0, p.compartidos - 1);
+    pintarAcciones(tarjeta, p);
+
+    let res;
+    try {
+        res = await window.pywebview.api.quitar_compartido(p.id);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (res && res.exito) {
+        aplicarPublicacion(p, res.publicacion, tarjeta);
+    } else {
+        Object.assign(p, antes);
+        pintarAcciones(tarjeta, p);
+        avisoPost((res && res.error) || 'No se pudo quitar el compartido.', true);
+    }
+    p._ocupado = false;
+}
+
+async function abrirCompartir(p, tarjeta) {
+    compartirActual = { p, tarjeta };
+    const lista = document.getElementById('compartir-lista');
+    document.getElementById('compartir-msg').textContent = '';
+    document.getElementById('compartir-enviar').disabled = true;
+    lista.innerHTML = '';
+    lista.appendChild(mensajeVacio('Cargando tus amigos…'));
+    document.getElementById('compartir-modal').style.display = 'flex';
+
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_social();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!compartirActual || compartirActual.p !== p) return;   // se cerró mientras cargaba
+    lista.innerHTML = '';
+    if (!res || !res.exito) {
+        lista.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar tus amigos.'));
+        return;
+    }
+    if (!res.amigos.length) {
+        lista.appendChild(mensajeVacio('Todavía no tenés amigos agregados. Buscalos en la sección Amigos.'));
+        return;
+    }
+    res.amigos.forEach(a => {
+        const fila = nodo('label', 'compartir-fila');
+        const img = nodo('img');
+        img.src = avatarDe(a);
+        img.alt = '';
+        img.onerror = () => { img.style.visibility = 'hidden'; };
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.value = a.user_id;
+        chk.onchange = () => {
+            document.getElementById('compartir-enviar').disabled = !lista.querySelector('input:checked');
+        };
+        fila.append(img, nodo('span', '', a.username), chk);
+        lista.appendChild(fila);
+    });
+}
+
+function cerrarCompartir() {
+    compartirActual = null;
+    document.getElementById('compartir-modal').style.display = 'none';
+}
+
+async function confirmarCompartir() {
+    if (!compartirActual) return;
+    const { p, tarjeta } = compartirActual;
+    const ids = [...document.querySelectorAll('#compartir-lista input:checked')].map(i => i.value);
+    if (!ids.length) return;
+    const btn = document.getElementById('compartir-enviar');
+    const msg = document.getElementById('compartir-msg');
+    btn.disabled = true;
+    msg.textContent = 'Enviando…';
+
+    let res;
+    try {
+        res = await window.pywebview.api.compartir_publicacion(p.id, ids);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) {
+        msg.textContent = (res && res.error) || 'No se pudo compartir la publicación.';
+        btn.disabled = false;
+        if (res && res.no_existe) { cerrarCompartir(); quitarTarjetaPost(p, tarjeta); }
+        return;
+    }
+    cerrarCompartir();
+    aplicarPublicacion(p, res.publicacion, tarjeta);
+    let texto = res.enviados === 1 ? 'Enviada a 1 amigo' : `Enviada a ${res.enviados} amigos`;
+    if (res.fallidos) texto += ` (${res.fallidos} no se pudo enviar)`;
+    avisoPost(texto);
+    cargarConversaciones();   // el chat de esos amigos ya tiene el mensaje
+}
+
+// --- Comentarios ---
+
+async function alternarComentarios(p, tarjeta) {
+    let cont = tarjeta.querySelector('.post-comentarios');
+    if (cont) {
+        if (pickerDestino && pickerDestino.id === 'comentario-' + p.id) cerrarPicker();
+        cont.remove();
+        return;
+    }
+    cont = nodo('div', 'post-comentarios');
+    const lista = nodo('div', 'post-comentarios-lista');
+    lista.appendChild(mensajeVacio('Cargando comentarios…'));
+    const slot = nodo('div');
+
+    const fila = nodo('div', 'post-comentar-fila');
+    const input = nodo('input', 'post-comentar-input');
+    input.type = 'text';
+    input.maxLength = 500;
+    input.placeholder = 'Escribí un comentario…';
+    input.autocomplete = 'off';
+    const btnEmoji = nodo('button', 'chat-icono', '😀');
+    btnEmoji.title = 'Emojis';
+    btnEmoji.onclick = () => abrirPickerEn(slot, { id: 'comentario-' + p.id, caja: input, gif: null, stickers: false });
+    const enviar = nodo('button', 'btn-primary-sm', 'Comentar');
+    const mandar = async () => {
+        const texto = input.value.trim();
+        if (!texto || enviar.disabled) return;
+        enviar.disabled = true;
+        let res;
+        try {
+            res = await window.pywebview.api.comentar_publicacion(p.id, texto);
+        } catch (e) {
+            res = { exito: false, error: String(e) };
+        }
+        enviar.disabled = false;
+        if (res && res.exito) {
+            input.value = '';
+            lista.querySelectorAll('.empty-state').forEach(n => n.remove());
+            lista.appendChild(filaComentario(res.comentario, p, tarjeta, lista));
+            aplicarPublicacion(p, res.publicacion, tarjeta);
+        } else if (res && res.no_existe) {
+            avisoPost(res.error, true);
+            quitarTarjetaPost(p, tarjeta);
+        } else {
+            avisoPost((res && res.error) || 'No se pudo comentar.', true);
+        }
+        input.focus();
+    };
+    enviar.onclick = mandar;
+    input.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); mandar(); } };
+    fila.append(input, btnEmoji, enviar);
+
+    cont.append(lista, slot, fila);
+    tarjeta.appendChild(cont);
+    input.focus();
+
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_comentarios(p.id);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    lista.innerHTML = '';
+    if (!res || !res.exito) {
+        lista.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar los comentarios.'));
+        return;
+    }
+    if (!res.comentarios.length) lista.appendChild(mensajeVacio('Todavía no hay comentarios. ¡Escribí el primero!'));
+    res.comentarios.forEach(c => lista.appendChild(filaComentario(c, p, tarjeta, lista)));
+}
+
+function filaComentario(c, p, tarjeta, lista) {
+    const fila = nodo('div', 'comentario');
+    const img = nodo('img');
+    img.src = avatarDe(c);
+    img.alt = '';
+    img.onerror = () => { img.style.visibility = 'hidden'; };
+    const irAlPerfil = () => (c.mio ? abrirPerfil() : irAPerfilAmigo(c.autor_id));
+    img.onclick = irAlPerfil;
+
+    const cuerpo = nodo('div', 'comentario-cuerpo');
+    const cab = nodo('div', 'comentario-cab');
+    const nombre = nodo('strong', '', c.username);
+    nombre.onclick = irAlPerfil;
+    cab.append(nombre, nodo('small', '', fechaPublicacion(c.creado_en)));
+    if (c.mio || p.mia) {   // tus comentarios, y los que te hicieron en tus publicaciones
+        const borrar = nodo('button', 'comentario-borrar', '🗑️');
+        borrar.title = 'Eliminar comentario';
+        borrar.onclick = async () => {
+            borrar.disabled = true;
+            let res;
+            try {
+                res = await window.pywebview.api.eliminar_comentario(c.id, p.id);
+            } catch (e) {
+                res = { exito: false, error: String(e) };
+            }
+            if (res && res.exito) {
+                fila.remove();
+                aplicarPublicacion(p, res.publicacion, tarjeta);
+                if (!lista.children.length) lista.appendChild(mensajeVacio('Todavía no hay comentarios. ¡Escribí el primero!'));
+            } else {
+                borrar.disabled = false;
+                avisoPost((res && res.error) || 'No se pudo eliminar el comentario.', true);
+            }
+        };
+        cab.appendChild(borrar);
+    }
+    const texto = nodo('div', 'comentario-texto', c.texto);
+    cuerpo.append(cab, texto);
+    fila.append(img, cuerpo);
+    return fila;
+}
+
+// --- Publicación compartida dentro del chat ---
+
+function crearTarjetaCompartida(contenido) {
+    const id = parseInt(contenido, 10);
+    const caja = nodo('div', 'chat-post');
+    caja.appendChild(nodo('div', 'chat-post-titulo', '📰 PUBLICACIÓN'));
+    const cuerpo = nodo('div', 'chat-post-cuerpo', 'Cargando…');
+    caja.appendChild(cuerpo);
+    if (!id) {
+        cuerpo.textContent = 'Publicación no válida.';
+        return caja;
+    }
+
+    const pintar = p => {
+        cuerpo.innerHTML = '';
+        if (!p) {
+            cuerpo.textContent = 'Esta publicación ya no está disponible.';
+            return;
+        }
+        caja.onclick = () => irAPublicacion(id);
+        cuerpo.appendChild(nodo('div', 'chat-post-autor', p.username));
+        if (p.texto) cuerpo.appendChild(nodo('div', 'chat-post-texto', p.texto.length > 140 ? p.texto.slice(0, 140) + '…' : p.texto));
+        if (p.media_url) cuerpo.appendChild(nodo('div', 'chat-post-media', p.tipo_media === 'gif' ? '🎞️ GIF' : '🖼️ Imagen'));
+    };
+
+    if (postsCache.has(id)) {
+        pintar(postsCache.get(id));
+    } else {
+        window.pywebview.api.obtener_publicacion(id).then(res => {
+            if (res && res.exito) {
+                postsCache.set(id, res.publicacion);
+                pintar(res.publicacion);
+            } else if (res && res.no_existe) {
+                postsCache.set(id, null);
+                pintar(null);
+            } else {
+                cuerpo.textContent = 'No se pudo cargar la publicación.';
+            }
+        }).catch(() => { cuerpo.textContent = 'No se pudo cargar la publicación.'; });
+    }
+    return caja;
 }
