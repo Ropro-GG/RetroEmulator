@@ -916,7 +916,6 @@ function mostrarVista(nombre) {
 // ============================================================================
 
 const SECCIONES_PRONTO = {
-    foros:          { icono: '🗨️', titulo: 'Foros',         texto: 'Foros por juego y por consola para preguntar, recomendar y debatir.' },
     llamadas:       { icono: '📞', titulo: 'Llamadas',      texto: 'Llamadas de voz con tus amigos.' },
 };
 
