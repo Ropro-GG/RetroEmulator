@@ -23,7 +23,7 @@
 
 ---
 
-## 📌 ¿Qué es RetroEmulator?
+## 💿 ¿Qué es RetroEmulator?
 
 **RetroEmulator** es un launcher y gestor de catálogo retro inspirado en la interfaz y experiencia social de plataformas modernas como **Steam, Epic Games Launcher, GOG y Hydra Launcher**, pero diseñado exclusivamente para **juegos retro y consolas clásicas**.
 
@@ -31,7 +31,7 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
 
 ---
 
-## ✨ Características Principales
+## 🛠 Características Principales
 
 <table>
   <tr>
@@ -58,23 +58,11 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
 
 ---
 
-## 💎 Filosofía 100% Gratis
+## 🔓 Filosofía 100% Gratis
 
 * ❌ **Cero Funciones Premium:** Todos los usuarios tienen acceso al 100% de la plataforma.
 * ❌ **Sin Anuncios ni Paywalls:** Disfruta de la interfaz sin interrupciones ni micropagos.
-* ✅ **Open Source:** Código abierto enfocado en la transparencia y mejora continua por la comunidad.
-
----
-
-## 📸 Capturas de Pantalla
-
-*(Añade aquí tus imágenes reemplazando los enlaces del atributo `src`)*
-
-<div align="center">
-  <img src="https://via.placeholder.com/800x450/1e1e2e/ffffff?text=RetroEmulator+Library+View" alt="Interfaz de Biblioteca" width="80%">
-  <br><br>
-  <img src="https://via.placeholder.com/800x450/1e1e2e/ffffff?text=RetroEmulator+Community+%26+Profiles" alt="Perfil y Comunidad" width="80%">
-</div>
+* ✔️ **Open Source:** Código abierto enfocado en la transparencia y mejora continua por la comunidad.
 
 ---
 
