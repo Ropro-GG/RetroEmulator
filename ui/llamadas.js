@@ -8,7 +8,7 @@
 // Requiere: supabase-js (CDN, en index.html) y los métodos de gui_app.py.
 // ============================================================================
 
-const LL_ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };  // sin TURN todavía
+const LL_ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };  // solo STUN: gratis, pero algunas redes no pueden conectarse
 const LL_MAX_PERSONAS = 6;       // en una llamada grupal cada uno se conecta con todos: más de 6 se vuelve pesado
 const LL_VIDEO = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
 const LL_TIMBRE_MS = 45000;      // cuánto suena antes de darla por no atendida
@@ -110,6 +110,7 @@ function llCrearUI() {
             <div class="llamada-texto"><strong id="llamada-barra-nombre"></strong><small id="llamada-barra-estado"></small></div>
             <button id="llamada-mute" class="llamada-btn" title="Silenciar micrófono" onclick="llAlternarMute()">🎤</button>
             <button id="llamada-camara" class="llamada-btn" title="Activar cámara" onclick="llAlternarCamara()">📷</button>
+            <button class="llamada-btn" title="Elegir micrófono y altavoz" onclick="abrirConfiguracion('audio')">🎧</button>
             <button class="llamada-btn" title="Agregar a alguien a la llamada" onclick="llAbrirInvitar()">➕</button>
             <button class="llamada-btn llamada-colgar" title="Colgar" onclick="llColgarManual()">📵</button>
         </div>
@@ -178,9 +179,111 @@ async function llamarAmigo(userId, nombre, conVideo = false) {
     await llIniciarLlamada([userId], conVideo, nombre);
 }
 
+// Micrófono y altavoz elegidos. Se guardan por nombre: Chromium cambia los ids de dispositivo
+// según el origen y esta ventana usa un puerto distinto en cada arranque.
+async function llListarDispositivos() {
+    let lista = await navigator.mediaDevices.enumerateDevices();
+    if (lista.some(d => d.kind === 'audioinput' && !d.label)) {   // sin permiso vigente los nombres vienen vacíos
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach(t => t.stop());
+        lista = await navigator.mediaDevices.enumerateDevices();
+    }
+    return lista;
+}
+
+async function llIdElegido(campo, tipo) {
+    try {
+        const nombre = (await window.pywebview.api.obtener_audio_llamadas())[campo];
+        if (!nombre) return null;
+        const d = (await llListarDispositivos()).find(x => x.kind === tipo && x.label === nombre);
+        return d ? d.deviceId : null;     // desconectado: se usa el predeterminado
+    } catch (e) {
+        return null;
+    }
+}
+
+async function llAudioConstraints() {
+    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    const id = await llIdElegido('mic', 'audioinput');
+    if (id) audio.deviceId = { ideal: id };
+    return audio;
+}
+
+async function llAplicarAltavoz(elemento) {
+    if (!elemento.setSinkId) return;
+    try { await elemento.setSinkId((await llIdElegido('altavoz', 'audiooutput')) || ''); }
+    catch (e) { console.warn('[LLAMADAS] No se pudo usar ese altavoz', e); }
+}
+
+const LL_PUEDE_ELEGIR_ALTAVOZ = 'setSinkId' in HTMLMediaElement.prototype;
+
+// Cambia el micrófono en plena llamada, sin renegociar con nadie
+async function llCambiarMicEnLlamada() {
+    const a = llActual;
+    if (!a) return;
+    const s = await navigator.mediaDevices.getUserMedia({ audio: await llAudioConstraints() });
+    const nueva = s.getAudioTracks()[0];
+    if (llActual !== a) { nueva.stop(); return; }
+    nueva.enabled = !a.silenciado;
+    await Promise.all(Array.from(a.peers.values()).map(peer => {
+        const emisor = peer.pc.getSenders().find(x => x.track && x.track.kind === 'audio');
+        return emisor ? emisor.replaceTrack(nueva) : null;
+    }));
+    a.local.getAudioTracks().forEach(t => { a.local.removeTrack(t); t.stop(); });
+    a.local.addTrack(nueva);
+}
+
+// Sección Audio de Configuración
+async function cargarConfigAudio() {
+    const mic = document.getElementById('audio-mic');
+    const altavoz = document.getElementById('audio-altavoz');
+    const msg = document.getElementById('audio-msg');
+    msg.textContent = 'Buscando dispositivos…';
+    let lista, elegidos;
+    try {
+        [lista, elegidos] = await Promise.all([llListarDispositivos(), window.pywebview.api.obtener_audio_llamadas()]);
+    } catch (e) {
+        msg.textContent = 'No se pudieron leer los dispositivos: ' + (e.message || e.name || e);
+        return;
+    }
+    const llenar = (select, tipo, actual) => {
+        select.innerHTML = '';
+        select.add(new Option('Predeterminado del sistema', ''));
+        const nombres = lista.filter(d => d.kind === tipo && d.label && d.deviceId !== 'default' && d.deviceId !== 'communications')
+            .map(d => d.label);
+        new Set(nombres).forEach(n => select.add(new Option(n, n)));
+        // Si está desconectado se conserva la elección: vuelve a usarse al conectarlo
+        if (actual && !nombres.includes(actual)) select.add(new Option(actual + ' (no conectado)', actual));
+        select.value = actual || '';
+    };
+    llenar(mic, 'audioinput', elegidos.mic);
+    llenar(altavoz, 'audiooutput', elegidos.altavoz);
+    altavoz.disabled = !LL_PUEDE_ELEGIR_ALTAVOZ;
+    document.getElementById('audio-altavoz-aviso').style.display = LL_PUEDE_ELEGIR_ALTAVOZ ? 'none' : '';
+    msg.textContent = '';
+}
+
+async function guardarConfigAudio(cambio) {
+    const msg = document.getElementById('audio-msg');
+    const res = await window.pywebview.api.guardar_audio_llamadas(
+        document.getElementById('audio-mic').value, document.getElementById('audio-altavoz').value);
+    if (!res || !res.exito) { msg.textContent = (res && res.error) || 'No se pudo guardar.'; return; }
+    msg.textContent = '✔ Guardado';
+    if (!llActual) return;
+    if (cambio === 'altavoz') {
+        document.querySelectorAll('#llamada-audios audio').forEach(llAplicarAltavoz);
+        return;
+    }
+    try {
+        await llCambiarMicEnLlamada();
+    } catch (e) {
+        msg.textContent = 'No se pudo cambiar el micrófono: ' + (e.message || e.name);
+    }
+}
+
 // Micrófono (y cámara si se pide). Si la cámara falla, se sigue solo con audio.
 async function llObtenerMedios(conVideo) {
-    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    const audio = await llAudioConstraints();
     try {
         if (conVideo) {
             try {
@@ -450,6 +553,7 @@ function llPeer(id) {
                 audio.dataset.peer = id;
                 audio.autoplay = true;
                 document.getElementById('llamada-audios').appendChild(audio);
+                llAplicarAltavoz(audio);
             }
             audio.srcObject = peer.streamRemoto;
             audio.play().catch(() => { /* ya reproduce solo al haber interactuado */ });

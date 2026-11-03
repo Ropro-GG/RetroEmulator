@@ -22,7 +22,7 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent / ".env")
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 except Exception:  # python-dotenv no instalado: se usa lo que ya haya en el entorno
     pass
 

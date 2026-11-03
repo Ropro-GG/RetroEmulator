@@ -3,20 +3,14 @@ from webview import FileDialog
 import json
 import os
 import threading
-from db_local import LocalDB
-from scanner import ROMScanner
-from launcher import GameLauncher
-from cloud_client import CloudClient
-import boxart
-import db_local
-import ra_client
-import contexto
-import gifs
-import imagenes
 import sys
-from llamadas_cloud import Llamadas
 import webbrowser
 from urllib.parse import urlparse
+
+from nucleo import boxart, db_local, gifs, imagenes, launcher, ra_client, scanner
+from nucleo.cloud_client import CloudClient
+from nucleo.db_local import LocalDB
+from nucleo.llamadas_cloud import Llamadas
 
 VERSION = "BETA v1"
 DESARROLLADOR = "Rocco Flores"
@@ -26,8 +20,6 @@ HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"}
 class API:
     def __init__(self):
         self.db = LocalDB()
-        self.scanner = ROMScanner()
-        self.launcher = GameLauncher()
         self.cloud = CloudClient()
         self._llamadas = Llamadas(self.cloud)   # '_' = no se expone al JS
         self.window = None
@@ -44,7 +36,7 @@ class API:
         if resultado and resultado.get("exito"):
             uid = (resultado.get("usuario") or {}).get("id")
             if uid:
-                contexto.establecer(uid)
+                db_local.establecer_usuario(uid)
                 if db_local.adoptar_datos_antiguos(uid):
                     ra_client.adoptar_credenciales_antiguas(uid)
 
@@ -78,7 +70,7 @@ class API:
 
     def cerrar_sesion(self):
         resultado = self.cloud.cerrar_sesion()
-        contexto.establecer("")   # nada de la cuenta anterior queda activo
+        db_local.establecer_usuario("")   # nada de la cuenta anterior queda activo
         self._imagen_elegida = ""
         self._imagen_publicacion = ""
         return resultado
@@ -107,19 +99,16 @@ class API:
 
     def escanear_roms(self):
         """Lanza el escaneo (juegos + carátulas) en segundo plano."""
-        iniciado = self.scanner.iniciar()
+        iniciado = scanner.iniciar_escaneo()
         return {"exito": True, "ya_en_curso": not iniciado}
 
     def obtener_estado_escaneo(self):
         """La interfaz lo consulta periódicamente para mostrar el progreso."""
-        return self.scanner.estado()
+        return scanner.estado_escaneo()
 
     def obtener_portada_data_uri(self, ruta_portada):
         """Plan B si el webview no puede abrir la imagen por file://."""
         return boxart.leer_como_data_uri(ruta_portada)
-
-    def obtener_juegos(self):
-        return self.db.obtener_todos_los_juegos()
 
     def obtener_juegos_filtrados(self, texto_busqueda="", consola_id=None):
         """Retorna juegos filtrados por búsqueda y/o consola para pywebview."""
@@ -134,7 +123,7 @@ class API:
 
     def lanzar_juego(self, game_id, variante=False):
         """'variante' = el usuario ya eligió una versión/disco en el selector."""
-        return self.launcher.lanzar_por_id(
+        return launcher.ejecutar_juego(
             game_id, al_iniciar=self._al_iniciar_juego, al_cerrar=self._al_cerrar_juego, variante=variante)
 
     def _al_iniciar_juego(self, titulo, consola):
@@ -253,7 +242,7 @@ class API:
     def buscar_gifs(self, texto, pagina=1):
         """Busca en KLIPY (sin texto devuelve los GIFs del momento)."""
         try:
-            resultado = gifs.buscar(texto, pagina, contexto.usuario_id())
+            resultado = gifs.buscar(texto, pagina, db_local.usuario_id())
         except gifs.ErrorGifs as e:
             return {"exito": False, "error": str(e)}
         except Exception:
@@ -410,6 +399,7 @@ class API:
         db_local.guardar_config_usuario("compartir_actividad", "1" if activo else "0")
         if not activo:
             self.cloud.limpiar_jugando()   # se borra lo que ya estuviera publicado
+        self._llamadas.actualizar_presencia()   # "en llamada" sigue el mismo ajuste
         return {"exito": True}
 
     def guardar_compartir_deseados(self, activo):
@@ -534,6 +524,18 @@ class API:
     def limpiar_llamadas_colgadas(self):
         return self._llamadas.limpiar_colgadas()
 
+    def obtener_audio_llamadas(self):
+        """Micrófono y altavoz elegidos en este equipo ('' = el predeterminado del sistema)."""
+        return {"mic": db_local.obtener_config("audio_mic", ""),
+                "altavoz": db_local.obtener_config("audio_altavoz", "")}
+
+    def guardar_audio_llamadas(self, mic, altavoz):
+        if not all(isinstance(v, str) and len(v) <= 200 for v in (mic, altavoz)):
+            return {"exito": False, "error": "Dispositivo no válido."}
+        db_local.guardar_config("audio_mic", mic)
+        db_local.guardar_config("audio_altavoz", altavoz)
+        return {"exito": True}
+
     def crear_llamada(self, amigo_ids, con_video=False):
         return self._llamadas.crear_llamada(amigo_ids, con_video)
 
@@ -568,9 +570,10 @@ def _elegir_motor():
 
 def main():
     # La base local, las ROMs y la caché usan rutas relativas: desde otra carpeta aparecerían vacías
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    raiz = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(raiz)
     api = API()
-    html_path = os.path.join('ui', 'index.html')
+    html_path = os.path.join(raiz, 'ui', 'index.html')
 
     window = webview.create_window(
         title='RetroEmulator',

@@ -1,7 +1,7 @@
 import subprocess
 import os
 import threading
-import db_local
+from . import db_local
 
 def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
     """
@@ -38,7 +38,7 @@ def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
     # Si hay múltiples variantes o discos con el mismo nombre, devolvemos la lista para elegir
     if len(coincidencias) > 1 and not variante:
         opciones = []
-        for c_id, c_titulo, c_ruta, c_emul in coincidencias:
+        for c_id, c_titulo, c_ruta, _ in coincidencias:
             # Extraer un nombre descriptivo (ej: Disc 1, Disc 2, etc.) del nombre del archivo o ruta
             nombre_archivo = os.path.basename(c_ruta)
             opciones.append({
@@ -85,7 +85,3 @@ def _vigilar(proceso, titulo, consola, al_iniciar, al_cerrar):
                 al_cerrar()
             except Exception as e:
                 print(f"[LAUNCHER] Error al cerrar: {e}")
-
-class GameLauncher:
-    def lanzar_por_id(self, juego_id, al_iniciar=None, al_cerrar=None, variante=False):
-        return ejecutar_juego(juego_id, al_iniciar, al_cerrar, variante)

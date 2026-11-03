@@ -18,10 +18,7 @@ import urllib.parse
 import urllib.request
 from difflib import get_close_matches
 
-import boxart
-import contexto
-import db_local
-import session_store
+from . import boxart, db_local, session_store
 
 API_URL = "https://retroachievements.org/API/"
 MEDIA_URL = "https://media.retroachievements.org"
@@ -57,7 +54,7 @@ class SinCredenciales(ErrorRA):
 
 def _nombre_credenciales():
     """Las credenciales son de cada cuenta de la app: no se mezclan al cambiar de usuario."""
-    uid = contexto.usuario_id()
+    uid = db_local.usuario_id()
     return f"retroachievements_{uid}" if uid else None
 
 

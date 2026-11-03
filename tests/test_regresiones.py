@@ -6,9 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import db_local
-import launcher
-import scanner
+from nucleo import db_local, launcher, scanner
 
 
 class PistasDeAudio(unittest.TestCase):
@@ -54,7 +52,7 @@ class ElegirVariante(unittest.TestCase):
         db_local.actualizar_rutas_consola(self.consola, ruta_emulador=sys.executable)
         db_local.registrar_juego(self.consola, "Juego", self.rom_a)
         db_local.registrar_juego(self.consola, "Juego", self.rom_b)
-        self.ids = [j["id"] for j in db_local.obtener_juegos_por_consola(self.consola)]
+        self.ids = [f[0] for f in db_local.obtener_conexion().execute("SELECT id FROM juegos ORDER BY id")]
         # El "emulador" no debe abrir nada de verdad
         self.popen = launcher.subprocess.Popen
         self.lanzados = []
@@ -74,6 +72,49 @@ class ElegirVariante(unittest.TestCase):
         res = launcher.ejecutar_juego(self.ids[1], variante=True)
         self.assertTrue(res["exito"])
         self.assertEqual(self.lanzados, [[sys.executable, self.rom_b]])
+
+
+class PresenciaEnLlamada(unittest.TestCase):
+    """Con la privacidad desactivada nunca debe publicarse 'en llamada'."""
+
+    class Tabla:
+        def __init__(self):
+            self.ops = []
+
+        def upsert(self, fila):
+            self.ops.append("publica")
+            return self
+
+        def delete(self):
+            self.ops.append("borra")
+            return self
+
+        def eq(self, *_):
+            return self
+
+        def execute(self):
+            return self
+
+    def preparar(self, compartir, activa):
+        from nucleo import llamadas_cloud
+        tabla = self.Tabla()
+        cloud = type("Cloud", (), {"_yo": lambda s: "yo", "client": type("C", (), {"table": lambda s, n: tabla})()})()
+        ll = llamadas_cloud.Llamadas(cloud)
+        ll.activa = activa
+        original = db_local.obtener_config_usuario
+        db_local.obtener_config_usuario = lambda clave, defecto="": compartir
+        self.addCleanup(setattr, db_local, "obtener_config_usuario", original)
+        ll.actualizar_presencia()
+        return tabla.ops
+
+    def test_en_llamada_y_compartiendo_publica(self):
+        self.assertEqual(self.preparar("1", "x"), ["publica"])
+
+    def test_privacidad_desactivada_no_publica(self):
+        self.assertEqual(self.preparar("0", "x"), ["borra"])
+
+    def test_sin_llamada_borra(self):
+        self.assertEqual(self.preparar("1", None), ["borra"])
 
 
 if __name__ == "__main__":

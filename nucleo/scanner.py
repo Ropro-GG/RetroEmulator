@@ -2,9 +2,8 @@ import os
 import re
 import threading
 
-import boxart
-import db_local
-from boxart import CARPETA_ROMS_BASE, CARPETA_BOXARTS
+from . import boxart, db_local
+from .boxart import CARPETA_ROMS_BASE, CARPETA_BOXARTS
 
 # Estado compartido que la interfaz consulta mientras el escaneo corre en segundo plano
 ESTADO = {
@@ -218,19 +217,3 @@ def iniciar_escaneo():
 def estado_escaneo():
     return dict(ESTADO)
 
-
-class ROMScanner:
-    def escanear(self):
-        return escanear_todo()
-
-    def iniciar(self):
-        return iniciar_escaneo()
-
-    def estado(self):
-        return estado_escaneo()
-
-
-if __name__ == "__main__":
-    db_local.inicializar_db_local()
-    total = escanear_todo()
-    print(f"Escaneo finalizado. Juegos listos: {total}")

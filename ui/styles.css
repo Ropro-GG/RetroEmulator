@@ -853,20 +853,6 @@ body {
 .user-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .user-row-actions button:disabled { opacity: 0.6; cursor: default; }
 
-.social-soon { text-align: center; margin-top: 80px; color: #7d8590; }
-.social-soon .soon-icon { font-size: 3em; }
-.social-soon h2 { color: #C5C6C7; margin: 10px 0 6px; }
-.social-soon .soon-tag {
-    display: inline-block;
-    margin-top: 14px;
-    font-size: 0.75em;
-    letter-spacing: 1px;
-    background: #1F2833;
-    border: 1px solid #45A29E;
-    color: #66FCF1;
-    padding: 3px 12px;
-    border-radius: 12px;
-}
 
 
 /* ============================================================
@@ -1413,3 +1399,136 @@ select.settings-input option { background-color: #141722; color: #FFFFFF; }
 .chat-post-autor { font-size: 0.85em; font-weight: 600; color: #FFFFFF; }
 .chat-post-texto { font-size: 0.84em; color: #C5C6C7; line-height: 1.35; margin-top: 2px; word-break: break-word; }
 .chat-post-media { font-size: 0.78em; color: #7d8590; margin-top: 4px; }
+
+/* ===== compat ===== */
+/* compat.css - que la app se vea igual con Qt/Chromium (Linux) y WebView2 (Windows)
+   que como se veía con WebKit: misma tipografía y barras de desplazamiento finas del tema. */
+
+/* WebKit sustituía Verdana/Tahoma por 'DejaVu Sans' a través de fontconfig; Chromium no. */
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-serif; }
+
+/* Barras finas y oscuras con el color de acento (estándar, Chromium 121+) */
+* { scrollbar-width: thin; scrollbar-color: #45A29E transparent; }
+
+/* Respaldo para motores más viejos */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #45A29E; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #66FCF1; }
+
+/* ===== amigos ===== */
+/* amigos.css - botones circulares por acción y menú desplegable de cada amigo */
+.amigo-icono {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #141722; color: #fff; border: 1px solid #45A29E;
+    font-size: 16px; line-height: 1; cursor: pointer; padding: 0;
+}
+.amigo-icono:hover { border-color: #66FCF1; background: #0B0C10; }
+.amigo-icono:disabled { opacity: 0.6; cursor: default; }
+.amigo-flecha { font-size: 14px; color: #66FCF1; transition: transform 0.15s ease; }
+.amigo-flecha.abierto { transform: rotate(180deg); background: #0B0C10; border-color: #66FCF1; }
+
+.amigo-menu {
+    position: fixed; z-index: 9500; min-width: 190px; padding: 6px;
+    background: #1F2833; border: 1px solid #45A29E; border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    display: flex; flex-direction: column; gap: 2px;
+}
+.amigo-menu-item {
+    background: transparent; border: none; color: #C5C6C7; text-align: left;
+    padding: 9px 12px; border-radius: 6px; cursor: pointer; font: inherit;
+}
+.amigo-menu-item:hover { background: #141722; color: #fff; }
+.amigo-menu-item.peligro { color: #ff6b6b; }
+.amigo-menu-item.peligro:hover { background: rgba(192, 57, 43, 0.18); color: #ff8a80; }
+
+/* ===== llamadas ===== */
+/* llamadas.css - timbre, barra de llamada y avisos (misma paleta que el resto de la app) */
+.llamada-panel {
+    position: fixed; right: 20px; bottom: 20px; z-index: 9000;
+    display: flex; align-items: center; gap: 12px;
+    min-width: 280px; padding: 12px 14px;
+    background: #1F2833; border: 1px solid #45A29E; border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+#llamada-timbre { border-color: #66FCF1; animation: llamada-pulso 1.5s ease-in-out infinite; }
+#llamada-timbre img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid #66FCF1; }
+.llamada-texto { flex: 1; display: flex; flex-direction: column; min-width: 0; color: #C5C6C7; }
+.llamada-texto strong { color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.llamada-texto small { color: #66FCF1; }
+.llamada-btn {
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid #45A29E;
+    background: #141722; color: #fff; font-size: 17px; cursor: pointer;
+}
+.llamada-btn:hover { border-color: #66FCF1; background: #0B0C10; }
+.llamada-aceptar { background: #2e9e5b; border-color: #2e9e5b; }
+.llamada-aceptar:hover { background: #38b96b; border-color: #38b96b; }
+.llamada-colgar { background: #c0392b; border-color: #c0392b; }
+.llamada-colgar:hover { background: #e04a3a; border-color: #e04a3a; }
+.llamada-aviso {
+    position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 9001;
+    padding: 10px 18px; border-radius: 18px; background: #1F2833; color: #fff;
+    border: 1px solid #45A29E; font-size: 14px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+@keyframes llamada-pulso {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(102, 252, 241, 0.45), 0 8px 28px rgba(0, 0, 0, 0.55); }
+    50% { box-shadow: 0 0 0 10px rgba(102, 252, 241, 0), 0 8px 28px rgba(0, 0, 0, 0.55); }
+}
+
+/* Registro de llamada dentro del chat */
+.msg-llamada {
+    align-self: center; max-width: 80%; display: flex; flex-direction: column; gap: 3px;
+    text-align: center; padding: 8px 18px; margin: 6px 0;
+    background: #1F2833; border: 1px solid #2a3544; border-radius: 12px;
+}
+.msg-llamada strong { color: #66FCF1; font-size: 0.85em; }
+.msg-llamada small { color: #9aa4af; font-size: 0.75em; white-space: pre-line; line-height: 1.5; }
+.msg-llamada.perdida strong { color: #ff8a80; }
+
+/* Video de la llamada */
+.llamada-btn.activo { background: #2e9e5b; border-color: #66FCF1; }
+#llamada-videos {
+    position: fixed; right: 20px; bottom: 92px; z-index: 8990;
+    width: 440px; height: 270px; padding: 6px;
+    background: #0B0C10; border: 1px solid #45A29E; border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55); overflow: hidden;
+}
+#llamada-videos.solo-local { width: 240px; height: 150px; }
+#llamada-videos.grande { inset: 16px 16px 92px 16px; width: auto; height: auto; }
+#llamada-videos-grid {
+    flex: 1; display: grid; gap: 6px; min-width: 0; min-height: 0;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.llamada-tile { position: relative; background: #000; border-radius: 10px; overflow: hidden; min-height: 0; }
+.llamada-tile video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.llamada-tile span {
+    position: absolute; left: 8px; bottom: 6px; padding: 2px 8px; border-radius: 8px;
+    background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px;
+}
+#llamada-local {
+    position: absolute; right: 12px; bottom: 12px; width: 120px; height: 90px;
+    background: #000; object-fit: cover; border-radius: 8px; border: 1px solid #66FCF1;
+    transform: scaleX(-1);                 /* se ve como un espejo, como en cualquier videollamada */
+}
+#llamada-videos.solo-local #llamada-local { position: static; width: 100%; height: 100%; }
+.llamada-grande-btn {
+    position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px; border-radius: 8px;
+    background: rgba(0, 0, 0, 0.55); color: #fff; border: 1px solid #45A29E; cursor: pointer;
+}
+.llamada-grande-btn:hover { border-color: #66FCF1; }
+#llamada-videos.solo-local #llamada-videos-grid { display: none; }
+
+/* Agregar gente a una llamada */
+.llamada-invitar {
+    position: fixed; right: 20px; bottom: 92px; z-index: 9100; width: 300px; max-height: 380px;
+    display: flex; flex-direction: column; gap: 10px; padding: 14px;
+    background: #1F2833; border: 1px solid #66FCF1; border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6); color: #C5C6C7;
+}
+.llamada-invitar strong { color: #fff; }
+#llamada-invitar-lista { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; min-height: 40px; }
+.llamada-invitar-fila { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.llamada-invitar-fila:hover { background: #141722; }
+.llamada-invitar-fila img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+.llamada-invitar-botones { display: flex; justify-content: flex-end; gap: 8px; }

@@ -1,3 +1,6 @@
+-- Cambios del 2026-11-03, ya aplicados en la base. Se conservan como registro: el esquema anterior
+-- solo existe en Supabase. No hace falta volver a ejecutarlos.
+
 -- supabase_correcciones.sql - Correcciones de la revisión del 2026-11-03.
 -- Se puede ejecutar más de una vez. Todo corre en una sola transacción: si algo falla, no cambia nada.
 begin;
@@ -80,3 +83,36 @@ alter function public.handle_new_user() set search_path = public;
 alter function public.registrar_jugada set search_path = public;
 
 commit;
+
+-- supabase_fase5.sql - "En llamada" visible solo para amigos aceptados.
+-- Tabla aparte de 'presencia': aquella se borra al cerrar el emulador y no debe llevarse esto.
+create table if not exists public.presencia_llamada (
+    user_id uuid primary key references auth.users(id) on delete cascade,
+    desde timestamptz not null default now()
+);
+
+alter table public.presencia_llamada enable row level security;
+
+revoke all on public.presencia_llamada from anon;
+grant select, insert, update, delete on public.presencia_llamada to authenticated;
+
+drop policy if exists presencia_llamada_select on public.presencia_llamada;
+create policy presencia_llamada_select on public.presencia_llamada
+    for select to authenticated
+    using (user_id = (select auth.uid()) or public.son_amigos((select auth.uid()), user_id));
+
+drop policy if exists presencia_llamada_insert on public.presencia_llamada;
+create policy presencia_llamada_insert on public.presencia_llamada
+    for insert to authenticated
+    with check (user_id = (select auth.uid()));
+
+drop policy if exists presencia_llamada_update on public.presencia_llamada;
+create policy presencia_llamada_update on public.presencia_llamada
+    for update to authenticated
+    using (user_id = (select auth.uid()))
+    with check (user_id = (select auth.uid()));
+
+drop policy if exists presencia_llamada_delete on public.presencia_llamada;
+create policy presencia_llamada_delete on public.presencia_llamada
+    for delete to authenticated
+    using (user_id = (select auth.uid()));

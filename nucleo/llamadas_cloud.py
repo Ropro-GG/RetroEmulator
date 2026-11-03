@@ -2,13 +2,11 @@
 llamadas_cloud.py - Parte de las llamadas que habla con Supabase desde Python.
 
 Se encarga de crear la llamada, invitar amigos, aceptar/rechazar y salir.
-Los audios y las señales de conexión (WebRTC) viajan por el JS (ui/llamadas.js),
-no por aquí. Las tablas y funciones que usa están en Supabase (llamadas, llamada_participantes
-e invitar_a_llamada); los últimos cambios del esquema están en supabase_correcciones.sql.
+Los audios y las señales de conexión (WebRTC) viajan por el JS (ui/llamadas.js), no por aquí.
 """
 from datetime import datetime, timezone
 
-import cloud_client
+from . import cloud_client, db_local
 
 
 def _ahora():
@@ -26,16 +24,15 @@ class Llamadas:
         bajo = texto.lower()
         print(f"[LLAMADAS] Error de Supabase: {texto}")      # queda en la terminal para depurar
         if "llamada" in bajo and ("does not exist" in bajo or "pgrst205" in bajo or "42p01" in bajo):
-            return "Faltan las tablas de Llamadas en Supabase. Ejecutá supabase_llamadas.sql en el SQL Editor."
+            return "Faltan las tablas de Llamadas en Supabase."
         if "invitar_a_llamada" in bajo and ("could not find" in bajo or "does not exist" in bajo or "pgrst202" in bajo):
-            return "Falta ejecutar supabase_llamadas_fase4.sql en el SQL Editor de Supabase."
+            return "Falta actualizar las llamadas en Supabase."
         if "maximo 6" in bajo:
             return "Una llamada admite hasta 6 personas."
         if "la llamada ya termino" in bajo or "no estas en esa llamada" in bajo:
             return "Esa llamada ya no está disponible."
         if "42501" in bajo or "row-level security" in bajo or "permission denied" in bajo:
-            return ("Supabase rechazó la operación de llamadas por permisos. Ejecutá de nuevo "
-                    "supabase_llamadas.sql y supabase_llamadas_fase2.sql. Detalle: " + texto[:240])
+            return "Supabase rechazó la operación de llamadas por permisos. Detalle: " + texto[:240]
         return self.cloud._error_social(e)
 
     def _tabla(self, nombre):
@@ -62,6 +59,22 @@ class Llamadas:
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
 
+    # -- "en llamada" para los amigos ---------------------------------------
+    def actualizar_presencia(self):
+        """Publica o borra 'en llamada' según la llamada actual y el ajuste de Privacidad.
+        Un fallo acá nunca debe afectar a la llamada."""
+        yo = self.cloud._yo()
+        if not self.cloud.client or not yo:
+            return
+        try:
+            tabla = self._tabla("presencia_llamada")
+            if self.activa and db_local.obtener_config_usuario("compartir_actividad", "1") == "1":
+                tabla.upsert({"user_id": yo, "desde": _ahora()}).execute()
+            else:
+                tabla.delete().eq("user_id", yo).execute()
+        except Exception as e:
+            print(f"[LLAMADAS] No se pudo actualizar 'en llamada': {e}")
+
     # -- llamadas ----------------------------------------------------------
     def crear_llamada(self, amigo_ids, con_video=False):
         error = self.cloud._requiere_sesion()
@@ -82,6 +95,7 @@ class Llamadas:
                 [{"llamada_id": llamada_id, "usuario_id": i, "estado": "invitado", "invitado_por": yo}
                  for i in ids]).execute()
             self.activa = llamada_id
+            self.actualizar_presencia()
             return {"exito": True, "llamada_id": llamada_id}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
@@ -131,6 +145,7 @@ class Llamadas:
                 self._tabla("llamadas").update({"estado": "en_curso", "inicio_en": _ahora()}) \
                     .eq("id", llamada_id).is_("inicio_en", "null").neq("estado", "terminada").execute()
                 self.activa = llamada_id
+                self.actualizar_presencia()
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
@@ -151,6 +166,7 @@ class Llamadas:
                     .eq("id", llamada_id).neq("estado", "terminada").execute()
             if self.activa == llamada_id:
                 self.activa = None
+                self.actualizar_presencia()
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
@@ -169,6 +185,8 @@ class Llamadas:
         if error:
             return error
         yo = self.cloud._yo()
+        self.activa = None
+        self.actualizar_presencia()
         try:
             filas = self._tabla("llamada_participantes").select("llamada_id") \
                 .eq("usuario_id", yo).eq("estado", "unido").execute().data or []

@@ -492,6 +492,7 @@ function seleccionarSeccionConfig(nombre) {
     });
 
     if (nombre === 'paths') cargarRutasConfig();
+    else if (nombre === 'audio') cargarConfigAudio();
     else if (nombre === 'ra') cargarEstadoRA();
     else if (nombre === 'privacy') cargarPrivacidad();
     else if (nombre === 'info') cargarInfoLauncher();
@@ -920,8 +921,6 @@ function mostrarVista(nombre) {
 // SOCIAL
 // ============================================================================
 
-const SECCIONES_PRONTO = {};
-
 let socialSeccion = 'amigos';
 let socialTimer = null;
 let busquedaTimer = null;
@@ -955,21 +954,12 @@ function seleccionarSeccionSocial(nombre) {
 
     const reales = { amigos: 'social-amigos', deseados: 'social-deseados', chat: 'social-chat', publicaciones: 'social-publicaciones' };
     Object.values(reales).forEach(id => document.getElementById(id).style.display = 'none');
-    document.getElementById('social-pronto').style.display = 'none';
 
-    if (reales[nombre]) {
-        document.getElementById(reales[nombre]).style.display = 'block';
-        if (nombre === 'amigos') cargarSocial();
-        else if (nombre === 'deseados') abrirDeseados();
-        else if (nombre === 'chat') abrirChat();
-        else if (nombre === 'publicaciones') abrirPublicaciones();
-    } else {
-        const info = SECCIONES_PRONTO[nombre];
-        document.getElementById('social-pronto').style.display = 'block';
-        document.getElementById('pronto-icono').textContent = info.icono;
-        document.getElementById('pronto-titulo').textContent = info.titulo;
-        document.getElementById('pronto-texto').textContent = info.texto;
-    }
+    document.getElementById(reales[nombre]).style.display = 'block';
+    if (nombre === 'amigos') cargarSocial();
+    else if (nombre === 'deseados') abrirDeseados();
+    else if (nombre === 'chat') abrirChat();
+    else if (nombre === 'publicaciones') abrirPublicaciones();
 }
 
 function avatarDe(u) {
@@ -987,6 +977,12 @@ function boton(texto, clase, accion) {
         try { await accion(); } finally { b.disabled = false; }
     };
     return b;
+}
+
+// "📞 En llamada · 🎮 Jugando a X · PS1" (cualquiera de las dos partes puede faltar)
+function textoActividad(enLlamada, jugando) {
+    const juego = jugando ? `🎮 Jugando a ${jugando.titulo}` + (jugando.consola ? ` · ${jugando.consola}` : '') : '';
+    return [enLlamada ? '📞 En llamada' : '', juego].filter(Boolean).join(' · ');
 }
 
 function filaUsuario(u, subtitulo, jugando, acciones) {
@@ -1077,8 +1073,7 @@ async function cargarSocial() {
         cont.appendChild(mensajeVacio('Todavía no tenés amigos agregados. Buscá a alguien por su nombre de usuario en el cuadro de arriba.'));
     }
     res.amigos.forEach(u => {
-        const jugando = u.jugando ? `🎮 Jugando a ${u.jugando.titulo}` + (u.jugando.consola ? ` · ${u.jugando.consola}` : '') : '';
-        cont.appendChild(filaUsuario(u, jugando, !!u.jugando, [
+        cont.appendChild(filaUsuario(u, textoActividad(u.en_llamada, u.jugando), !!u.jugando || u.en_llamada, [
             botonIcono('💬', 'Enviar mensaje', () => irAlChat(u.user_id)),
             botonIcono('📞', 'Llamada de voz', () => llamarAmigo(u.user_id, u.username)),
             botonIcono('🎥', 'Videollamada', () => llamarAmigo(u.user_id, u.username, true)),
@@ -1254,8 +1249,8 @@ async function cargarPerfilAjeno() {
     document.getElementById('pa-nombre').textContent = p.username || 'Usuario';
 
     const estado = document.getElementById('pa-estado');
-    if (res.jugando) {
-        estado.textContent = `🎮 Jugando a ${res.jugando.titulo}` + (res.jugando.consola ? ` · ${res.jugando.consola}` : '');
+    if (res.jugando || res.en_llamada) {
+        estado.textContent = textoActividad(res.en_llamada, res.jugando);
         estado.className = 'pa-estado playing';
     } else {
         estado.textContent = res.relacion === 'amigos' ? 'No está jugando ahora' : '';
@@ -1381,7 +1376,6 @@ function reiniciarEstadoUI() {
     document.getElementById('game-detail').style.display = 'none';
     document.querySelector('.game-grid-container').style.display = '';
     document.getElementById('social-perfil').style.display = 'none';
-    document.getElementById('social-pronto').style.display = 'none';
     document.getElementById('social-deseados').style.display = 'none';
     document.getElementById('social-amigos').style.display = 'block';
     document.querySelectorAll('.social-nav li').forEach(li => li.classList.toggle('active', li.dataset.social === 'amigos'));
@@ -1884,7 +1878,7 @@ async function cargarConversaciones() {
         const info = document.createElement('div');
         info.className = 'chat-item-info';
         const nombre = document.createElement('strong');
-        nombre.textContent = c.username + (c.jugando ? ' 🎮' : '');
+        nombre.textContent = c.username + (c.en_llamada ? ' 📞' : '') + (c.jugando ? ' 🎮' : '');
         const previo = document.createElement('small');
         previo.textContent = c.ultimo ? (c.ultimo.mio ? 'Tú: ' : '') + c.ultimo.texto : 'Sin mensajes todavía';
         info.append(nombre, previo);
@@ -2011,7 +2005,7 @@ async function abrirConversacion(amigoId) {
     document.getElementById('chat-error').textContent = '';
     document.getElementById('picker').style.display = 'none';
     document.getElementById('chat-nombre').textContent = conv.username;
-    document.getElementById('chat-estado').textContent = conv.jugando ? `🎮 Jugando a ${conv.jugando.titulo}` : '';
+    document.getElementById('chat-estado').textContent = textoActividad(conv.en_llamada, conv.jugando);
     const avatar = document.getElementById('chat-avatar');
     avatar.src = avatarDe(conv);
     document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
@@ -3341,3 +3335,85 @@ function crearTarjetaCompartida(contenido) {
     }
     return caja;
 }
+
+// ============================================================================
+// AMIGOS: botones de acción por amigo y menú desplegable (▾)
+//   💬 Mensaje · 📞 Llamada de voz · ▾ (Quitar, Bloquear, Denunciar)
+// Bloquear y Denunciar todavía no tienen función: muestran un aviso.
+// ============================================================================
+
+function botonIcono(icono, titulo, accion) {
+    const b = document.createElement('button');
+    b.className = 'amigo-icono';
+    b.textContent = icono;
+    b.title = titulo;
+    b.setAttribute('aria-label', titulo);
+    b.onclick = async ev => {
+        ev.stopPropagation();
+        b.disabled = true;   // evita dobles clics mientras se procesa
+        try { await accion(); } finally { b.disabled = false; }
+    };
+    return b;
+}
+
+let amigoMenuAbierto = null;   // { menu, boton }
+
+function cerrarMenuAmigo() {
+    if (!amigoMenuAbierto) return;
+    amigoMenuAbierto.menu.remove();
+    amigoMenuAbierto.boton.classList.remove('abierto');
+    amigoMenuAbierto = null;
+}
+
+function itemMenuAmigo(texto, clase, accion) {
+    const it = document.createElement('button');
+    it.className = 'amigo-menu-item' + (clase ? ' ' + clase : '');
+    it.textContent = texto;
+    it.onclick = ev => {
+        ev.stopPropagation();
+        cerrarMenuAmigo();
+        accion();
+    };
+    return it;
+}
+
+// Flechita ▾ que despliega las opciones del amigo
+function menuAmigo(u) {
+    const flecha = document.createElement('button');
+    flecha.className = 'amigo-icono amigo-flecha';
+    flecha.textContent = '▾';
+    flecha.title = 'Más opciones';
+    flecha.setAttribute('aria-label', 'Más opciones');
+    flecha.onclick = ev => {
+        ev.stopPropagation();
+        if (amigoMenuAbierto && amigoMenuAbierto.boton === flecha) { cerrarMenuAmigo(); return; }
+        cerrarMenuAmigo();
+
+        const menu = document.createElement('div');
+        menu.className = 'amigo-menu';
+        menu.append(
+            itemMenuAmigo('Quitar de amigos', '', () => quitarAmistad(u.friendship_id, u.username)),
+            itemMenuAmigo('Bloquear', '', () => llAviso('Bloquear usuarios estará disponible pronto.')),
+            itemMenuAmigo('Denunciar', 'peligro', () => llAviso('Las denuncias estarán disponibles pronto.')),
+        );
+        document.body.appendChild(menu);
+
+        // Posición fija junto a la flecha (así no lo recorta ningún contenedor con scroll)
+        const r = flecha.getBoundingClientRect();
+        const ancho = menu.offsetWidth, alto = menu.offsetHeight;
+        const izquierda = Math.max(8, Math.min(r.right - ancho, window.innerWidth - ancho - 8));
+        const abajo = r.bottom + 6 + alto <= window.innerHeight;
+        menu.style.left = izquierda + 'px';
+        menu.style.top = (abajo ? r.bottom + 6 : r.top - 6 - alto) + 'px';
+
+        flecha.classList.add('abierto');
+        amigoMenuAbierto = { menu, boton: flecha };
+    };
+    return flecha;
+}
+
+// Cualquier clic fuera, Escape o desplazarse cierra el menú
+document.addEventListener('click', cerrarMenuAmigo);
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cerrarMenuAmigo(); });
+window.addEventListener('blur', cerrarMenuAmigo);
+document.addEventListener('scroll', cerrarMenuAmigo, true);

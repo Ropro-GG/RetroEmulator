@@ -5,10 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RetroEmulator</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="compat.css">
-    <link rel="stylesheet" href="fuente.css">
-    <link rel="stylesheet" href="amigos.css">
-    <link rel="stylesheet" href="llamadas.css">
 </head>
 <body>
 
@@ -308,12 +304,6 @@
                     </div>
                 </div>
 
-                <div id="social-pronto" class="social-soon" style="display: none;">
-                    <div class="soon-icon" id="pronto-icono"></div>
-                    <h2 id="pronto-titulo"></h2>
-                    <p id="pronto-texto"></p>
-                    <span class="soon-tag">PRÓXIMAMENTE</span>
-                </div>
             </section>
         </div>
 
@@ -453,6 +443,7 @@
                 <h3>Parámetros</h3>
                 <ul>
                     <li class="active" data-section="paths" onclick="seleccionarSeccionConfig('paths')">📁 Rutas y Emuladores</li>
+                    <li data-section="audio" onclick="seleccionarSeccionConfig('audio')">🎧 Audio de llamadas</li>
                     <li data-section="ra" onclick="seleccionarSeccionConfig('ra')">🏆 RetroAchievements</li>
                     <li data-section="privacy" onclick="seleccionarSeccionConfig('privacy')">🔒 Privacidad</li>
                     <li data-section="info" onclick="seleccionarSeccionConfig('info')">ℹ️ Información</li>
@@ -476,6 +467,17 @@
                     <div id="paths-content"></div>
                 </section>
 
+                <section id="settings-audio" class="settings-section" style="display: none;">
+                    <h2>Audio de llamadas</h2>
+                    <h3 class="settings-subtitle"><label for="audio-mic">Micrófono</label></h3>
+                    <select id="audio-mic" class="settings-input" onchange="guardarConfigAudio('mic')"></select>
+                    <h3 class="settings-subtitle"><label for="audio-altavoz">Altavoz</label></h3>
+                    <select id="audio-altavoz" class="settings-input" onchange="guardarConfigAudio('altavoz')"></select>
+                    <p id="audio-altavoz-aviso" class="settings-help" style="display: none;">Este equipo no permite elegir el altavoz desde la app: se usa el del sistema.</p>
+                    <p id="audio-msg" class="settings-msg" role="status"></p>
+                    <p class="settings-help">Se guardan en este equipo y también se aplican durante una llamada. El timbre suena siempre por el altavoz del sistema.</p>
+                </section>
+
                 <section id="settings-ra" class="settings-section" style="display: none;">
                     <h2>RetroAchievements</h2>
                     <p class="settings-help">Conectá tu cuenta para ver tus logros en cada juego. Tu Web API Key está en retroachievements.org → Settings → Keys. <a href="#" onclick="abrirEnlace('https://retroachievements.org/settings'); return false;">Abrir ajustes</a></p>
@@ -495,9 +497,9 @@
                     <h2>Privacidad</h2>
                     <label class="toggle-row">
                         <input type="checkbox" id="privacy-share" onchange="guardarCompartirActividad()">
-                        Mostrar a mis amigos a qué juego estoy jugando
+                        Mostrar a mis amigos a qué juego estoy jugando y si estoy en una llamada
                     </label>
-                    <p class="settings-help">Solo lo ven tus amigos aceptados. Se borra al cerrar el emulador (o solo, pasadas unas horas). Si lo desactivás, nadie ve tu actividad.</p>
+                    <p class="settings-help">Solo lo ven tus amigos aceptados. Se borra al cerrar el emulador o al terminar la llamada (o solo, pasadas unas horas). Si lo desactivás, nadie ve tu actividad.</p>
 
                     <label class="toggle-row">
                         <input type="checkbox" id="privacy-history" onchange="guardarCompartirHistorial()">
@@ -527,7 +529,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-    <script src="amigos.js"></script>
     <script src="llamadas.js"></script>
     <script src="app.js"></script>
 </body>

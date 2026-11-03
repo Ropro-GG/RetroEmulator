@@ -1,8 +1,24 @@
 import sqlite3
-
-import contexto
+import threading
 
 DB_NAME = "retrolauncher_local.db"
+
+# Cuenta con la sesión iniciada: separa ajustes, opiniones y credenciales de RetroAchievements
+# cuando se comparte el equipo. Los juegos, emuladores y carátulas siguen siendo del equipo.
+_lock_usuario = threading.Lock()
+_usuario_id = ""
+
+
+def establecer_usuario(usuario):
+    global _usuario_id
+    with _lock_usuario:
+        _usuario_id = usuario or ""
+
+
+def usuario_id():
+    with _lock_usuario:
+        return _usuario_id
+
 
 def obtener_conexion():
     """Crea y retorna una conexión a la base de datos local SQLite."""
@@ -232,22 +248,6 @@ def obtener_mapa_portadas():
     with obtener_conexion() as conn:
         return dict(conn.execute("SELECT ruta_rom, portada_path FROM juegos;").fetchall())
 
-def obtener_juegos_por_consola(consola_id):
-    """Retorna la lista de juegos pertenecientes a una consola."""
-    with obtener_conexion() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, titulo, ruta_rom, portada_path, favorito FROM juegos WHERE consola_id = ?;", (consola_id,))
-        filas = cursor.fetchall()
-        return [
-            {
-                "id": r[0],
-                "titulo": r[1],
-                "ruta_rom": r[2],
-                "portada_path": r[3],
-                "favorito": bool(r[4])
-            } for r in filas
-        ]
-
 # --- DETALLE, OPINIONES, CONFIGURACIÓN Y LOGROS ---
 
 def obtener_juego_detalle(juego_id):
@@ -274,7 +274,7 @@ def obtener_opinion(consola_id, titulo):
     with obtener_conexion() as conn:
         fila = conn.execute(
             "SELECT puntuacion, texto, publica FROM opiniones_cuenta WHERE usuario_id = ? AND consola_id = ? AND titulo = ?;",
-            (contexto.usuario_id(), consola_id, titulo)).fetchone()
+            (usuario_id(), consola_id, titulo)).fetchone()
     return {"puntuacion": fila[0], "texto": fila[1], "publica": bool(fila[2])} if fila else None
 
 def guardar_opinion(consola_id, titulo, puntuacion, texto, publica=True):
@@ -288,7 +288,7 @@ def guardar_opinion(consola_id, titulo, puntuacion, texto, publica=True):
                 texto = excluded.texto,
                 actualizado = excluded.actualizado,
                 publica = excluded.publica;
-        """, (contexto.usuario_id(), consola_id, titulo, puntuacion, texto or "", 1 if publica else 0))
+        """, (usuario_id(), consola_id, titulo, puntuacion, texto or "", 1 if publica else 0))
         conn.commit()
 
 def obtener_nombre_consola(identificativo):
@@ -360,7 +360,7 @@ def guardar_config(clave, valor):
 # --- AJUSTES POR CUENTA ---
 
 def _clave_usuario(clave):
-    return f"u:{contexto.usuario_id()}:{clave}"
+    return f"u:{usuario_id()}:{clave}"
 
 def obtener_config_usuario(clave, defecto=""):
     """Ajuste personal de la cuenta con sesión iniciada (no se comparte entre cuentas)."""
@@ -392,27 +392,6 @@ def adoptar_datos_antiguos(usuario_id):
 class LocalDB:
     def __init__(self):
         inicializar_db_local()
-
-    def obtener_todos_los_juegos(self):
-        with obtener_conexion() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT MIN(j.id) as id, j.titulo, j.ruta_rom, j.portada_path, j.favorito, c.nombre
-                FROM juegos j
-                JOIN consolas c ON j.consola_id = c.id
-                GROUP BY j.titulo, j.consola_id;
-            """)
-            filas = cursor.fetchall()
-            return [
-                {
-                    "id": r[0],
-                    "title": r[1],
-                    "ruta_rom": r[2],
-                    "portada_path": r[3],
-                    "favorito": bool(r[4]),
-                    "console": r[5]
-                } for r in filas
-            ]
 
     def obtener_consolas(self):
         """Retorna la lista de consolas registradas en la base de datos local."""
@@ -475,6 +454,3 @@ class LocalDB:
 
         return juegos
 
-if __name__ == "__main__":
-    inicializar_db_local()
-    print("Base de datos local actualizada e inicializada con todas las consolas.")

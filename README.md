@@ -92,3 +92,15 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
    ```bash
    python gui_app.py
    ```
+
+---
+
+## 📂 Estructura
+
+```
+gui_app.py     Punto de entrada y puente entre la interfaz y Python
+nucleo/        Biblioteca, nube, llamadas, GIFs, imágenes y logros
+ui/            Interfaz (HTML, CSS y JavaScript)
+supabase/      Registro de cambios de la base de datos
+tests/         Pruebas: python -m unittest discover -s tests
+```

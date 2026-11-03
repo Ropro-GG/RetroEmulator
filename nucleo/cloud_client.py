@@ -7,14 +7,13 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-import session_store
 from pathlib import Path
 
-import gifs
-from boxart import analizar_titulo
+from . import gifs, session_store
+from .boxart import analizar_titulo
 
 # El .env se busca junto a este archivo, sin importar desde dónde se ejecute la app
-RUTA_ENV = Path(__file__).resolve().parent / ".env"
+RUTA_ENV = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(RUTA_ENV)
 
 # OJO: getenv recibe el NOMBRE de la variable (como está escrito en el .env), no su valor.
@@ -186,7 +185,6 @@ class CloudClient:
         return {"exito": True}
 
     # --- SOCIAL: AMIGOS Y "JUGANDO AHORA" ---
-    # Requiere las tablas de supabase_social.sql (friendships y presencia).
 
     VIGENCIA_PRESENCIA_HORAS = 8   # pasado este tiempo se ignora un "jugando" que quedó colgado
 
@@ -195,11 +193,11 @@ class CloudClient:
         texto = str(e)
         bajo = texto.lower()
         if "does not exist" in bajo or "could not find the table" in bajo or "schema cache" in bajo or "pgrst205" in bajo:
-            return "Faltan las tablas de Social en Supabase. Ejecutá el archivo supabase_social.sql en el SQL Editor."
+            return "Faltan las tablas de Social en Supabase."
         if "jwt expired" in bajo or "invalid jwt" in bajo or "pgrst303" in bajo:
             return "Tu sesión venció. Cerrá sesión y volvé a iniciarla."
         if "permission denied" in bajo or "row-level security" in bajo or "42501" in bajo:
-            return "Supabase rechazó la operación por permisos. Ejecutá la versión más reciente de supabase_social.sql."
+            return "Supabase rechazó la operación por permisos."
         if any(x in bajo for x in ("name resolution", "connecterror", "connection", "timed out",
                                    "timeout", "unreachable", "temporary failure")):
             return "No se pudo conectar con el servidor. Revisá tu conexión a internet."
@@ -230,6 +228,14 @@ class CloudClient:
         res = self.client.table("profiles").select("id, username, avatar_url").in_("id", list(ids)).execute()
         return {p["id"]: p for p in (res.data or [])}
 
+    def _vigente(self, desde):
+        """False para un aviso viejo que quedó colgado (por ejemplo tras un cierre brusco)."""
+        try:
+            momento = datetime.fromisoformat(str(desde).replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return datetime.now(timezone.utc) - momento < timedelta(hours=self.VIGENCIA_PRESENCIA_HORAS)
+
     def _presencias(self, ids):
         """{user_id: {titulo, consola}} de los amigos que están jugando ahora."""
         if not ids:
@@ -240,16 +246,20 @@ class CloudClient:
         except Exception as e:
             print(f"[SOCIAL] Sin datos de presencia: {e}")
             return {}
-        ahora = datetime.now(timezone.utc)
-        vigentes = {}
-        for r in res.data or []:
-            try:
-                desde = datetime.fromisoformat(str(r["desde"]).replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            if ahora - desde < timedelta(hours=self.VIGENCIA_PRESENCIA_HORAS):
-                vigentes[r["user_id"]] = {"titulo": r["titulo"], "consola": r.get("consola", "")}
-        return vigentes
+        return {r["user_id"]: {"titulo": r["titulo"], "consola": r.get("consola", "")}
+                for r in res.data or [] if self._vigente(r["desde"])}
+
+    def _en_llamada(self, ids):
+        """Amigos que están en una llamada (Supabase solo devuelve los que lo comparten)."""
+        if not ids:
+            return set()
+        try:
+            res = self.client.table("presencia_llamada").select("user_id, desde") \
+                .in_("user_id", list(ids)).execute()
+        except Exception as e:
+            print(f"[SOCIAL] Sin datos de llamadas: {e}")
+            return set()
+        return {r["user_id"] for r in res.data or [] if self._vigente(r["desde"])}
 
     def contar_solicitudes(self):
         """Cantidad de solicitudes de amistad recibidas sin responder (para la insignia)."""
@@ -274,6 +284,7 @@ class CloudClient:
             perfiles = self._perfiles_por_id(otros)
             aceptados = [o for f, o in zip(filas, otros) if f["status"] == "accepted"]
             presencias = self._presencias(aceptados)
+            en_llamada = self._en_llamada(aceptados)
 
             amigos, recibidas, enviadas = [], [], []
             for f, otro in zip(filas, otros):
@@ -286,14 +297,15 @@ class CloudClient:
                 }
                 if f["status"] == "accepted":
                     item["jugando"] = presencias.get(otro)
+                    item["en_llamada"] = otro in en_llamada
                     amigos.append(item)
                 elif f["requester_id"] == yo:
                     enviadas.append(item)
                 else:
                     recibidas.append(item)
 
-            # Primero los que están jugando, después por orden alfabético
-            amigos.sort(key=lambda a: (a["jugando"] is None, a["username"].lower()))
+            # Primero los que están jugando o en llamada, después por orden alfabético
+            amigos.sort(key=lambda a: (a["jugando"] is None and not a["en_llamada"], a["username"].lower()))
             return {"exito": True, "amigos": amigos, "recibidas": recibidas, "enviadas": enviadas}
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
@@ -363,6 +375,7 @@ class CloudClient:
                         break
 
             jugando = self._presencias([user_id]).get(user_id) if relacion == "amigos" else None
+            en_llamada = relacion == "amigos" and user_id in self._en_llamada([user_id])
             recientes, en_comun = self._historial_con_amigo(yo, user_id) if relacion == "amigos" else ([], [])
             deseados = self.obtener_deseados_de(user_id) if relacion == "amigos" else []
             return {
@@ -376,6 +389,7 @@ class CloudClient:
                 "relacion": relacion,
                 "friendship_id": fid,
                 "jugando": jugando,
+                "en_llamada": en_llamada,
                 "recientes": recientes,
                 "en_comun": en_comun,
                 "deseados": deseados,
@@ -433,7 +447,6 @@ class CloudClient:
             return {"exito": False, "error": self._error_social(e)}
 
     # --- CHAT (mensajes entre amigos aceptados) ---
-    # Requiere la tabla mensajes de supabase_social.sql.
 
     LIMITE_MENSAJE = 1000
     _COLUMNAS_MENSAJE = "id, de, para, tipo, contenido, creado_en, leido_en"
@@ -490,6 +503,7 @@ class CloudClient:
             amigos = self._amigos_aceptados()
             perfiles = self._perfiles_por_id(amigos)
             presencias = self._presencias(amigos)
+            en_llamada = self._en_llamada(amigos)
 
             res = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
                 .or_(f"de.eq.{yo},para.eq.{yo}").order("id", desc=True).limit(300).execute()
@@ -513,6 +527,7 @@ class CloudClient:
                     "username": p.get("username") or "Usuario",
                     "avatar_url": p.get("avatar_url") or "",
                     "jugando": presencias.get(amigo),
+                    "en_llamada": amigo in en_llamada,
                     "no_leidos": sin_leer.get(amigo, 0),
                     "ultimo": {"id": u["id"], "mio": u["de"] == yo, "texto": self._resumen_mensaje(u),
                                "creado_en": u.get("creado_en")} if u else None,
@@ -587,7 +602,7 @@ class CloudClient:
             if "row-level security" in bajo or "42501" in bajo:
                 return {"exito": False, "error": "No podés escribirle a esta persona (¿siguen siendo amigos?)."}
             if tipo == "publicacion" and ("check constraint" in bajo or "23514" in bajo):
-                return {"exito": False, "error": "Falta actualizar el chat en Supabase. Ejecutá supabase_social.sql en el SQL Editor."}
+                return {"exito": False, "error": "Falta actualizar el chat en Supabase."}
             return {"exito": False, "error": self._error_social(e)}
 
     def enviar_mensaje(self, amigo_id, texto):
@@ -611,7 +626,6 @@ class CloudClient:
         return self._insertar_mensaje(amigo_id, "gif", url)
 
     # --- IMÁGENES Y STICKERS (espacio privado "chat" de Supabase Storage) ---
-    # Requiere la sección 8 de supabase_social.sql (bucket, permisos y tabla stickers_usuario).
 
     BUCKET_CHAT = "chat"
     MAX_STICKERS = 60
@@ -619,7 +633,7 @@ class CloudClient:
     def _error_subida(self, e):
         bajo = str(e).lower()
         if "bucket not found" in bajo or ("bucket" in bajo and "not found" in bajo):
-            return "Falta crear el espacio de imágenes en Supabase. Ejecutá la versión más reciente de supabase_social.sql."
+            return "Falta crear el espacio de imágenes en Supabase."
         if "payload too large" in bajo or "exceeded" in bajo or "413" in bajo:
             return "La imagen es demasiado pesada."
         if "mime" in bajo or "not supported" in bajo or "invalid" in bajo and "type" in bajo:
@@ -748,7 +762,6 @@ class CloudClient:
             print(f"[SOCIAL] No se pudo limpiar la actividad: {self._error_social(e)}")
 
     # --- HISTORIAL DE JUEGOS (visible solo para tus amigos) ---
-    # Requiere la tabla y la función de supabase_social.sql (juegos_jugados / registrar_jugada).
 
     def registrar_jugada(self, identificativo, titulo, consola):
         """Suma una partida al historial: cuenta las veces y guarda la última vez."""
@@ -861,7 +874,6 @@ class CloudClient:
             return []
 
     # --- LISTA DE DESEADOS (visible solo para tus amigos, si la compartís) ---
-    # Requiere la tabla lista_deseados de supabase_social.sql.
 
     def agregar_deseado(self, identificativo, titulo, consola, publica=True):
         error = self._requiere_sesion()
@@ -934,7 +946,6 @@ class CloudClient:
             return {"exito": False, "error": self._error_social(e)}
 
     # --- OPINIONES DE JUEGOS (las ven tus amigos si las dejás visibles) ---
-    # Requiere la tabla opiniones_juegos de supabase_social.sql.
 
     def publicar_opinion(self, identificativo, titulo, consola, puntuacion, texto, publica=True):
         error = self._requiere_sesion()
@@ -986,8 +997,6 @@ class CloudClient:
             return []
 
     # --- PUBLICACIONES (públicas: las ve cualquier usuario con sesión) ---
-    # Requiere supabase_social.sql (tablas, funciones listar_publicaciones / alternar_reaccion
-    # y el bucket "publicaciones").
 
     BUCKET_PUBLICACIONES = "publicaciones"
     LIMITE_PUBLICACION = 2000
@@ -999,9 +1008,9 @@ class CloudClient:
         bajo = str(e).lower()
         falta_algo = any(x in bajo for x in ("does not exist", "could not find", "schema cache", "pgrst202", "pgrst205"))
         if falta_algo and ("publicaciones" in bajo or "alternar_reaccion" in bajo):
-            return "Faltan las tablas de Publicaciones en Supabase. Ejecutá el archivo supabase_social.sql en el SQL Editor."
+            return "Faltan las tablas de Publicaciones en Supabase."
         if "bucket" in bajo and "not found" in bajo:
-            return "Falta crear el espacio de imágenes de Publicaciones. Ejecutá supabase_social.sql en el SQL Editor."
+            return "Falta crear el espacio de imágenes de Publicaciones."
         if "payload too large" in bajo or "exceeded" in bajo or "413" in bajo:
             return "La imagen es demasiado pesada."
         if "mime" in bajo and ("not supported" in bajo or "not allowed" in bajo):
@@ -1368,5 +1377,3 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": str(e)}
 
-if __name__ == "__main__":
-    cliente = CloudClient()
