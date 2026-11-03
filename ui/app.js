@@ -231,7 +231,10 @@ async function lanzarJuego(gameId) {
             if (seleccion !== null) {
                 const indice = parseInt(seleccion.trim()) - 1;
                 if (!isNaN(indice) && indice >= 0 && indice < res.opciones.length) {
-                    await window.pywebview.api.lanzar_juego(res.opciones[indice].id);
+                    const elegido = await window.pywebview.api.lanzar_juego(res.opciones[indice].id, true);
+                    if (!elegido || !elegido.exito) {
+                        alert("No se pudo iniciar el juego: " + (elegido ? elegido.error : "Error desconocido"));
+                    }
                 }
             }
         } else {

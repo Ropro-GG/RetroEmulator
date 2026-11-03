@@ -3,7 +3,8 @@ llamadas_cloud.py - Parte de las llamadas que habla con Supabase desde Python.
 
 Se encarga de crear la llamada, invitar amigos, aceptar/rechazar y salir.
 Los audios y las señales de conexión (WebRTC) viajan por el JS (ui/llamadas.js),
-no por aquí. Requiere supabase_llamadas.sql y supabase_llamadas_fase2.sql.
+no por aquí. Las tablas y funciones que usa están en Supabase (llamadas, llamada_participantes
+e invitar_a_llamada); los últimos cambios del esquema están en supabase_correcciones.sql.
 """
 from datetime import datetime, timezone
 
@@ -17,6 +18,7 @@ def _ahora():
 class Llamadas:
     def __init__(self, cloud):
         self.cloud = cloud          # instancia de CloudClient (reutiliza su sesión)
+        self.activa = None          # llamada en la que estoy (para salir de ella al cerrar la app)
 
     # -- utilidades -------------------------------------------------------
     def _error(self, e):
@@ -79,6 +81,7 @@ class Llamadas:
             self._tabla("llamada_participantes").insert(
                 [{"llamada_id": llamada_id, "usuario_id": i, "estado": "invitado", "invitado_por": yo}
                  for i in ids]).execute()
+            self.activa = llamada_id
             return {"exito": True, "llamada_id": llamada_id}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
@@ -115,13 +118,19 @@ class Llamadas:
             return error
         yo = self.cloud._yo()
         try:
+            if aceptar:
+                # Si quien llama colgó justo antes de atender, no se revive una llamada terminada
+                fila = self._tabla("llamadas").select("estado").eq("id", llamada_id).limit(1).execute().data
+                if not fila or fila[0]["estado"] == "terminada":
+                    return {"exito": False, "error": "Esa llamada ya terminó."}
             self._tabla("llamada_participantes") \
                 .update({"estado": "unido" if aceptar else "rechazado"}) \
                 .eq("llamada_id", llamada_id).eq("usuario_id", yo).execute()
             if aceptar:
                 # La primera persona que atiende marca el inicio real de la llamada
                 self._tabla("llamadas").update({"estado": "en_curso", "inicio_en": _ahora()}) \
-                    .eq("id", llamada_id).is_("inicio_en", "null").execute()
+                    .eq("id", llamada_id).is_("inicio_en", "null").neq("estado", "terminada").execute()
+                self.activa = llamada_id
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
@@ -140,6 +149,44 @@ class Llamadas:
             if terminar or not quedan:
                 self._tabla("llamadas").update({"estado": "terminada", "terminada_en": _ahora()}) \
                     .eq("id", llamada_id).neq("estado", "terminada").execute()
+            if self.activa == llamada_id:
+                self.activa = None
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error(e)}
+
+    def salir_activa(self):
+        """Al cerrar la app en plena llamada: sale de ella para que no quede abierta para siempre."""
+        if self.activa:
+            self.salir_llamada(self.activa)
+
+    def limpiar_colgadas(self):
+        """Al entrar a la cuenta no puedo estar en ninguna llamada: cierra las que quedaron
+        abiertas por un corte de luz o un cierre forzado.
+        shortcut: con la misma cuenta abierta en dos equipos saca al otro de la llamada en la base;
+        si eso llega a importar, hace falta un latido periódico por participante."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        yo = self.cloud._yo()
+        try:
+            filas = self._tabla("llamada_participantes").select("llamada_id") \
+                .eq("usuario_id", yo).eq("estado", "unido").execute().data or []
+            for f in filas:
+                llamada_id = f["llamada_id"]
+                self._tabla("llamada_participantes").update({"estado": "salio"}) \
+                    .eq("llamada_id", llamada_id).eq("usuario_id", yo).execute()
+                quedan = self._tabla("llamada_participantes").select("usuario_id") \
+                    .eq("llamada_id", llamada_id).eq("estado", "unido").execute().data
+                if quedan:
+                    continue
+                datos = self._tabla("llamadas").select("creada_en, inicio_en") \
+                    .eq("id", llamada_id).limit(1).execute().data
+                if datos:
+                    # No se sabe cuándo se cortó: mejor 0 s en el registro que horas inventadas
+                    fin = datos[0].get("inicio_en") or datos[0]["creada_en"]
+                    self._tabla("llamadas").update({"estado": "terminada", "terminada_en": fin}) \
+                        .eq("id", llamada_id).neq("estado", "terminada").execute()
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
@@ -154,8 +201,8 @@ class Llamadas:
         try:
             # Solo se ven las filas de llamadas en las que estoy, así que esto ya es "con vos"
             filas = self._tabla("llamada_participantes").select("llamada_id") \
-                .eq("usuario_id", amigo_id).execute().data or []
-            ids = list(dict.fromkeys(f["llamada_id"] for f in filas))[:300]
+                .eq("usuario_id", amigo_id).order("invitado_en", desc=True).limit(300).execute().data or []
+            ids = list(dict.fromkeys(f["llamada_id"] for f in filas))
             if not ids:
                 return {"exito": True, "llamadas": []}
             llamadas = self._tabla("llamadas") \

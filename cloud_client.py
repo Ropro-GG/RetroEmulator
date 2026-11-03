@@ -1,6 +1,5 @@
 import hashlib
 import os
-import mimetypes
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone

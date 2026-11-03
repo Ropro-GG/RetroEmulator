@@ -50,7 +50,7 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
         <li><strong>Perfiles Personalizables:</strong> Muestra tus estadísticas, logros y juegos favoritos.</li>
         <li><strong>Lista de Amigos & Chats:</strong> Mensajería directa y chat de voz / llamadas en tiempo real.</li>
         <li><strong>Publicaciones & Noticias:</strong> Entérate de las últimas novedades del gaming retro y comparte posts.</li>
-        <li><strong>Foros y Reseñas por Juego:</strong> Secciones de comunidad dedicadas con calificaciones y opiniones.</li>
+        <li><strong>Reseñas por Juego:</strong> Calificaciones y opiniones de tus amigos en cada juego.</li>
       </ul>
     </td>
   </tr>
@@ -76,5 +76,19 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
 
 1. **Clona el repositorio:**
    ```bash
-   git clone [https://github.com/Ropro-GG/RetroEmulator.git](https://github.com/Ropro-GG/RetroEmulator.git)
+   git clone https://github.com/Ropro-GG/RetroEmulator.git
    cd RetroEmulator
+   ```
+
+2. **Instala las dependencias y crea tu configuración:**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate   # en Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   cp .env.example .env        # y completa tus claves
+   ```
+
+3. **Ejecuta el launcher:**
+   ```bash
+   python gui_app.py
+   ```

@@ -1,0 +1,9 @@
+pywebview==6.2.1
+supabase==2.31.0
+python-dotenv==1.2.3
+pillow==12.3.0
+keyring==25.7.0
+# Solo en Linux: motor con WebRTC, sin él no funcionan las llamadas
+PyQt6==6.12.0; sys_platform == "linux"
+PyQt6-WebEngine==6.140.0; sys_platform == "linux"
+QtPy==2.4.3; sys_platform == "linux"

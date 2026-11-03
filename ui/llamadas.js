@@ -1,5 +1,5 @@
 // ============================================================================
-// LLAMADAS (fase 2: voz 1 a 1; la estructura ya admite varios participantes)
+// LLAMADAS: voz y video, 1 a 1 o en grupo (hasta 6 personas, cada una conectada con todas)
 //
 //  - Python (gui_app.py) crea/responde/cierra la llamada en Supabase.
 //  - Este archivo escucha Realtime (timbre) y arma la conexión WebRTC entre equipos.
@@ -12,7 +12,8 @@ const LL_ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };  // s
 const LL_MAX_PERSONAS = 6;       // en una llamada grupal cada uno se conecta con todos: más de 6 se vuelve pesado
 const LL_VIDEO = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
 const LL_TIMBRE_MS = 45000;      // cuánto suena antes de darla por no atendida
-const LL_VIGENCIA_MS = 60000;    // invitaciones más viejas que esto se ignoran
+const LL_VIGENCIA_MS = 60000;    // invitaciones más viejas que esto se ignoran (mismo valor en invitar_a_llamada)
+const LL_CONEXION_MS = 30000;    // cuánto se espera a que conecte después de atender
 
 let llSb = null;                 // cliente Realtime de Supabase
 let llYo = null;                 // mi id de usuario
@@ -23,6 +24,7 @@ let llEntrante = null;           // invitación que está sonando
 let llTimbreTimer = null;
 let llTimbreCtx = null;
 let llDuracionTimer = null;
+let llIniciando = false;         // evita dos llamadas por un doble clic mientras se pide el micrófono
 
 // ---------------------------------------------------------------------------
 // Arranque y cierre (se llaman desde app.js al entrar / salir de la cuenta)
@@ -42,6 +44,7 @@ async function llamadasIniciar() {
         return;
     }
     llYo = cfg.user_id;
+    try { await window.pywebview.api.limpiar_llamadas_colgadas(); } catch (e) { /* no impide llamar */ }
     llSb = window.supabase.createClient(cfg.url, cfg.anon_key, {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
@@ -213,11 +216,16 @@ function llNuevaLlamada(id, soyCreador, medios) {
 
 async function llIniciarLlamada(ids, conVideo, nombre) {
     if (!llSb) { alert('Las llamadas no están disponibles ahora (revisá tu conexión y reiniciá sesión).'); return; }
-    if (llActual || llEntrante) { llAviso('Ya estás en una llamada.'); return; }
-    const medios = await llObtenerMedios(conVideo);
-    if (!medios) return;
-
-    const res = await window.pywebview.api.crear_llamada(ids, conVideo);
+    if (llActual || llEntrante || llIniciando) { llAviso('Ya estás en una llamada.'); return; }
+    llIniciando = true;
+    let medios, res;
+    try {
+        medios = await llObtenerMedios(conVideo);
+        if (!medios) return;
+        res = await window.pywebview.api.crear_llamada(ids, conVideo);
+    } finally {
+        llIniciando = false;
+    }
     if (!res || !res.exito) {
         medios.stream.getTracks().forEach(t => t.stop());
         alert((res && res.error) || 'No se pudo iniciar la llamada.');
@@ -285,9 +293,14 @@ function llCerrarTimbre(aviso) {
 // conVideo = true: se entra con la cámara encendida (solo si quien llama pidió videollamada)
 async function llAceptar(conVideo = false) {
     const ent = llEntrante;
-    if (!ent) return;
+    if (!ent || ent.aceptando) return;
+    ent.aceptando = true;
     const medios = await llObtenerMedios(conVideo && ent.conVideo);
     if (!medios) { await llRechazar(); return; }
+    if (llEntrante !== ent) {                           // dejó de sonar mientras se pedía el micrófono
+        medios.stream.getTracks().forEach(t => t.stop());
+        return;
+    }
     llCerrarTimbre(null);
     const res = await window.pywebview.api.responder_llamada(ent.id, true);
     if (!res || !res.exito) {
@@ -296,6 +309,7 @@ async function llAceptar(conVideo = false) {
         return;
     }
     llActual = llNuevaLlamada(ent.id, false, medios);
+    llEsperarConexion(llActual);
     llActual.nombres[ent.de.user_id] = ent.de.username;
     llActualizarBotonCamara();
     llRefrescarVideos();
@@ -318,6 +332,18 @@ async function llRechazar() {
 // Cambios en vivo (Realtime)
 // ---------------------------------------------------------------------------
 
+// Ya atendieron pero la conexión directa puede no armarse nunca (por ejemplo por la red de alguno):
+// sin este límite la llamada se quedaría en "Conectando…" para siempre
+function llEsperarConexion(a) {
+    clearTimeout(a.timerSonando);
+    a.estado = 'conectando';
+    a.timerSonando = setTimeout(() => {
+        if (llActual === a && a.estado !== 'en_curso') {
+            llColgar('No se pudo conectar. Puede que la red de alguno de los dos lo esté bloqueando.');
+        }
+    }, LL_CONEXION_MS);
+}
+
 function llAlCambioLlamada(fila) {
     if (!fila || fila.estado !== 'terminada') return;
     if (llEntrante && llEntrante.id === fila.id) llCerrarTimbre('Llamada perdida.');
@@ -334,7 +360,10 @@ function llAlCambioParticipante(fila) {
         return;
     }
     if (!llActual || !fila || fila.llamada_id !== llActual.id) return;
-    if (fila.estado === 'rechazado') {
+    if (fila.estado === 'unido' && llActual.estado === 'sonando') {
+        llEsperarConexion(llActual);                  // ya atendió: "No respondió" dejaría de ser cierto
+        llEstadoBarra(llTextoNombres(), 'Conectando…');
+    } else if (fila.estado === 'rechazado') {
         llActual.invitados.delete(fila.usuario_id);
         if (llActual.estado === 'sonando' && llActual.invitados.size === 0) {
             llColgar('Rechazó la llamada.', true);
@@ -380,7 +409,10 @@ async function llAlSenal(p) {
         if (p.tipo === 'hola') llAlHola(p);
         else if (p.tipo === 'descripcion') await llAlDescripcion(p);
         else if (p.tipo === 'ice') await llAlIce(p);
-        else if (p.tipo === 'camara') { llPeer(p.de).camaraRemota = !!p.activa; llRefrescarVideos(); }
+        else if (p.tipo === 'camara') {
+            const peer = llActual.peers.get(p.de);    // una señal tardía de quien ya se fue no lo revive
+            if (peer) { peer.camaraRemota = !!p.activa; llRefrescarVideos(); }
+        }
         else if (p.tipo === 'chau') llCerrarPeer(p.de);
     } catch (e) {
         console.warn('[LLAMADAS] Error con la señal', p.tipo, e);
@@ -466,7 +498,8 @@ async function llAlDescripcion(p) {
 }
 
 async function llAlIce(p) {
-    const peer = llPeer(p.de);
+    const peer = llActual.peers.get(p.de);             // una señal tardía de quien ya se fue no lo revive
+    if (!peer) return;
     if (!peer.pc.remoteDescription) { peer.hielo.push(p.candidato); return; }   // llegó antes que la descripción
     try {
         await peer.pc.addIceCandidate(p.candidato);
@@ -582,11 +615,10 @@ function llRefrescarVideos() {
             tile.dataset.peer = id;
             const v = document.createElement('video');
             v.autoplay = true; v.muted = true; v.playsInline = true;   // el audio ya suena por su <audio>
-            const nombre = document.createElement('span');
-            nombre.textContent = a.nombres[id] || '';
-            tile.append(v, nombre);
+            tile.append(v, document.createElement('span'));
             grid.appendChild(tile);
         }
+        tile.querySelector('span').textContent = a.nombres[id] || '';   // el nombre puede llegar después que el video
         const v = tile.querySelector('video');
         if (v.srcObject !== peer.streamRemoto) v.srcObject = peer.streamRemoto;
         v.play().catch(() => { /* se reproduce al interactuar */ });
@@ -735,6 +767,8 @@ async function llEnviarInvitaciones() {
     marcados.forEach(m => {
         a.invitados.add(m.value);
         if (!a.nombres[m.value]) a.nombres[m.value] = m.dataset.nombre;
+        // Si no atiende (o no estaba conectado) se libera su lugar y se lo puede volver a invitar
+        setTimeout(() => { if (!a.peers.has(m.value)) a.invitados.delete(m.value); }, LL_VIGENCIA_MS);
     });
     llAviso(marcados.length === 1 ? 'Invitación enviada.' : 'Invitaciones enviadas.');
 }

@@ -132,9 +132,10 @@ class API:
         """Retorna las consolas registradas para llenar el selector/filtro de la UI."""
         return self.db.obtener_consolas()
 
-    def lanzar_juego(self, game_id):
+    def lanzar_juego(self, game_id, variante=False):
+        """'variante' = el usuario ya eligió una versión/disco en el selector."""
         return self.launcher.lanzar_por_id(
-            game_id, al_iniciar=self._al_iniciar_juego, al_cerrar=self._al_cerrar_juego)
+            game_id, al_iniciar=self._al_iniciar_juego, al_cerrar=self._al_cerrar_juego, variante=variante)
 
     def _al_iniciar_juego(self, titulo, consola):
         """Avisa a tus amigos a qué jugás (si no lo desactivaste en Privacidad)."""
@@ -504,7 +505,7 @@ class API:
         return ra_client.obtener_logros(juego["identificativo"], juego["consola_id"], juego["titulo"])
 
     def obtener_amigos_juego(self, game_id):
-        """Pendiente de desarrollar: hoy devuelve listas vacías."""
+        """Amigos que jugaron o desean este juego, y sus opiniones."""
         juego = db_local.obtener_juego_detalle(game_id)
         if not juego:
             return {"exito": False, "jugaron": [], "deseado": []}
@@ -529,6 +530,9 @@ class API:
     # --- LLAMADAS (la conexión de audio va por ui/llamadas.js; esto solo habla con Supabase) ---
     def obtener_config_llamadas(self):
         return self._llamadas.config_realtime()
+
+    def limpiar_llamadas_colgadas(self):
+        return self._llamadas.limpiar_colgadas()
 
     def crear_llamada(self, amigo_ids, con_video=False):
         return self._llamadas.crear_llamada(amigo_ids, con_video)
@@ -563,9 +567,11 @@ def _elegir_motor():
 
 
 def main():
+    # La base local, las ROMs y la caché usan rutas relativas: desde otra carpeta aparecerían vacías
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     api = API()
-    html_path = os.path.join(os.path.dirname(__file__), 'ui', 'index.html')
-    
+    html_path = os.path.join('ui', 'index.html')
+
     window = webview.create_window(
         title='RetroEmulator',
         url=html_path,
@@ -577,7 +583,8 @@ def main():
     api.set_window(window)
     # RETRO_DEBUG=1 abre las herramientas de desarrollo (en Qt abre una ventana extra)
     webview.start(debug=os.environ.get("RETRO_DEBUG") == "1", gui=_elegir_motor(), http_server=True)
-    api.cloud.limpiar_jugando()   # al cerrar el launcher no queda un "jugando ahora" publicado
+    api._llamadas.salir_activa()  # ni una llamada abierta
+    api.cloud.limpiar_jugando()   # ni un "jugando ahora" publicado
 
 if __name__ == '__main__':
     main()

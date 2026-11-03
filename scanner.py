@@ -18,6 +18,7 @@ ESTADO = {
 _lock_escaneo = threading.Lock()
 
 _RE_DISCO = re.compile(r'[\(\[\{](?:disc|disk|cd)\s*([0-9a-z])[\)\]\}]', re.IGNORECASE)
+_RE_PISTA = re.compile(r'(?:^|[\(\[\{\-_ ])track\s*0*(\d+)(?:[\)\]\}\. _\-]|$)', re.IGNORECASE)
 
 
 def crear_estructura_carpetas():
@@ -33,16 +34,11 @@ def crear_estructura_carpetas():
 
 
 def es_pista_de_audio(nombre_archivo):
-    nombre_lower = nombre_archivo.lower()
-    patron_track = re.search(r'[\(\[\{\-_ ]track\s*\d+[\)\]\} ]', nombre_lower, re.IGNORECASE)
-    patron_audio = re.search(r'\(audio\)', nombre_lower, re.IGNORECASE)
-
-    if "track" in nombre_lower or "audio" in nombre_lower:
-        if "track 1" in nombre_lower or "track 01" in nombre_lower or "track1" in nombre_lower:
-            return False
-        return True
-
-    return bool(patron_track or patron_audio)
+    # La pista 1 es la de datos. Buscar solo la palabra "track" dejaba afuera juegos como "Track & Field"
+    pista = _RE_PISTA.search(nombre_archivo)
+    if pista:
+        return int(pista.group(1)) != 1
+    return "(audio)" in nombre_archivo.lower()
 
 
 def limpiar_titulo(nombre):
@@ -119,7 +115,9 @@ def escanear_consola(consola, mapa_portadas, trabajos_portada):
     juegos_registrados = 0
 
     for raiz, _, archivos in os.walk(ruta_roms):
-        generar_m3u_para_multidisco(raiz, archivos)
+        # os.walk listó la carpeta antes de crearlos: sin esto recién aparecían en el segundo escaneo
+        creados = generar_m3u_para_multidisco(raiz, archivos)
+        archivos = sorted(set(archivos) | {os.path.basename(m) for m in creados})
 
         tiene_m3u = any(f.lower().endswith('.m3u') for f in archivos)
         tiene_cue = any(f.lower().endswith('.cue') for f in archivos)

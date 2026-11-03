@@ -3,10 +3,11 @@ import os
 import threading
 import db_local
 
-def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None):
+def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
     """
-    Busca un juego por su ID. Si hay otros juegos con exactamente el mismo título 
+    Busca un juego por su ID. Si hay otros juegos con exactamente el mismo título
     (ej. varios discos o versiones), retorna las opciones para que el usuario elija.
+    Con variante=True el usuario ya eligió: se abre justo ese ID.
     """
     with db_local.obtener_conexion() as conn:
         cursor = conn.cursor()
@@ -35,7 +36,7 @@ def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None):
         coincidencias = cursor.fetchall()
 
     # Si hay múltiples variantes o discos con el mismo nombre, devolvemos la lista para elegir
-    if len(coincidencias) > 1:
+    if len(coincidencias) > 1 and not variante:
         opciones = []
         for c_id, c_titulo, c_ruta, c_emul in coincidencias:
             # Extraer un nombre descriptivo (ej: Disc 1, Disc 2, etc.) del nombre del archivo o ruta
@@ -86,5 +87,5 @@ def _vigilar(proceso, titulo, consola, al_iniciar, al_cerrar):
                 print(f"[LAUNCHER] Error al cerrar: {e}")
 
 class GameLauncher:
-    def lanzar_por_id(self, juego_id, al_iniciar=None, al_cerrar=None):
-        return ejecutar_juego(juego_id, al_iniciar, al_cerrar)
+    def lanzar_por_id(self, juego_id, al_iniciar=None, al_cerrar=None, variante=False):
+        return ejecutar_juego(juego_id, al_iniciar, al_cerrar, variante)
