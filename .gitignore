@@ -10,3 +10,5 @@ cache/
 *.bak
 # Documentación personal: no se sube a GitHub
 docs/
+# Herramientas y claves de desarrollo: no se suben a GitHub
+dev/

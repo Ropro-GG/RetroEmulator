@@ -118,6 +118,56 @@ class PresenciaEnLlamada(unittest.TestCase):
         self.assertEqual(self.preparar("1", None), ["borra"])
 
 
+class BloquearYDenunciar(unittest.TestCase):
+    """Validaciones y búsqueda; las reglas que protegen de verdad están en Supabase."""
+
+    class Respuesta:
+        def __init__(self, data):
+            self.data = data
+
+        def execute(self):
+            return self
+
+    def cliente(self, ids_bloqueados=()):
+        from nucleo.cloud_client import CloudClient
+        cloud = CloudClient.__new__(CloudClient)
+        cloud.usuario_actual = type("U", (), {"id": "yo"})()
+        self.llamadas_rpc = []
+
+        class Cliente:
+            def rpc(_, nombre, parametros=None):
+                self.llamadas_rpc.append(nombre)
+                if nombre == "ids_con_bloqueo":
+                    return self.Respuesta(list(ids_bloqueados))
+                return self.Respuesta(True)
+        cloud.client = Cliente()
+        return cloud
+
+    def test_no_se_puede_denunciar_ni_bloquear_a_uno_mismo(self):
+        cloud = self.cliente()
+        self.assertFalse(cloud.denunciar_usuario("yo", "spam")["exito"])
+        self.assertFalse(cloud.bloquear_usuario("yo")["exito"])
+        self.assertEqual(self.llamadas_rpc, [])
+
+    def test_denuncia_exige_motivo_valido_y_limita_el_detalle(self):
+        cloud = self.cliente()
+        self.assertFalse(cloud.denunciar_usuario("otro", "inventado")["exito"])
+        self.assertFalse(cloud.denunciar_usuario("otro", "spam", "x" * 501)["exito"])
+        self.assertEqual(self.llamadas_rpc, [])
+        self.assertTrue(cloud.denunciar_usuario("otro", "spam", "x" * 500)["exito"])
+
+    def test_perfil_de_usuario_con_bloqueo_no_se_muestra(self):
+        cloud = self.cliente(["otro"])
+        respuesta = self.Respuesta([{"id": "otro", "username": "x"}])
+
+        class Tabla:
+            def select(_, *a): return _
+            def eq(_, *a): return _
+            def execute(_): return respuesta
+        cloud.client.table = lambda nombre: Tabla()
+        self.assertFalse(cloud.obtener_perfil_social("otro")["exito"])
+
+
 class CompartirPantalla(unittest.TestCase):
     def setUp(self):
         try:

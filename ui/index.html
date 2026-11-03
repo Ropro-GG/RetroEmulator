@@ -431,6 +431,34 @@
         </div>
     </div>
 
+    <!-- MODAL: DENUNCIAR A UN USUARIO -->
+    <div id="denuncia-modal" class="modal" style="display: none;">
+        <div class="dialog-card denuncia-card">
+            <h2 id="denuncia-titulo">Denunciar</h2>
+            <p class="settings-help">La denuncia es privada: esta persona no recibe ningún aviso.</p>
+            <label for="denuncia-motivo" class="denuncia-etiqueta">Motivo</label>
+            <select id="denuncia-motivo" class="settings-input">
+                <option value="">— Elegí un motivo —</option>
+                <option value="acoso">Acoso o amenazas</option>
+                <option value="spam">Spam o publicidad</option>
+                <option value="contenido">Contenido inapropiado</option>
+                <option value="suplantacion">Se hace pasar por otra persona</option>
+                <option value="otro">Otro</option>
+            </select>
+            <label for="denuncia-detalle" class="denuncia-etiqueta">Detalle (opcional)</label>
+            <textarea id="denuncia-detalle" class="settings-input" rows="4" maxlength="500" placeholder="Contá qué pasó"></textarea>
+            <label class="toggle-row denuncia-bloquear">
+                <input type="checkbox" id="denuncia-bloquear">
+                Bloquear también a esta persona
+            </label>
+            <p id="denuncia-msg" class="code-msg" role="status"></p>
+            <div class="code-actions">
+                <button id="denuncia-enviar" class="btn-primary-sm" onclick="confirmarDenuncia()">Enviar denuncia</button>
+                <button class="btn-secondary-sm" onclick="cerrarDenuncia()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- VISOR DE IMÁGENES -->
     <div id="visor-modal" class="modal" style="display: none;" onclick="cerrarVisor()">
         <img id="visor-img" class="visor-img" alt="">
@@ -512,6 +540,10 @@
                         Mostrar mi lista de deseados a mis amigos
                     </label>
                     <p class="settings-help">Si lo desactivás, tus amigos dejan de ver tu lista (ni en tu perfil ni en el detalle de los juegos). La lista sigue siendo tuya. Las opiniones se controlan una por una con "Visible para mis amigos".</p>
+
+                    <h3 class="settings-subtitle">Usuarios bloqueados</h3>
+                    <p class="settings-help">No pueden escribirte, llamarte ni encontrarte, y no ves sus publicaciones. Al desbloquear no vuelven a ser amigos: hace falta otra solicitud.</p>
+                    <div id="bloqueados-lista"></div>
                 </section>
 
                 <section id="settings-info" class="settings-section" style="display: none;">

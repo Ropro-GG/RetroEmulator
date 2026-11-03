@@ -1536,3 +1536,9 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .llamada-invitar-fila:hover { background: #141722; }
 .llamada-invitar-fila img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
 .llamada-invitar-botones { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ===== Denuncias ===== */
+.denuncia-card { text-align: left; }
+.denuncia-etiqueta { display: block; margin: 12px 0 5px; font-size: 0.85em; color: #C5C6C7; }
+.denuncia-card textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.denuncia-bloquear { margin-top: 12px; }

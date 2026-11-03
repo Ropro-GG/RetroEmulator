@@ -389,6 +389,24 @@ class API:
     def eliminar_amistad(self, friendship_id):
         return self.cloud.eliminar_amistad(friendship_id)
 
+    # --- BLOQUEAR Y DENUNCIAR ---
+
+    # Bloquea a un usuario y elimina la amistad entre ambos.
+    def bloquear_usuario(self, user_id):
+        return self.cloud.bloquear_usuario(user_id)
+
+    # Quita un bloqueo; para volver a ser amigos hace falta otra solicitud.
+    def desbloquear_usuario(self, user_id):
+        return self.cloud.desbloquear_usuario(user_id)
+
+    # Lista de usuarios bloqueados, para Privacidad.
+    def obtener_bloqueados(self):
+        return self.cloud.obtener_bloqueados()
+
+    # Registra una denuncia, que se revisa en el panel de Supabase.
+    def denunciar_usuario(self, user_id, motivo, detalle=""):
+        return self.cloud.denunciar_usuario(user_id, motivo, detalle)
+
     # --- LISTA DE DESEADOS ---
 
     def buscar_titulos(self, identificativo, texto):

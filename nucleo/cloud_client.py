@@ -335,6 +335,7 @@ class CloudClient:
             yo = self._yo()
             res = self.client.table("profiles").select("id, username, avatar_url") \
                 .ilike("username", f"%{texto}%").neq("id", yo).limit(20).execute()
+            bloqueados = self._ids_con_bloqueo()
 
             relaciones = {}
             for f in self._amistades():
@@ -348,6 +349,8 @@ class CloudClient:
 
             usuarios = []
             for p in res.data or []:
+                if p["id"] in bloqueados:
+                    continue
                 relacion, fid = relaciones.get(p["id"], ("ninguna", None))
                 usuarios.append({
                     "user_id": p["id"],
@@ -370,7 +373,7 @@ class CloudClient:
             yo = self._yo()
             res = self.client.table("profiles").select("id, username, bio, avatar_url") \
                 .eq("id", user_id).execute()
-            if not res.data:
+            if not res.data or user_id in self._ids_con_bloqueo():
                 return {"exito": False, "error": "No se encontró ese usuario."}
             p = res.data[0]
 
@@ -459,6 +462,82 @@ class CloudClient:
             self.client.table("friendships").delete().eq("id", friendship_id).execute()
             return {"exito": True}
         except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    # --- BLOQUEAR Y DENUNCIAR ---
+
+    MOTIVOS_DENUNCIA = ("acoso", "spam", "contenido", "suplantacion", "otro")
+    LIMITE_DETALLE_DENUNCIA = 500
+
+    # Usuarios con un bloqueo en cualquier sentido. Si falla la consulta no se oculta a nadie
+    # en la búsqueda, pero Supabase igual impide la amistad, el chat y las llamadas.
+    def _ids_con_bloqueo(self):
+        try:
+            return set(self.client.rpc("ids_con_bloqueo").execute().data or [])
+        except Exception as e:
+            print(f"[SOCIAL] Sin datos de bloqueos: {e}")
+            return set()
+
+    # Bloquea a un usuario y elimina la amistad o solicitud que hubiera entre ambos.
+    def bloquear_usuario(self, user_id):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        if user_id == self._yo():
+            return {"exito": False, "error": "No podés bloquearte a vos mismo."}
+        try:
+            self.client.rpc("bloquear_usuario", {"p_usuario": user_id}).execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    # Quita un bloqueo propio. La amistad no vuelve: hay que enviar otra solicitud.
+    def desbloquear_usuario(self, user_id):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            self.client.table("bloqueos").delete().eq("bloqueador", self._yo()).eq("bloqueado", user_id).execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    # Usuarios que bloqueaste, para la sección Privacidad.
+    def obtener_bloqueados(self):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            filas = self.client.table("bloqueos").select("bloqueado") \
+                .eq("bloqueador", self._yo()).order("creado_en", desc=True).execute().data or []
+            perfiles = self._perfiles_por_id([f["bloqueado"] for f in filas])
+            return {"exito": True, "bloqueados": [{
+                "user_id": f["bloqueado"],
+                "username": perfiles.get(f["bloqueado"], {}).get("username") or "Usuario",
+                "avatar_url": perfiles.get(f["bloqueado"], {}).get("avatar_url") or "",
+            } for f in filas]}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    # Registra una denuncia para revisarla en el panel de Supabase. No avisa a la persona denunciada.
+    def denunciar_usuario(self, user_id, motivo, detalle=""):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        detalle = (detalle or "").strip()
+        if user_id == self._yo():
+            return {"exito": False, "error": "No podés denunciarte a vos mismo."}
+        if motivo not in self.MOTIVOS_DENUNCIA:
+            return {"exito": False, "error": "Elegí un motivo."}
+        if len(detalle) > self.LIMITE_DETALLE_DENUNCIA:
+            return {"exito": False, "error": f"El detalle es demasiado largo (máximo {self.LIMITE_DETALLE_DENUNCIA} caracteres)."}
+        try:
+            nueva = self.client.rpc("denunciar_usuario", {
+                "p_usuario": user_id, "p_motivo": motivo, "p_detalle": detalle}).execute().data
+            return {"exito": True, "ya_existia": nueva is False}
+        except Exception as e:
+            if "demasiadas denuncias" in str(e).lower():
+                return {"exito": False, "error": "Enviaste demasiadas denuncias hoy. Probá de nuevo mañana."}
             return {"exito": False, "error": self._error_social(e)}
 
     # --- CHAT (mensajes entre amigos aceptados) ---

@@ -1239,6 +1239,117 @@ async function quitarAmistad(friendshipId, nombre) {
 }
 
 // ============================================================================
+// BLOQUEAR Y DENUNCIAR
+// ============================================================================
+
+// Bloquea a un usuario y quita de la pantalla todo lo que dependía de esa relación.
+async function bloquearUsuario(userId, nombre) {
+    if (!confirm(`¿Bloquear a ${nombre}? Dejarán de ser amigos, y no podrán escribirse, llamarse ni ver sus publicaciones. Podés deshacerlo en Configuración → Privacidad.`)) return false;
+    let res;
+    try {
+        res = await window.pywebview.api.bloquear_usuario(userId);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) {
+        alert((res && res.error) || 'No se pudo bloquear al usuario.');
+        return false;
+    }
+    if (chatAmigo && chatAmigo.user_id === userId) {
+        chatAmigo = null;
+        document.getElementById('chat-activo').style.display = 'none';
+        document.getElementById('chat-vacio').style.display = '';
+    }
+    if (perfilAjenoId === userId) cerrarPerfilAjeno();
+    avisoPost(`Bloqueaste a ${nombre}.`);
+    if (socialSeccion === 'chat') cargarConversaciones();
+    else if (socialSeccion === 'publicaciones') cargarPublicaciones(true);
+    else await refrescarSocialYBusqueda();
+    return true;
+}
+
+let denunciaActual = null;   // { userId, nombre }
+
+// Abre el formulario de denuncia, siempre vacío.
+function abrirDenuncia(userId, nombre) {
+    denunciaActual = { userId, nombre };
+    document.getElementById('denuncia-titulo').textContent = `Denunciar a ${nombre}`;
+    document.getElementById('denuncia-motivo').value = '';
+    document.getElementById('denuncia-detalle').value = '';
+    document.getElementById('denuncia-bloquear').checked = false;
+    document.getElementById('denuncia-msg').textContent = '';
+    document.getElementById('denuncia-enviar').disabled = false;
+    document.getElementById('denuncia-modal').style.display = 'flex';
+    document.getElementById('denuncia-motivo').focus();
+}
+
+// Cierra el formulario sin enviar.
+function cerrarDenuncia() {
+    denunciaActual = null;
+    document.getElementById('denuncia-modal').style.display = 'none';
+}
+
+// Envía la denuncia y, si se pidió, bloquea también a esa persona.
+async function confirmarDenuncia() {
+    if (!denunciaActual) return;
+    const { userId, nombre } = denunciaActual;
+    const msg = document.getElementById('denuncia-msg');
+    const motivo = document.getElementById('denuncia-motivo').value;
+    if (!motivo) { msg.textContent = 'Elegí un motivo.'; return; }
+    const btn = document.getElementById('denuncia-enviar');
+    btn.disabled = true;
+    msg.textContent = 'Enviando…';
+    let res;
+    try {
+        res = await window.pywebview.api.denunciar_usuario(userId, motivo, document.getElementById('denuncia-detalle').value);
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    btn.disabled = false;
+    if (!res || !res.exito) {
+        msg.textContent = (res && res.error) || 'No se pudo enviar la denuncia.';
+        return;
+    }
+    const tambienBloquear = document.getElementById('denuncia-bloquear').checked;
+    cerrarDenuncia();
+    avisoPost(res.ya_existia ? 'Ya tenías una denuncia pendiente contra este usuario.' : 'Denuncia enviada. Gracias por avisar.');
+    if (tambienBloquear) bloquearUsuario(userId, nombre);
+}
+
+// Lista de usuarios bloqueados en Configuración → Privacidad.
+async function cargarBloqueados() {
+    const cont = document.getElementById('bloqueados-lista');
+    let res;
+    try {
+        res = await window.pywebview.api.obtener_bloqueados();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    cont.innerHTML = '';
+    if (!res || !res.exito) {
+        cont.appendChild(mensajeVacio((res && res.error) || 'No se pudo cargar la lista.'));
+        return;
+    }
+    if (res.bloqueados.length === 0) {
+        cont.appendChild(mensajeVacio('No bloqueaste a nadie.'));
+        return;
+    }
+    res.bloqueados.forEach(u => {
+        // Sin user_id: la fila no abre el perfil, porque un usuario bloqueado no se puede ver
+        cont.appendChild(filaUsuario({ username: u.username, avatar_url: u.avatar_url }, '', false, [
+            boton('Desbloquear', 'btn-secondary-sm', () => desbloquearUsuario(u.user_id)),
+        ]));
+    });
+}
+
+// Quita un bloqueo y actualiza la lista.
+async function desbloquearUsuario(userId) {
+    const res = await window.pywebview.api.desbloquear_usuario(userId);
+    if (!res || !res.exito) alert((res && res.error) || 'No se pudo desbloquear.');
+    await cargarBloqueados();
+}
+
+// ============================================================================
 // PRIVACIDAD
 // ============================================================================
 
@@ -1249,6 +1360,7 @@ async function cargarPrivacidad() {
         document.getElementById('privacy-share').checked = !!p.actividad;
         document.getElementById('privacy-history').checked = !!p.historial;
         document.getElementById('privacy-deseados').checked = !!p.deseados;
+        cargarBloqueados();
     } catch (e) {
         console.error(e);
     }
@@ -1353,6 +1465,10 @@ async function cargarPerfilAjeno() {
         acciones.appendChild(boton('💬 Enviar mensaje', 'btn-primary-sm', () => irAlChat(p.user_id)));
         acciones.appendChild(boton('Quitar de amigos', 'btn-secondary-sm', () => quitarAmistad(res.friendship_id, p.username)));
     }
+    if (res.relacion !== 'yo') {
+        acciones.appendChild(boton('Bloquear', 'btn-secondary-sm', () => bloquearUsuario(p.user_id, p.username)));
+        acciones.appendChild(boton('Denunciar', 'btn-secondary-sm', () => abrirDenuncia(p.user_id, p.username)));
+    }
 }
 
 // ============================================================================
@@ -1430,7 +1546,7 @@ function reiniciarEstadoUI() {
     // Textos y listas que dependen de la cuenta
     ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
      'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun', 'pa-deseados',
-     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados'].forEach(id => {
+     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });
@@ -1450,6 +1566,7 @@ function reiniciarEstadoUI() {
     cerrarConfiguracion();
     cerrarPerfil();
     document.getElementById('code-modal').style.display = 'none';
+    cerrarDenuncia();
     document.getElementById('game-detail').style.display = 'none';
     document.querySelector('.game-grid-container').style.display = '';
     document.getElementById('social-perfil').style.display = 'none';
@@ -3519,7 +3636,6 @@ function crearTarjetaCompartida(contenido) {
 // ============================================================================
 // AMIGOS: botones de acción por amigo y menú desplegable (▾)
 //   💬 Mensaje · 📞 Llamada de voz · ▾ (Quitar, Bloquear, Denunciar)
-// Bloquear y Denunciar todavía no tienen función: muestran un aviso.
 // ============================================================================
 
 // Botón redondo de amigo; se desactiva mientras se procesa.
@@ -3576,8 +3692,8 @@ function menuAmigo(u) {
         menu.className = 'amigo-menu';
         menu.append(
             itemMenuAmigo('Quitar de amigos', '', () => quitarAmistad(u.friendship_id, u.username)),
-            itemMenuAmigo('Bloquear', '', () => llAviso('Bloquear usuarios estará disponible pronto.')),
-            itemMenuAmigo('Denunciar', 'peligro', () => llAviso('Las denuncias estarán disponibles pronto.')),
+            itemMenuAmigo('Bloquear', '', () => bloquearUsuario(u.user_id, u.username)),
+            itemMenuAmigo('Denunciar', 'peligro', () => abrirDenuncia(u.user_id, u.username)),
         );
         document.body.appendChild(menu);
 
