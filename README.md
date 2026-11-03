@@ -48,7 +48,7 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
       <h3>🌍 Comunidad & Social</h3>
       <ul>
         <li><strong>Perfiles Personalizables:</strong> Muestra tus estadísticas, logros y juegos favoritos.</li>
-        <li><strong>Lista de Amigos & Chats:</strong> Mensajería directa y chat de voz / llamadas en tiempo real.</li>
+        <li><strong>Lista de Amigos & Chats:</strong> Mensajería directa, llamadas de voz y video, y compartir pantalla.</li>
         <li><strong>Publicaciones & Noticias:</strong> Entérate de las últimas novedades del gaming retro y comparte posts.</li>
         <li><strong>Reseñas por Juego:</strong> Calificaciones y opiniones de tus amigos en cada juego.</li>
       </ul>

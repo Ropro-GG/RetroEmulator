@@ -40,10 +40,12 @@ CONSOLAS_RA = {
 _indices = {}
 
 
+# Error con un mensaje listo para mostrar.
 class ErrorRA(Exception):
     pass
 
 
+# Falta conectar la cuenta de RetroAchievements.
 class SinCredenciales(ErrorRA):
     pass
 
@@ -68,6 +70,7 @@ def adoptar_credenciales_antiguas(usuario_id):
         session_store.borrar("retroachievements")
 
 
+# Credenciales de la cuenta activa, o None.
 def obtener_credenciales():
     nombre = _nombre_credenciales()
     c = session_store.cargar(nombre) if nombre else None
@@ -76,6 +79,7 @@ def obtener_credenciales():
     return None
 
 
+# Resumen para la interfaz; nunca incluye la clave.
 def estado_credenciales():
     c = obtener_credenciales()
     return {"configurado": bool(c), "usuario": c["usuario"] if c else ""}
@@ -101,6 +105,7 @@ def guardar_credenciales(usuario, api_key):
     return {"exito": True, "usuario": perfil.get("User", usuario)}
 
 
+# Desconecta la cuenta de RetroAchievements.
 def borrar_credenciales():
     nombre = _nombre_credenciales()
     if nombre:
@@ -112,6 +117,7 @@ def borrar_credenciales():
 # Red
 # ----------------------------------------------------------------------------
 
+# Consulta a la API de RetroAchievements y traduce sus errores.
 def _pedir(endpoint, cred=None, **params):
     cred = cred or obtener_credenciales()
     if not cred:
@@ -170,6 +176,7 @@ def _lista_juegos(consola_ra):
     return juegos
 
 
+# Índice de juegos por título normalizado, con hacks y subsets descartados.
 def _indice(consola_ra):
     if consola_ra not in _indices:
         por_clave = {}

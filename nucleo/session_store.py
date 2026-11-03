@@ -18,16 +18,19 @@ except Exception:  # keyring no instalado
 SERVICIO = "RetroEmulator"
 
 
+# Carpeta de configuración del usuario, según el sistema.
 def _carpeta():
     base = (os.environ.get("APPDATA") or os.environ.get("XDG_CONFIG_HOME")
             or os.path.join(os.path.expanduser("~"), ".config"))
     return os.path.join(base, "RetroEmulator")
 
 
+# Archivo de respaldo cuando no hay llavero del sistema.
 def _ruta(nombre):
     return os.path.join(_carpeta(), f"{nombre}.json")
 
 
+# Borra ese archivo; no es un error si no existe.
 def _borrar_archivo(nombre):
     try:
         os.remove(_ruta(nombre))
@@ -75,6 +78,7 @@ def cargar(nombre):
         return None
 
 
+# Borra el dato del llavero y del archivo de respaldo.
 def borrar(nombre):
     if keyring is not None:
         try:

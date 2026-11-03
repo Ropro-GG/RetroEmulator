@@ -8,3 +8,5 @@ venv/
 .env
 cache/
 *.bak
+# Documentación personal: no se sube a GitHub
+docs/

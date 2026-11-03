@@ -1,13 +1,20 @@
+// app.js - Toda la interfaz salvo las llamadas: login, biblioteca, detalle de juego, Configuración,
+// amigos, deseados, chat, publicaciones y menú de cada amigo.
+// Habla con Python mediante window.pywebview.api.<método> (ver la clase API en gui_app.py).
+// Regla de seguridad: lo que escribe un usuario se muestra con textContent, nunca con innerHTML.
+
 let usuarioActual = null;
 let perfilActual = null;
 let consolaSeleccionada = 'todas';
 
+// Alterna entre los formularios de entrar y registrarse.
 function toggleAuth(isRegister) {
     document.getElementById('login-form').style.display = isRegister ? 'none' : 'block';
     document.getElementById('register-form').style.display = isRegister ? 'block' : 'none';
     document.getElementById('auth-error').innerText = '';
 }
 
+// Formulario de entrar. Si se pidió recordar la sesión, luego pide el código del correo.
 async function login() {
     const email = document.getElementById('login-email').value;
     const pass = document.getElementById('login-pass').value;
@@ -37,6 +44,7 @@ async function login() {
     }
 }
 
+// Formulario de registro.
 async function registrar() {
     const username = document.getElementById('reg-username').value;
     const email = document.getElementById('reg-email').value;
@@ -61,6 +69,7 @@ async function registrar() {
     }
 }
 
+// Pasa del login a la app y carga los datos de la cuenta.
 async function cargarPantallaPrincipal() {
     reiniciarEstadoUI();   // arranca siempre limpio: nada de la cuenta anterior
     document.getElementById('auth-screen').style.display = 'none';
@@ -73,6 +82,7 @@ async function cargarPantallaPrincipal() {
     llamadasIniciar();
 }
 
+// Pinta nombre y foto; si no hay perfil usa los datos del registro.
 async function cargarPerfilUsuario() {
     try {
         const res = await window.pywebview.api.obtener_perfil();
@@ -106,15 +116,18 @@ async function cargarPerfilUsuario() {
     }
 }
 
+// Abre tu perfil.
 function abrirPerfil() {
     document.getElementById('profile-modal').style.display = 'flex';
     cargarMiActividad();
 }
 
+// Cierra tu perfil.
 function cerrarPerfil() {
     document.getElementById('profile-modal').style.display = 'none';
 }
 
+// Guarda la biografía.
 async function guardarPerfil() {
     const nuevaBio = document.getElementById('profile-bio').value;
     const res = await window.pywebview.api.actualizar_perfil(nuevaBio);
@@ -128,6 +141,7 @@ async function guardarPerfil() {
     }
 }
 
+// Pide un nombre nuevo y lo guarda.
 async function cambiarNombreUsuario() {
     const nombreActual = perfilActual ? (perfilActual.username || "") : "";
     const nuevoUsername = prompt("Ingresá tu nuevo nombre de usuario:", nombreActual);
@@ -149,6 +163,7 @@ async function cambiarNombreUsuario() {
     }
 }
 
+// Abre el selector de archivos y actualiza la foto.
 async function subirNuevaFoto() {
     try {
         const res = await window.pywebview.api.seleccionar_foto_avatar();
@@ -171,6 +186,7 @@ async function subirNuevaFoto() {
     }
 }
 
+// Llena la lista de consolas de la barra lateral.
 async function cargarConsolas() {
     try {
         const consolas = await window.pywebview.api.obtener_consolas();
@@ -194,6 +210,7 @@ async function cargarConsolas() {
     }
 }
 
+// Filtra la biblioteca por la consola elegida.
 function seleccionarConsola(id, elemento) {
     consolaSeleccionada = id;
     volverABiblioteca();
@@ -205,6 +222,7 @@ function seleccionarConsola(id, elemento) {
     filtrarCatalogo();
 }
 
+// Vuelve a pedir los juegos según la búsqueda y la consola.
 async function filtrarCatalogo() {
     try {
         const textoBusqueda = document.getElementById('search-input').value;
@@ -215,6 +233,7 @@ async function filtrarCatalogo() {
     }
 }
 
+// Abre un juego; si tiene varias versiones o discos, pide elegir primero.
 async function lanzarJuego(gameId) {
     try {
         const res = await window.pywebview.api.lanzar_juego(gameId);
@@ -245,6 +264,7 @@ async function lanzarJuego(gameId) {
     }
 }
 
+// Crea la carátula con plan B: file://, luego base64, luego el emoji.
 function crearPortada(juego, nombre) {
     const wrapper = document.createElement('div');
     wrapper.className = 'game-cover-wrapper';
@@ -284,6 +304,7 @@ function crearPortada(juego, nombre) {
     return wrapper;
 }
 
+// Dibuja la grilla de juegos.
 function renderizarJuegos(juegos) {
     const grid = document.getElementById('game-grid');
     grid.innerHTML = '';
@@ -319,6 +340,7 @@ function renderizarJuegos(juegos) {
 
 let escaneoEnCurso = false;
 
+// Botón Escanear: inicia el proceso en segundo plano.
 async function escanearRoms() {
     if (escaneoEnCurso) return;
     try {
@@ -334,6 +356,7 @@ async function escanearRoms() {
     }
 }
 
+// Consulta el progreso y refresca la biblioteca cuando hay novedades.
 async function seguirEscaneo() {
     escaneoEnCurso = true;
     const btn = document.getElementById('btn-scan');
@@ -389,6 +412,7 @@ async function seguirEscaneo() {
 // SESIÓN RECORDADA ("Recuérdame")
 // ============================================================================
 
+// Al abrir la app, entra solo si había una sesión recordada.
 async function intentarRestaurarSesion() {
     try {
         const res = await window.pywebview.api.restaurar_sesion();
@@ -402,6 +426,7 @@ async function intentarRestaurarSesion() {
 }
 window.addEventListener('pywebviewready', intentarRestaurarSesion);
 
+// Pide el código enviado por correo.
 function abrirModalCodigo(email) {
     document.getElementById('code-email').textContent = email;
     document.getElementById('code-input').value = '';
@@ -410,10 +435,12 @@ function abrirModalCodigo(email) {
     document.getElementById('code-input').focus();
 }
 
+// Cierra esa ventana sin recordar la sesión.
 function omitirCodigo() {
     document.getElementById('code-modal').style.display = 'none';
 }
 
+// Verifica el código.
 async function confirmarCodigo() {
     const codigo = document.getElementById('code-input').value.trim();
     const msg = document.getElementById('code-msg');
@@ -434,6 +461,7 @@ async function confirmarCodigo() {
     }
 }
 
+// Pide un código nuevo.
 async function reenviarCodigo() {
     const msg = document.getElementById('code-msg');
     try {
@@ -444,6 +472,7 @@ async function reenviarCodigo() {
     }
 }
 
+// Corta las llamadas, sale de la cuenta y limpia la pantalla.
 async function cerrarSesion() {
     if (!confirm('¿Cerrar sesión? Dejará de recordarse tu cuenta en este equipo.')) return;
     try { await llamadasDetener(); } catch (e) { /* se sigue igual */ }
@@ -467,6 +496,7 @@ async function cerrarSesion() {
 // ENLACES
 // ============================================================================
 
+// Abre un enlace en el navegador; Python solo permite sitios de confianza.
 function abrirEnlace(url) {
     window.pywebview.api.abrir_enlace(url);
 }
@@ -475,15 +505,18 @@ function abrirEnlace(url) {
 // CONFIGURACIÓN (estilo "Parámetros" de Steam)
 // ============================================================================
 
+// Abre Configuración en la sección indicada.
 function abrirConfiguracion(seccion) {
     document.getElementById('settings-modal').style.display = 'flex';
     seleccionarSeccionConfig(seccion || 'paths');
 }
 
+// Cierra Configuración.
 function cerrarConfiguracion() {
     document.getElementById('settings-modal').style.display = 'none';
 }
 
+// Muestra una sección de Configuración y carga sus datos.
 function seleccionarSeccionConfig(nombre) {
     document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
     document.getElementById('settings-' + nombre).style.display = 'block';
@@ -498,6 +531,7 @@ function seleccionarSeccionConfig(nombre) {
     else if (nombre === 'info') cargarInfoLauncher();
 }
 
+// Fila de texto "etiqueta: ruta".
 function filaRuta(etiqueta, valor) {
     const fila = document.createElement('div');
     fila.className = 'path-row';
@@ -509,6 +543,7 @@ function filaRuta(etiqueta, valor) {
     return fila;
 }
 
+// Sección Rutas: carpetas y una tarjeta por cada consola con juegos.
 async function cargarRutasConfig() {
     const cont = document.getElementById('paths-content');
     cont.textContent = 'Cargando…';
@@ -538,6 +573,7 @@ async function cargarRutasConfig() {
     }
 }
 
+// Tarjeta para elegir y guardar el emulador de una consola.
 function tarjetaEmulador(c) {
     const card = document.createElement('div');
     card.className = 'emu-card';
@@ -587,6 +623,7 @@ function tarjetaEmulador(c) {
     return card;
 }
 
+// Sección RetroAchievements: muestra si hay una cuenta conectada.
 async function cargarEstadoRA() {
     try {
         const est = await window.pywebview.api.obtener_estado_ra();
@@ -602,6 +639,7 @@ async function cargarEstadoRA() {
     }
 }
 
+// Prueba y guarda las credenciales.
 async function guardarCredencialesRA() {
     const status = document.getElementById('ra-status');
     status.style.color = '#a0a0a0';
@@ -619,11 +657,13 @@ async function guardarCredencialesRA() {
     }
 }
 
+// Desconecta la cuenta.
 async function borrarCredencialesRA() {
     await window.pywebview.api.borrar_credenciales_ra();
     await cargarEstadoRA();
 }
 
+// Sección Información.
 async function cargarInfoLauncher() {
     try {
         const info = await window.pywebview.api.obtener_info_launcher();
@@ -647,11 +687,13 @@ let juegoDetalleActual = null;
 let opinionPuntuacion = 0;
 let scrollBiblioteca = 0;
 
+// Al escribir en el buscador: vuelve a la biblioteca y filtra.
 function alBuscar() {
     volverABiblioteca();
     filtrarCatalogo();
 }
 
+// Abre la pantalla de un juego y recuerda la posición de la biblioteca.
 async function abrirDetalle(juego) {
     const biblioteca = document.querySelector('.game-grid-container');
     scrollBiblioteca = biblioteca.scrollTop;
@@ -680,6 +722,7 @@ async function abrirDetalle(juego) {
     cargarAmigos(juegoDetalleActual.id);
 }
 
+// Cierra el detalle y restaura la posición.
 function volverABiblioteca() {
     const detalle = document.getElementById('game-detail');
     if (detalle.style.display === 'none') return;
@@ -690,6 +733,7 @@ function volverABiblioteca() {
     juegoDetalleActual = null;
 }
 
+// Llena la pantalla de detalle con los datos del juego.
 function pintarDetalle(j) {
     document.getElementById('detail-title').textContent = j.titulo;
     document.getElementById('detail-console').textContent =
@@ -709,21 +753,25 @@ function pintarDetalle(j) {
     pintarEstrellas();
 }
 
+// Botón Jugar del detalle.
 function jugarDesdeDetalle() {
     if (juegoDetalleActual) lanzarJuego(juegoDetalleActual.id);
 }
 
+// Elige estrellas; tocar la misma las quita.
 function elegirPuntuacion(valor) {
     opinionPuntuacion = (opinionPuntuacion === valor) ? 0 : valor;
     pintarEstrellas();
 }
 
+// Rellena las estrellas según la puntuación.
 function pintarEstrellas() {
     document.querySelectorAll('#opinion-stars span').forEach(s => {
         s.classList.toggle('on', Number(s.dataset.v) <= opinionPuntuacion);
     });
 }
 
+// Guarda la opinión del juego.
 async function guardarOpinion() {
     if (!juegoDetalleActual) return;
     const msg = document.getElementById('opinion-msg');
@@ -746,6 +794,7 @@ async function guardarOpinion() {
     }
 }
 
+// Explica por qué no hay logros para mostrar.
 function mensajeLogros(cont, res) {
     const p = document.createElement('p');
     p.className = 'settings-help';
@@ -770,6 +819,7 @@ function mensajeLogros(cont, res) {
     cont.appendChild(p);
 }
 
+// Trae y dibuja los logros con la barra de progreso.
 async function cargarLogros(id) {
     const cont = document.getElementById('achievements-content');
     cont.textContent = 'Cargando logros…';
@@ -856,6 +906,7 @@ async function cargarAmigos(id) {
     pintarOpinionesAmigos(document.getElementById('friends-opiniones'), res && res.opiniones);
 }
 
+// Lista de amigos que jugaron o desean el juego.
 function pintarAmigos(el, amigos, textoVacio) {
     el.innerHTML = '';
     if (!amigos || amigos.length === 0) {
@@ -899,6 +950,7 @@ function pintarAmigos(el, amigos, textoVacio) {
 
 let vistaActual = 'biblioteca';
 
+// Cambia de pestaña principal y detiene lo que deja de verse.
 function mostrarVista(nombre) {
     vistaActual = nombre;
     document.querySelectorAll('.view').forEach(v => {
@@ -925,6 +977,7 @@ let socialSeccion = 'amigos';
 let socialTimer = null;
 let busquedaTimer = null;
 
+// Entra a Social y refresca cada 30 s qué juegan tus amigos.
 function abrirSocial() {
     seleccionarSeccionSocial(socialSeccion);
     detenerSocial();
@@ -936,11 +989,13 @@ function abrirSocial() {
     }, 30000);
 }
 
+// Detiene ese refresco.
 function detenerSocial() {
     if (socialTimer) clearInterval(socialTimer);
     socialTimer = null;
 }
 
+// Muestra una sección de Social y carga sus datos.
 function seleccionarSeccionSocial(nombre) {
     socialSeccion = nombre;
     if (nombre !== 'chat') detenerChat();
@@ -962,12 +1017,14 @@ function seleccionarSeccionSocial(nombre) {
     else if (nombre === 'publicaciones') abrirPublicaciones();
 }
 
+// Foto del usuario, o una generada con su nombre si no tiene.
 function avatarDe(u) {
     return (u.avatar_url && u.avatar_url.trim() !== '')
         ? u.avatar_url
         : `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || '?')}&background=45A29E&color=fff`;
 }
 
+// Crea un botón que se desactiva mientras se procesa, para evitar dobles clics.
 function boton(texto, clase, accion) {
     const b = document.createElement('button');
     b.className = clase;
@@ -985,6 +1042,7 @@ function textoActividad(enLlamada, jugando) {
     return [enLlamada ? '📞 En llamada' : '', juego].filter(Boolean).join(' · ');
 }
 
+// Fila de un usuario: foto, nombre, estado y acciones.
 function filaUsuario(u, subtitulo, jugando, acciones) {
     const fila = document.createElement('div');
     fila.className = 'user-row';
@@ -1015,6 +1073,7 @@ function filaUsuario(u, subtitulo, jugando, acciones) {
     return fila;
 }
 
+// Título de una lista, con contador opcional.
 function tituloBloque(texto, cantidad) {
     const h = document.createElement('h3');
     h.className = 'social-block-title';
@@ -1028,6 +1087,7 @@ function tituloBloque(texto, cantidad) {
     return h;
 }
 
+// Texto para una lista vacía o que está cargando.
 function mensajeVacio(texto) {
     const p = document.createElement('p');
     p.className = 'empty-state';
@@ -1035,6 +1095,7 @@ function mensajeVacio(texto) {
     return p;
 }
 
+// Dibuja solicitudes, amigos y solicitudes enviadas.
 async function cargarSocial() {
     const cont = document.getElementById('friend-lists');
     if (!cont.children.length) cont.appendChild(mensajeVacio('Cargando…'));
@@ -1092,11 +1153,13 @@ async function cargarSocial() {
     }
 }
 
+// Espera a que dejes de escribir antes de buscar.
 function buscarUsuariosConRetraso() {
     clearTimeout(busquedaTimer);
     busquedaTimer = setTimeout(buscarUsuarios, 350);
 }
 
+// Busca usuarios por nombre y muestra la acción posible con cada uno.
 async function buscarUsuarios() {
     const texto = document.getElementById('friend-search').value.trim();
     const cont = document.getElementById('friend-search-results');
@@ -1146,24 +1209,28 @@ async function buscarUsuarios() {
     });
 }
 
+// Vuelve a dibujar todo lo que depende de una amistad.
 async function refrescarSocialYBusqueda() {
     await cargarSocial();
     await buscarUsuarios();
     if (perfilAjenoId) await cargarPerfilAjeno();
 }
 
+// Envía una solicitud de amistad.
 async function agregarAmigo(userId) {
     const res = await window.pywebview.api.enviar_solicitud_amistad(userId);
     if (!res || !res.exito) alert(res ? res.error : 'No se pudo enviar la solicitud.');
     await refrescarSocialYBusqueda();
 }
 
+// Acepta o rechaza una solicitud.
 async function responderSolicitud(friendshipId, aceptar) {
     const res = await window.pywebview.api.responder_solicitud_amistad(friendshipId, aceptar);
     if (!res || !res.exito) alert(res ? res.error : 'No se pudo responder la solicitud.');
     await refrescarSocialYBusqueda();
 }
 
+// Quita a un amigo, o cancela una solicitud si no se indica nombre.
 async function quitarAmistad(friendshipId, nombre) {
     if (nombre && !confirm(`¿Quitar a ${nombre} de tus amigos?`)) return;
     const res = await window.pywebview.api.eliminar_amistad(friendshipId);
@@ -1175,6 +1242,7 @@ async function quitarAmistad(friendshipId, nombre) {
 // PRIVACIDAD
 // ============================================================================
 
+// Sección Privacidad: marca las casillas guardadas.
 async function cargarPrivacidad() {
     try {
         const p = await window.pywebview.api.obtener_privacidad();
@@ -1186,6 +1254,7 @@ async function cargarPrivacidad() {
     }
 }
 
+// Guarda el ajuste de actividad.
 async function guardarCompartirActividad() {
     const activo = document.getElementById('privacy-share').checked;
     await window.pywebview.api.guardar_compartir_actividad(activo);
@@ -1197,6 +1266,7 @@ async function guardarCompartirActividad() {
 
 let perfilAjenoId = null;
 
+// Muestra el perfil de otro usuario, limpiando el anterior.
 async function abrirPerfilAjeno(userId) {
     perfilAjenoId = userId;
     document.getElementById('social-amigos').style.display = 'none';
@@ -1213,6 +1283,7 @@ async function abrirPerfilAjeno(userId) {
     await cargarPerfilAjeno();
 }
 
+// Vuelve a la lista de amigos.
 function cerrarPerfilAjeno() {
     perfilAjenoId = null;
     document.getElementById('social-perfil').style.display = 'none';
@@ -1220,6 +1291,7 @@ function cerrarPerfilAjeno() {
     cargarSocial();
 }
 
+// Pinta el perfil; ignora la respuesta si mientras tanto se cerró.
 async function cargarPerfilAjeno() {
     const id = perfilAjenoId;
     let res;
@@ -1291,6 +1363,7 @@ let insigniaTimer = null;
 
 const insignias = { solicitudes: 0, mensajes: 0 };
 
+// Actualiza los contadores rojos de solicitudes y mensajes.
 function pintarInsignias(solicitudes, mensajes) {
     if (solicitudes !== undefined) insignias.solicitudes = solicitudes;
     if (mensajes !== undefined) insignias.mensajes = mensajes;
@@ -1304,6 +1377,7 @@ function pintarInsignias(solicitudes, mensajes) {
     });
 }
 
+// Pide esos contadores al servidor.
 async function actualizarInsignias() {
     try {
         const r = await window.pywebview.api.obtener_resumen_social();
@@ -1311,12 +1385,14 @@ async function actualizarInsignias() {
     } catch (e) { /* sin conexión: se deja como estaba */ }
 }
 
+// Consulta los contadores cada 20 s.
 function iniciarInsignias() {
     detenerInsignias();
     actualizarInsignias();
     insigniaTimer = setInterval(actualizarInsignias, 20000);
 }
 
+// Detiene esa consulta y los pone en cero.
 function detenerInsignias() {
     if (insigniaTimer) clearInterval(insigniaTimer);
     insigniaTimer = null;
@@ -1327,6 +1403,7 @@ function detenerInsignias() {
 // CAMBIO DE CUENTA: estado limpio
 // ============================================================================
 
+// Deja la interfaz limpia: nada de una cuenta debe verse en la siguiente.
 function reiniciarEstadoUI() {
     // Estado en memoria
     perfilActual = null;
@@ -1391,6 +1468,7 @@ function reiniciarEstadoUI() {
 // HISTORIAL DE JUEGOS
 // ============================================================================
 
+// Fecha relativa: hoy, ayer, hace N días.
 function formatearFecha(iso) {
     if (!iso) return '';
     const d = new Date(iso);
@@ -1402,6 +1480,7 @@ function formatearFecha(iso) {
     return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// Fila de un juego con mini carátula.
 function filaJuego(titulo, subtitulo, identificativo) {
     const fila = document.createElement('div');
     fila.className = 'game-row';
@@ -1418,6 +1497,7 @@ function filaJuego(titulo, subtitulo, identificativo) {
     return fila;
 }
 
+// Juegos recientes, en común y deseados de un amigo.
 function pintarJuegosPerfil(res) {
     const jugados = document.getElementById('pa-juegos');
     const comun = document.getElementById('pa-comun');
@@ -1460,12 +1540,14 @@ function pintarJuegosPerfil(res) {
     lista.forEach(d => deseados.appendChild(filaJuego(d.titulo, d.consola, d.identificativo)));
 }
 
+// Va a Social y abre el perfil de un amigo.
 function irAPerfilAmigo(userId) {
     mostrarVista('social');
     seleccionarSeccionSocial('amigos');
     abrirPerfilAjeno(userId);
 }
 
+// Avisa antes de borrar el historial publicado.
 async function guardarCompartirHistorial() {
     const casilla = document.getElementById('privacy-history');
     if (!casilla.checked && !confirm('Se borrará de la nube el historial de juegos que ya publicaste. ¿Continuar?')) {
@@ -1482,11 +1564,13 @@ async function guardarCompartirHistorial() {
 let consolasDeseadosCargadas = false;
 let sugerenciasTimer = null;
 
+// Entra a la sección Deseados.
 async function abrirDeseados() {
     await prepararConsolasDeseados();
     await cargarDeseados();
 }
 
+// Llena el selector de consolas, una sola vez.
 async function prepararConsolasDeseados() {
     if (consolasDeseadosCargadas) return;
     const sel = document.getElementById('wish-consola');
@@ -1509,17 +1593,20 @@ async function prepararConsolasDeseados() {
     consolasDeseadosCargadas = true;
 }
 
+// Mensaje de éxito o error en Deseados.
 function mensajeDeseados(texto, esError) {
     const msg = document.getElementById('wish-msg');
     msg.textContent = texto;
     msg.style.color = esError ? '#ff4d4d' : '#66FCF1';
 }
 
+// Espera a que dejes de escribir antes de sugerir.
 function buscarTitulosConRetraso() {
     clearTimeout(sugerenciasTimer);
     sugerenciasTimer = setTimeout(buscarTitulos, 300);
 }
 
+// Sugiere títulos; ignora la respuesta si lo escrito ya cambió.
 async function buscarTitulos() {
     const ident = document.getElementById('wish-consola').value;
     const texto = document.getElementById('wish-titulo').value.trim();
@@ -1553,10 +1640,12 @@ async function buscarTitulos() {
     });
 }
 
+// Agrega lo que está escrito en el campo.
 function agregarDeseadoEscrito() {
     agregarDeseado(document.getElementById('wish-titulo').value);
 }
 
+// Agrega un juego a la lista; Python comprueba que exista.
 async function agregarDeseado(titulo) {
     const ident = document.getElementById('wish-consola').value;
     titulo = (titulo || '').trim();
@@ -1579,12 +1668,14 @@ async function agregarDeseado(titulo) {
     }
 }
 
+// Quita un juego de la lista.
 async function quitarDeseado(clave) {
     const res = await window.pywebview.api.quitar_deseado(clave);
     if (!res || !res.exito) mensajeDeseados((res && res.error) || 'No se pudo quitar.', true);
     await cargarDeseados();
 }
 
+// Dibuja tu lista de deseados.
 async function cargarDeseados() {
     const cont = document.getElementById('wish-list');
     if (!cont.children.length) cont.appendChild(mensajeVacio('Cargando…'));
@@ -1624,6 +1715,7 @@ async function cargarDeseados() {
     });
 }
 
+// Si no se puede guardar, devuelve la casilla a su estado anterior.
 async function guardarCompartirDeseados() {
     const casilla = document.getElementById('privacy-deseados');
     const res = await window.pywebview.api.guardar_compartir_deseados(casilla.checked);
@@ -1637,6 +1729,7 @@ async function guardarCompartirDeseados() {
 // OPINIONES DE AMIGOS (en el detalle de un juego)
 // ============================================================================
 
+// Opiniones de tus amigos sobre un juego.
 function pintarOpinionesAmigos(el, opiniones) {
     el.innerHTML = '';
     if (!opiniones || opiniones.length === 0) {
@@ -1683,6 +1776,7 @@ const cachePortadas = new Map();   // "psx|Silent Hill" -> promesa con {url, pat
 const colaPortadas = [];
 let portadasActivas = 0;
 
+// Pide carátulas de a 3 como máximo para no saturar la conexión.
 function procesarColaPortadas() {
     while (portadasActivas < 3 && colaPortadas.length > 0) {
         const tarea = colaPortadas.shift();
@@ -1694,6 +1788,7 @@ function procesarColaPortadas() {
     }
 }
 
+// Pide una carátula una sola vez; si falla, reintenta pasado un minuto.
 function solicitarPortada(ident, titulo) {
     const clave = ident + '|' + titulo;
     if (cachePortadas.has(clave)) return cachePortadas.get(clave);
@@ -1707,6 +1802,7 @@ function solicitarPortada(ident, titulo) {
     return promesa;
 }
 
+// Carátula pequeña: muestra un emoji hasta que llega la imagen.
 function crearMiniPortada(identificativo, titulo, chica) {
     const caja = document.createElement('div');
     caja.className = 'mini-cover' + (chica ? ' mini-cover-sm' : '');
@@ -1740,6 +1836,7 @@ function crearMiniPortada(identificativo, titulo, chica) {
 // MI PERFIL: juegos jugados y deseados
 // ============================================================================
 
+// Juegos recientes y deseados de tu perfil.
 async function cargarMiActividad() {
     const recientes = document.getElementById('mi-recientes');
     const deseados = document.getElementById('mi-deseados');
@@ -1788,6 +1885,7 @@ let chatTimer = null;
 let chatListaTimer = null;
 let chatOcupado = false;
 
+// Entra al chat y consulta novedades cada 4 s, y la lista cada 10 s.
 function abrirChat() {
     detenerChat();
     cargarConversaciones();
@@ -1796,6 +1894,7 @@ function abrirChat() {
     chatListaTimer = setInterval(cargarConversaciones, 10000);
 }
 
+// Detiene esas consultas.
 function detenerChat() {
     if (chatTimer) clearInterval(chatTimer);
     if (chatListaTimer) clearInterval(chatListaTimer);
@@ -1803,6 +1902,7 @@ function detenerChat() {
     chatListaTimer = null;
 }
 
+// Olvida todo el chat al cambiar de cuenta.
 function reiniciarChat() {
     detenerChat();
     cerrarPicker();
@@ -1826,6 +1926,7 @@ function reiniciarChat() {
     document.querySelector('.social-content').classList.remove('chat-vista');
 }
 
+// Separador de día: Hoy, Ayer o la fecha.
 function etiquetaDia(iso) {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
@@ -1837,11 +1938,13 @@ function etiquetaDia(iso) {
     return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+// Hora de un mensaje.
 function horaDe(iso) {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 }
 
+// Dibuja la lista de chats y actualiza los contadores.
 async function cargarConversaciones() {
     const cont = document.getElementById('chat-list');
     let res;
@@ -1901,6 +2004,7 @@ async function cargarConversaciones() {
     });
 }
 
+// Agrega un mensaje sin repetirlo; devuelve false si ya estaba.
 function registrarMensaje(m) {
     if (chatIds.has(m.id)) return false;
     chatIds.add(m.id);
@@ -1911,6 +2015,7 @@ function registrarMensaje(m) {
     return true;
 }
 
+// Crea la burbuja según el tipo: texto, imagen, sticker, GIF o publicación.
 function crearBurbuja(m) {
     const fila = document.createElement('div');
     fila.className = 'msg ' + (m.mio ? 'msg-mio' : 'msg-otro');
@@ -1995,6 +2100,7 @@ function renderizarChat(modo, alturaAntes) {
     else if (modo === 'anteriores') cont.scrollTop = cont.scrollHeight - alturaAntes;
 }
 
+// Abre un chat; ignora la respuesta si mientras tanto cambiaste de chat.
 async function abrirConversacion(amigoId) {
     const conv = chatConversaciones.find(c => c.user_id === amigoId) || chatAmigo;
     if (!conv || conv.user_id !== amigoId) return;
@@ -2035,6 +2141,7 @@ async function abrirConversacion(amigoId) {
     cargarConversaciones();   // refresca "sin leer"
 }
 
+// Trae mensajes más viejos manteniendo la posición.
 async function cargarAnteriores() {
     if (!chatAmigo || chatMensajes.length === 0) return;
     const id = chatAmigo.user_id;
@@ -2053,6 +2160,7 @@ async function cargarAnteriores() {
     renderizarChat('anteriores', alturaAntes);
 }
 
+// Consulta periódica de mensajes nuevos y vistos.
 async function sincronizarChat() {
     if (chatOcupado || !chatAmigo) return;
     chatOcupado = true;
@@ -2079,6 +2187,7 @@ async function sincronizarChat() {
     }
 }
 
+// Envía el texto escrito.
 async function enviarMensaje() {
     if (!chatAmigo) return;
     const caja = document.getElementById('chat-texto');
@@ -2112,6 +2221,7 @@ async function enviarMensaje() {
     caja.focus();
 }
 
+// Enter envía; Mayús + Enter hace un salto de línea.
 function teclaChat(ev) {
     if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
@@ -2119,15 +2229,18 @@ function teclaChat(ev) {
     }
 }
 
+// La caja crece con el texto, hasta un máximo.
 function autoAjustarChat(caja) {
     caja.style.height = 'auto';
     caja.style.height = Math.min(caja.scrollHeight, 100) + 'px';
 }
 
+// Abre el perfil de la persona del chat.
 function verPerfilDelChat() {
     if (chatAmigo) irAPerfilAmigo(chatAmigo.user_id);
 }
 
+// Va directamente al chat con un amigo.
 async function irAlChat(userId) {
     mostrarVista('social');
     seleccionarSeccionSocial('chat');
@@ -2147,11 +2260,13 @@ let imagenesChatActivas = 0;
 let chatPegadoAbajo = true;
 let vistaStickerToken = 0;
 
+// Recuerda si estás al final para seguir pegado a los mensajes nuevos.
 function alScrollChat() {
     const c = document.getElementById('chat-mensajes');
     chatPegadoAbajo = (c.scrollHeight - c.scrollTop - c.clientHeight) < 80;
 }
 
+// Descarga imágenes de a 3 como máximo.
 function procesarColaImagenesChat() {
     while (imagenesChatActivas < 3 && colaImagenesChat.length > 0) {
         const tarea = colaImagenesChat.shift();
@@ -2163,6 +2278,7 @@ function procesarColaImagenesChat() {
     }
 }
 
+// Devuelve la imagen desde memoria o la descarga; si falla, espera un minuto.
 function obtenerImagenChat(ruta) {
     if (imagenesChat.has(ruta)) return Promise.resolve(imagenesChat.get(ruta));
     if (imagenesChatPendientes.has(ruta)) return imagenesChatPendientes.get(ruta);
@@ -2180,6 +2296,7 @@ function obtenerImagenChat(ruta) {
     return promesa;
 }
 
+// Coloca una imagen del chat en un <img>.
 function cargarImagenEn(img, ruta) {
     if (imagenesChat.has(ruta)) {          // ya la tenemos: sin parpadeo al redibujar el hilo
         img.src = imagenesChat.get(ruta);
@@ -2195,24 +2312,28 @@ function cargarImagenEn(img, ruta) {
     });
 }
 
+// Muestra un error, salvo que el usuario haya cancelado.
 function mostrarErrorChat(res) {
     if (res && res.error && res.error !== 'cancelado') {
         document.getElementById('chat-error').textContent = res.error;
     }
 }
 
+// Muestra una imagen en grande.
 function abrirVisor(src) {
     if (!src) return;
     document.getElementById('visor-img').src = src;
     document.getElementById('visor-modal').style.display = 'flex';
 }
 
+// Cierra el visor.
 function cerrarVisor() {
     document.getElementById('visor-modal').style.display = 'none';
 }
 
 // --- Enviar una imagen ---
 
+// Abre el selector y muestra la vista previa antes de enviar.
 async function elegirImagenChat() {
     if (!chatAmigo) return;
     document.getElementById('chat-error').textContent = '';
@@ -2231,11 +2352,13 @@ async function elegirImagenChat() {
     document.getElementById('imagen-modal').style.display = 'flex';
 }
 
+// Cancela el envío de la imagen.
 function cerrarImagenModal() {
     document.getElementById('imagen-modal').style.display = 'none';
     window.pywebview.api.descartar_imagen();
 }
 
+// Envía la imagen elegida.
 async function confirmarEnvioImagen() {
     if (!chatAmigo) return;
     const id = chatAmigo.user_id;
@@ -2265,11 +2388,13 @@ async function confirmarEnvioImagen() {
 
 // --- Stickers ---
 
+// Usa la imagen elegida para crear un sticker.
 function convertirImagenEnSticker() {
     document.getElementById('imagen-modal').style.display = 'none';   // la imagen elegida se conserva
     abrirEditorSticker();
 }
 
+// Elige una imagen y abre el editor de stickers.
 async function crearStickerNuevo() {
     let res;
     try {
@@ -2281,6 +2406,7 @@ async function crearStickerNuevo() {
     abrirEditorSticker();
 }
 
+// Abre el editor de stickers.
 function abrirEditorSticker() {
     document.getElementById('sticker-msg').textContent = '';
     document.getElementById('sticker-vista').removeAttribute('src');
@@ -2288,17 +2414,20 @@ function abrirEditorSticker() {
     actualizarVistaSticker();
 }
 
+// Cierra el editor y olvida la imagen.
 function cerrarStickerModal() {
     document.getElementById('sticker-modal').style.display = 'none';
     window.pywebview.api.descartar_imagen();
 }
 
+// Forma, ajuste y contorno elegidos.
 function opcionesSticker() {
     return [document.getElementById('sticker-forma').value,
             document.getElementById('sticker-ajuste').value,
             document.getElementById('sticker-contorno').checked];
 }
 
+// Actualiza la vista previa; el token descarta respuestas viejas.
 async function actualizarVistaSticker() {
     const token = ++vistaStickerToken;
     const msg = document.getElementById('sticker-msg');
@@ -2317,6 +2446,7 @@ async function actualizarVistaSticker() {
     }
 }
 
+// Crea el sticker y, si se pidió, lo envía.
 async function guardarSticker(enviar) {
     const msg = document.getElementById('sticker-msg');
     const botones = [document.getElementById('sticker-guardar'), document.getElementById('sticker-guardar-enviar')];
@@ -2340,6 +2470,7 @@ async function guardarSticker(enviar) {
     if (enviar && chatAmigo) enviarStickerChat(res.sticker.ruta);
 }
 
+// Dibuja tu colección de stickers.
 async function cargarStickers() {
     const grilla = document.getElementById('sticker-grid');
     if (!grilla.children.length) grilla.appendChild(mensajeVacio('Cargando…'));
@@ -2381,12 +2512,14 @@ async function cargarStickers() {
     });
 }
 
+// Quita un sticker de tu colección.
 async function quitarStickerPropio(id) {
     if (!confirm('¿Quitar este sticker de tu colección? Los que ya enviaste se siguen viendo.')) return;
     await window.pywebview.api.eliminar_sticker(id);
     cargarStickers();
 }
 
+// Envía un sticker por el chat.
 async function enviarStickerChat(ruta) {
     if (!chatAmigo) return;
     const id = chatAmigo.user_id;
@@ -2429,6 +2562,7 @@ let categoriaEmoji = 'Caritas';
 let emojisRecientes = [];
 let categoriaEmojiElegida = false;   // mientras no elijas una, se abre en "Recientes" si tenés
 
+// Detecta mensajes de solo emojis para mostrarlos más grandes.
 function esSoloEmojis(texto) {
     const t = (texto || '').trim();
     if (!t || [...t].length > 10) return false;
@@ -2440,6 +2574,7 @@ function esSoloEmojis(texto) {
 //   destino = { id, caja: <input/textarea donde van los emojis>, gif: función(url) | null, stickers: bool }
 let pickerDestino = null;
 
+// Muestra solo las pestañas que admite el destino actual.
 function ajustarPestanasPicker() {
     const d = pickerDestino || {};
     const visibles = { emojis: true, stickers: !!d.stickers, gifs: !!d.gif };
@@ -2449,6 +2584,7 @@ function ajustarPestanasPicker() {
     if (!visibles[pestanaPicker]) pestanaPicker = 'emojis';
 }
 
+// Abre el panel en ese lugar; el mismo botón también lo cierra.
 function abrirPickerEn(contenedor, destino, antesDe) {
     const panel = document.getElementById('picker');
     if (panel.style.display !== 'none' && pickerDestino && pickerDestino.id === destino.id) {
@@ -2462,24 +2598,28 @@ function abrirPickerEn(contenedor, destino, antesDe) {
     return elegirPestanaPicker(pestanaPicker);
 }
 
+// Devuelve el panel a su lugar dentro del chat.
 function moverPickerAChat() {
     const panel = document.getElementById('picker');
     const activo = document.getElementById('chat-activo');
     if (panel.parentElement !== activo) activo.insertBefore(panel, activo.querySelector('.chat-composer'));
 }
 
+// Cierra el panel.
 function cerrarPicker() {
     document.getElementById('picker').style.display = 'none';
     pickerDestino = null;
     moverPickerAChat();
 }
 
+// Botón de emojis del chat.
 function alternarPicker() {
     const activo = document.getElementById('chat-activo');
     const destino = { id: 'chat', caja: document.getElementById('chat-texto'), gif: enviarGifChat, stickers: true };
     return abrirPickerEn(activo, destino, activo.querySelector('.chat-composer'));
 }
 
+// Cambia entre emojis, stickers y GIFs.
 function elegirPestanaPicker(nombre) {
     pestanaPicker = nombre;
     ['emojis', 'stickers', 'gifs'].forEach(n => {
@@ -2493,6 +2633,7 @@ function elegirPestanaPicker(nombre) {
 
 // --- Emojis ---
 
+// Carga los recientes y dibuja los emojis.
 async function abrirEmojis() {
     try {
         emojisRecientes = (await window.pywebview.api.obtener_emojis_recientes()) || [];
@@ -2504,6 +2645,7 @@ async function abrirEmojis() {
     pintarEmojis();
 }
 
+// Dibuja las categorías.
 function pintarCategoriasEmoji() {
     const cont = document.getElementById('emoji-cats');
     cont.innerHTML = '';
@@ -2519,6 +2661,7 @@ function pintarCategoriasEmoji() {
     });
 }
 
+// Dibuja los emojis de la categoría elegida.
 function pintarEmojis() {
     const grilla = document.getElementById('emoji-grid');
     grilla.innerHTML = '';
@@ -2532,6 +2675,7 @@ function pintarEmojis() {
     });
 }
 
+// Inserta el emoji donde está el cursor, respetando el límite de la caja.
 function insertarEmoji(e) {
     const caja = pickerDestino && pickerDestino.caja;
     if (!caja) return;
@@ -2553,6 +2697,7 @@ let gifPagina = 1;
 let gifToken = 0;
 let gifTimer = null;
 
+// Solo https y servidores de KLIPY. Python hace la misma comprobación.
 function urlGifPermitida(url) {
     if (typeof url !== 'string' || url.length > 1000 || /[\s<>"'`\\]/.test(url)) return false;
     try {
@@ -2565,21 +2710,25 @@ function urlGifPermitida(url) {
     }
 }
 
+// Abre la pestaña de GIFs.
 function abrirGifs() {
     if (!document.getElementById('gif-grid').children.length) cargarGifs(true);
     document.getElementById('gif-busqueda').focus();
 }
 
+// Espera a que dejes de escribir antes de buscar.
 function gifBuscarConRetraso() {
     clearTimeout(gifTimer);
     gifTimer = setTimeout(() => cargarGifs(true), 450);
 }
 
+// Trae la siguiente página de GIFs.
 function gifMas() {
     gifPagina++;
     cargarGifs(false);
 }
 
+// Busca GIFs; el token descarta respuestas de una búsqueda anterior.
 async function cargarGifs(reiniciar) {
     const token = ++gifToken;
     const grilla = document.getElementById('gif-grid');
@@ -2627,6 +2776,7 @@ async function cargarGifs(reiniciar) {
     mas.style.display = res.hay_mas ? '' : 'none';
 }
 
+// Envía un GIF por el chat.
 async function enviarGifChat(url) {
     if (!chatAmigo) return;
     const id = chatAmigo.user_id;
@@ -2671,6 +2821,7 @@ const ICONOS_POST = {
     compartir: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path class="detalle" d="M22 2 11 13"/></svg>',
 };
 
+// Atajo para crear un elemento con clase y texto (siempre como texto, nunca como HTML).
 function nodo(etiqueta, clase, texto) {
     const n = document.createElement(etiqueta);
     if (clase) n.className = clase;
@@ -2678,6 +2829,7 @@ function nodo(etiqueta, clase, texto) {
     return n;
 }
 
+// Abrevia contadores: 1,2K o 3M.
 function abreviarNumero(n) {
     n = Math.max(0, n || 0);
     if (n < 1000) return String(n);
@@ -2686,12 +2838,14 @@ function abreviarNumero(n) {
     return (n / 1000000).toFixed(1).replace('.', ',').replace(/,0$/, '') + 'M';
 }
 
+// Fecha y hora de una publicación.
 function fechaPublicacion(iso) {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
     return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + horaDe(iso);
 }
 
+// Aviso flotante breve.
 function avisoPost(texto, esError) {
     document.querySelectorAll('.post-toast').forEach(t => t.remove());
     const t = nodo('div', 'post-toast' + (esError ? ' error' : ''), texto);
@@ -2699,6 +2853,7 @@ function avisoPost(texto, esError) {
     setTimeout(() => t.remove(), 3500);
 }
 
+// Solo muestra imágenes https y GIFs de KLIPY.
 function mediaPostPermitida(p) {
     if (!p.media_url) return false;
     if (p.tipo_media === 'gif') return urlGifPermitida(p.media_url);
@@ -2707,6 +2862,7 @@ function mediaPostPermitida(p) {
 
 // --- Entrar / salir de la sección ---
 
+// Entra al feed, o a una publicación concreta si viene del chat.
 function abrirPublicaciones() {
     if (postsUnaPendiente) {
         postsFiltro = 'una';
@@ -2722,6 +2878,7 @@ function abrirPublicaciones() {
     cargarPublicaciones(true);
 }
 
+// Olvida las publicaciones al cambiar de cuenta.
 function reiniciarPublicaciones() {
     postsToken++;
     postsFiltro = 'todas';
@@ -2747,6 +2904,7 @@ function reiniciarPublicaciones() {
     pintarCabeceraPosts();
 }
 
+// Muestra las pestañas, o el botón volver si se ve una sola publicación.
 function pintarCabeceraPosts() {
     const unica = postsFiltro === 'una';
     document.getElementById('posts-tabs').style.display = unica ? 'none' : '';
@@ -2755,6 +2913,7 @@ function pintarCabeceraPosts() {
     document.querySelectorAll('.posts-tab').forEach(b => b.classList.toggle('active', b.dataset.filtro === postsFiltro));
 }
 
+// Cambia entre Todas y Mías.
 function cambiarFiltroPosts(filtro) {
     if (filtro === postsFiltro && filtro !== 'todas') return;
     postsFiltro = filtro;
@@ -2772,6 +2931,7 @@ function irAPublicacion(id) {
 
 // --- Cargar el feed ---
 
+// Carga el feed; el token descarta respuestas de otra pestaña o cuenta.
 async function cargarPublicaciones(reiniciar) {
     const token = ++postsToken;
     const lista = document.getElementById('post-lista');
@@ -2816,6 +2976,7 @@ async function cargarPublicaciones(reiniciar) {
     mas.style.display = res.hay_mas ? '' : 'none';
 }
 
+// Botón Ver más.
 async function cargarMasPublicaciones() {
     if (postsCargando) return;
     const mas = document.getElementById('post-mas');
@@ -2826,6 +2987,7 @@ async function cargarMasPublicaciones() {
 
 // --- Redactar ---
 
+// La caja crece con el texto y actualiza el contador.
 function autoAjustarPost(caja) {
     caja.style.height = 'auto';
     caja.style.height = Math.min(caja.scrollHeight, 220) + 'px';
@@ -2835,6 +2997,7 @@ function autoAjustarPost(caja) {
     c.classList.toggle('casi', largo > 1800);
 }
 
+// Vista previa de la imagen o GIF adjunto.
 function pintarAdjuntoPost() {
     const cont = document.getElementById('post-adjunto');
     if (!postAdjunto) {
@@ -2846,6 +3009,7 @@ function pintarAdjuntoPost() {
     cont.style.display = '';
 }
 
+// Adjunta una imagen a la publicación.
 async function elegirImagenPost() {
     document.getElementById('post-error').textContent = '';
     let res;
@@ -2862,6 +3026,7 @@ async function elegirImagenPost() {
     pintarAdjuntoPost();
 }
 
+// Adjunta un GIF; reemplaza la imagen si había una.
 function adjuntarGifPost(url) {
     if (!urlGifPermitida(url)) return;
     window.pywebview.api.descartar_imagen_publicacion();
@@ -2870,17 +3035,20 @@ function adjuntarGifPost(url) {
     cerrarPicker();
 }
 
+// Quita lo adjunto.
 function quitarAdjuntoPost() {
     window.pywebview.api.descartar_imagen_publicacion();
     postAdjunto = null;
     pintarAdjuntoPost();
 }
 
+// Panel de emojis y GIFs al escribir una publicación.
 function alternarPickerPost() {
     const caja = document.getElementById('post-texto');
     abrirPickerEn(document.getElementById('post-picker-slot'), { id: 'post', caja, gif: adjuntarGifPost, stickers: false });
 }
 
+// Crea la publicación y la agrega arriba del feed.
 async function publicar() {
     if (postsPublicando) return;
     const caja = document.getElementById('post-texto');
@@ -2926,6 +3094,7 @@ async function publicar() {
 
 // --- Tarjeta de una publicación ---
 
+// Dibuja una publicación: autor, contenido y acciones.
 function crearTarjetaPost(p) {
     postsCache.set(p.id, p);
     const tarjeta = nodo('article', 'post');
@@ -2989,6 +3158,7 @@ function crearTarjetaPost(p) {
     return tarjeta;
 }
 
+// Actualiza contadores y botones activos.
 function pintarAcciones(tarjeta, p) {
     const estado = {
         like: [p.mi_like, p.likes],
@@ -3011,6 +3181,7 @@ function aplicarPublicacion(p, nueva, tarjeta) {
     pintarAcciones(tarjeta, p);
 }
 
+// Quita de la pantalla una publicación que ya no existe.
 function quitarTarjetaPost(p, tarjeta) {
     postsCache.delete(p.id);
     if (pickerDestino && pickerDestino.id === 'comentario-' + p.id) cerrarPicker();
@@ -3019,6 +3190,7 @@ function quitarTarjetaPost(p, tarjeta) {
     if (!lista.children.length) lista.appendChild(mensajeVacio('No hay publicaciones para mostrar.'));
 }
 
+// Pide confirmación y borra la publicación.
 async function eliminarPost(p, tarjeta) {
     if (!confirm('¿Eliminar esta publicación? Se borran también sus comentarios y reacciones.')) return;
     let res;
@@ -3035,6 +3207,7 @@ async function eliminarPost(p, tarjeta) {
 // Un clic da la reacción (el ícono se rellena y el contador sube); otro clic la quita
 // (se vacía y baja). Like y dislike se excluyen, como en YouTube.
 
+// Actualiza al instante y deshace el cambio si el servidor falla.
 async function reaccionarPost(p, tipo, tarjeta) {
     if (p._ocupado) return;
     p._ocupado = true;
@@ -3074,6 +3247,7 @@ async function reaccionarPost(p, tipo, tarjeta) {
 
 let compartirActual = null;   // { p, tarjeta }
 
+// Abre el selector de amigos, o quita tu compartido si ya estaba.
 async function alternarCompartido(p, tarjeta) {
     if (!p.mi_compartido) {
         abrirCompartir(p, tarjeta);
@@ -3103,6 +3277,7 @@ async function alternarCompartido(p, tarjeta) {
     p._ocupado = false;
 }
 
+// Muestra tus amigos para elegir con quién compartir.
 async function abrirCompartir(p, tarjeta) {
     compartirActual = { p, tarjeta };
     const lista = document.getElementById('compartir-lista');
@@ -3145,11 +3320,13 @@ async function abrirCompartir(p, tarjeta) {
     });
 }
 
+// Cierra esa ventana.
 function cerrarCompartir() {
     compartirActual = null;
     document.getElementById('compartir-modal').style.display = 'none';
 }
 
+// Envía la publicación a los amigos elegidos.
 async function confirmarCompartir() {
     if (!compartirActual) return;
     const { p, tarjeta } = compartirActual;
@@ -3182,6 +3359,7 @@ async function confirmarCompartir() {
 
 // --- Comentarios ---
 
+// Abre o cierra los comentarios de una publicación.
 async function alternarComentarios(p, tarjeta) {
     let cont = tarjeta.querySelector('.post-comentarios');
     if (cont) {
@@ -3251,6 +3429,7 @@ async function alternarComentarios(p, tarjeta) {
     res.comentarios.forEach(c => lista.appendChild(filaComentario(c, p, tarjeta, lista)));
 }
 
+// Dibuja un comentario, con botón de borrar si corresponde.
 function filaComentario(c, p, tarjeta, lista) {
     const fila = nodo('div', 'comentario');
     const img = nodo('img');
@@ -3295,6 +3474,7 @@ function filaComentario(c, p, tarjeta, lista) {
 
 // --- Publicación compartida dentro del chat ---
 
+// Tarjeta de una publicación compartida dentro del chat.
 function crearTarjetaCompartida(contenido) {
     const id = parseInt(contenido, 10);
     const caja = nodo('div', 'chat-post');
@@ -3342,6 +3522,7 @@ function crearTarjetaCompartida(contenido) {
 // Bloquear y Denunciar todavía no tienen función: muestran un aviso.
 // ============================================================================
 
+// Botón redondo de amigo; se desactiva mientras se procesa.
 function botonIcono(icono, titulo, accion) {
     const b = document.createElement('button');
     b.className = 'amigo-icono';
@@ -3358,6 +3539,7 @@ function botonIcono(icono, titulo, accion) {
 
 let amigoMenuAbierto = null;   // { menu, boton }
 
+// Cierra el menú ▾ abierto.
 function cerrarMenuAmigo() {
     if (!amigoMenuAbierto) return;
     amigoMenuAbierto.menu.remove();
@@ -3365,6 +3547,7 @@ function cerrarMenuAmigo() {
     amigoMenuAbierto = null;
 }
 
+// Opción del menú ▾.
 function itemMenuAmigo(texto, clase, accion) {
     const it = document.createElement('button');
     it.className = 'amigo-menu-item' + (clase ? ' ' + clase : '');

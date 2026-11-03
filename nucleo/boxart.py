@@ -1,3 +1,7 @@
+# boxart.py - Carátulas y catálogo de títulos, a partir de los listados de Libretro.
+# Descarga el listado de cada consola (se guarda en caché), busca la carátula que mejor
+# coincide con el nombre de la ROM y la guarda en roms/boxarts/. También sugiere y valida
+# títulos para la lista de deseados.
 import base64
 import html
 import json
@@ -134,6 +138,7 @@ def _firma_numerica(clave):
     return frozenset(t for t in clave.split() if _RE_NUMERO.match(t))
 
 
+# Puntúa una carátula candidata: etiquetas en común con la ROM, región y versión.
 def _puntuar(tags_rom, tags_cand):
     puntos = 10 * len(tags_rom & tags_cand)
     for i, region in enumerate(PREFERENCIA_REGION):
@@ -169,10 +174,12 @@ def _http_get(url, timeout=15, reintentos=3):
     raise ultimo
 
 
+# Comprueba que los bytes sean realmente un PNG o JPG.
 def _es_imagen(datos):
     return bool(datos) and len(datos) > 100 and (datos[:8] == b"\x89PNG\r\n\x1a\n" or datos[:3] == b"\xff\xd8\xff")
 
 
+# Dirección de la carpeta de carátulas de una consola.
 def _url_sistema(sistema):
     return f"{URL_BASE}/{urllib.parse.quote(sistema)}/{TIPO_IMAGEN}/"
 
@@ -195,7 +202,9 @@ def _descargar_listado(sistema):
 # Índice local (listado cacheado + búsqueda)
 # ----------------------------------------------------------------------------
 
+# Listado de carátulas de una consola, preparado para buscar rápido.
 class _Indice:
+    # Agrupa las carátulas por nombre exacto, por minúsculas y por título normalizado.
     def __init__(self, sistema, archivos):
         self.sistema = sistema
         self.por_nombre = {}
@@ -212,6 +221,7 @@ class _Indice:
         for clave in self.por_clave:
             self.por_prefijo.setdefault(clave[:4], []).append(clave)
 
+    # Elige la mejor opción: más puntos, luego el nombre más corto.
     @staticmethod
     def _mejor(opciones, tags_rom):
         return min(opciones, key=lambda o: (-_puntuar(tags_rom, o[1]), len(o[0]), o[0]))[0]
@@ -241,6 +251,7 @@ class _Indice:
         return None
 
 
+# Lee un JSON de caché; devuelve None si no existe o está dañado.
 def _leer_json(ruta):
     try:
         with open(ruta, encoding="utf-8") as f:
@@ -249,6 +260,7 @@ def _leer_json(ruta):
         return None
 
 
+# Escribe en un archivo temporal y luego lo reemplaza: así un corte no lo daña.
 def _guardar_json(ruta, datos):
     try:
         tmp = ruta + ".part"
@@ -259,6 +271,7 @@ def _guardar_json(ruta, datos):
         print(f"[BOXART] No se pudo guardar caché: {e}")
 
 
+# Usa la caché si está vigente; si no, descarga el listado de nuevo.
 def _cargar_indice(sistema):
     os.makedirs(CARPETA_CACHE, exist_ok=True)
     ruta = os.path.join(CARPETA_CACHE, _archivo_seguro(sistema) + ".json")
@@ -286,6 +299,7 @@ def _cargar_indice(sistema):
     return None
 
 
+# Devuelve el índice de una consola, cargándolo una sola vez.
 def obtener_indice(sistema):
     with _lock_indices:
         if sistema not in _indices:
@@ -315,6 +329,7 @@ def _bajar(ident, sistema, nombre):
     return destino
 
 
+# Nombres posibles para buscar una carátula, sin repetidos.
 def _candidatos(trabajo):
     nombre = trabajo["nombre_rom"]
     crudos = [nombre, nombre.replace("_", " "), _RE_DISCO.sub("", nombre).strip()]
@@ -354,6 +369,7 @@ def resolver_portada(trabajo):
     return ""
 
 
+# Un error con un juego no debe detener el resto del lote.
 def _resolver_seguro(trabajo):
     try:
         return resolver_portada(trabajo)

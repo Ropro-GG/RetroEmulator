@@ -1,3 +1,5 @@
+# launcher.py - Abre un juego con el emulador configurado para su consola.
+# Si hay varias versiones o discos con el mismo título, primero pide elegir uno.
 import subprocess
 import os
 import threading
@@ -72,6 +74,7 @@ def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
         ).start()
     return {"exito": True}
 
+# Hilo por juego: avisa al iniciar y espera a que el emulador se cierre.
 def _vigilar(proceso, titulo, consola, al_iniciar, al_cerrar):
     try:
         if al_iniciar:

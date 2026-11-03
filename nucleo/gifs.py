@@ -35,14 +35,17 @@ USER_AGENT = "RetroEmulator/BETA-v1"
 _cache = {}              # (consulta, pagina) -> (momento, resultado)
 
 
+# Error con un mensaje listo para mostrar.
 class ErrorGifs(Exception):
     pass
 
 
+# Clave de KLIPY leída del .env.
 def _clave():
     return (os.getenv("KLIPY_API_KEY") or "").strip()
 
 
+# Indica si hay una clave configurada.
 def configurado():
     return bool(_clave())
 
@@ -82,6 +85,7 @@ def _url_de(archivos, tamanos, formatos):
     return ""
 
 
+# Reduce un resultado de KLIPY a lo que usa la app; descarta los no válidos.
 def _normalizar(item):
     if not isinstance(item, dict):
         return None
@@ -100,6 +104,7 @@ def _normalizar(item):
     }
 
 
+# Hace la consulta a KLIPY y devuelve el JSON.
 def _pedir(consulta, pagina, customer_id=None):
     clave = _clave()
     tipo = "search" if consulta else "trending"

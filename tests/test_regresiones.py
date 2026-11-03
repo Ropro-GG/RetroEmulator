@@ -1,3 +1,4 @@
+# Pruebas de errores ya corregidos, para que no vuelvan a aparecer.
 """Regresiones de la revisión del 2026-11-03. Ejecutar: python -m unittest discover -s tests"""
 import os
 import sys
@@ -115,6 +116,34 @@ class PresenciaEnLlamada(unittest.TestCase):
 
     def test_sin_llamada_borra(self):
         self.assertEqual(self.preparar("1", None), ["borra"])
+
+
+class CompartirPantalla(unittest.TestCase):
+    def setUp(self):
+        try:
+            from nucleo import pantalla_qt
+        except Exception as e:
+            self.skipTest(f"Sin Qt: {e}")
+        self.pq = pantalla_qt
+
+    def test_solo_autoriza_microfono_camara_y_pantalla(self):
+        funciones = self.pq.QWebEnginePage.Feature
+        for permitida in (funciones.MediaAudioCapture, funciones.MediaVideoCapture, funciones.DesktopVideoCapture):
+            self.assertIn(permitida, self.pq._PERMITIDOS)
+        for denegada in (funciones.Geolocation, funciones.Notifications, funciones.MouseLock):
+            self.assertNotIn(denegada, self.pq._PERMITIDOS)
+
+    def test_quita_la_opcion_que_impide_capturar_y_conserva_las_demas(self):
+        wq, pagina = self.pq.qt_pywebview, self.pq.qt_pywebview.BrowserView.WebPage
+        recibido = []
+        originales = wq.environ_append, pagina.__init__, pagina.onFeaturePermissionRequested
+        def restaurar():
+            wq.environ_append, pagina.__init__, pagina.onFeaturePermissionRequested = originales
+        self.addCleanup(restaurar)
+        wq.environ_append = lambda variable, *valores: recibido.extend(valores)
+        self.pq.activar()
+        wq.environ_append("X", "--use-fake-ui-for-media-stream", "--otra")
+        self.assertEqual(recibido, ["--otra"])
 
 
 if __name__ == "__main__":

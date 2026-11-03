@@ -1,3 +1,8 @@
+# gui_app.py - Punto de entrada de RetroEmulator.
+# Crea la ventana con pywebview, carga ui/index.html y publica la clase API.
+# Cada método público de API se puede llamar desde JavaScript como
+# window.pywebview.api.nombre_del_metodo(...), y su resultado vuelve como una promesa.
+# Esta clase casi no tiene lógica: valida lo básico y delega en los módulos de nucleo/.
 import webview
 from webview import FileDialog
 import json
@@ -17,7 +22,9 @@ DESARROLLADOR = "Rocco Flores"
 URL_GITHUB = "https://github.com/Ropro-GG/RetroEmulator"
 HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"}
 
+# Métodos que la interfaz puede llamar. Los que empiezan con "_" no se exponen a JavaScript.
 class API:
+    # Crea los servicios una sola vez; la ventana se asigna después con set_window.
     def __init__(self):
         self.db = LocalDB()
         self.cloud = CloudClient()
@@ -28,6 +35,7 @@ class API:
         self._imagen_publicacion = ""     # imagen elegida para la publicación que estás escribiendo
         self._lock_juegos = threading.Lock()
 
+    # Guarda la ventana: hace falta para abrir los selectores de archivos.
     def set_window(self, window):
         self.window = window
 
@@ -40,6 +48,7 @@ class API:
                 if db_local.adoptar_datos_antiguos(uid):
                     ra_client.adoptar_credenciales_antiguas(uid)
 
+    # Crea la cuenta y la deja activa en este equipo.
     def registrar_usuario(self, email, password, username):
         resultado = self.cloud.registrar_usuario(email, password, username)
         self._establecer_cuenta(resultado)
@@ -50,24 +59,29 @@ class API:
         if resultado and resultado.get("exito") and self._juegos_activos == 0:
             threading.Thread(target=self.cloud.limpiar_jugando, daemon=True).start()
 
+    # Entra con correo y contraseña; "recordar" inicia la confirmación por correo.
     def iniciar_sesion(self, email, password, recordar=False):
         resultado = self.cloud.iniciar_sesion(email, password, recordar)
         self._establecer_cuenta(resultado)
         self._limpiar_presencia_vieja(resultado)
         return resultado
 
+    # Verifica el código del correo para recordar la sesión en este equipo.
     def confirmar_recordar(self, codigo):
         return self.cloud.confirmar_recordar(codigo)
 
+    # Pide otro código de confirmación.
     def reenviar_codigo_recordar(self):
         return self.cloud.reenviar_codigo_recordar()
 
+    # Al abrir la app, entra solo si había una sesión recordada y sigue siendo válida.
     def restaurar_sesion(self):
         resultado = self.cloud.restaurar_sesion()
         self._establecer_cuenta(resultado)
         self._limpiar_presencia_vieja(resultado)
         return resultado
 
+    # Sale de la cuenta y olvida lo que dependía de ella.
     def cerrar_sesion(self):
         resultado = self.cloud.cerrar_sesion()
         db_local.establecer_usuario("")   # nada de la cuenta anterior queda activo
@@ -75,12 +89,15 @@ class API:
         self._imagen_publicacion = ""
         return resultado
 
+    # Perfil propio, o el de otro usuario si se indica su id.
     def obtener_perfil(self, user_id=None):
         return self.cloud.obtener_perfil(user_id)
 
+    # Guarda la biografía y, si se indica, el nombre.
     def actualizar_perfil(self, bio, username=None):
         return self.cloud.actualizar_perfil(bio, username)
 
+    # Cambia el nombre comprobando que no esté ocupado.
     def cambiar_username(self, nuevo_username):
         return self.cloud.cambiar_username(nuevo_username)
 
@@ -136,6 +153,7 @@ class API:
             identificativo = db_local.obtener_identificativo_por_consola(consola)
             self.cloud.registrar_jugada(identificativo, titulo, consola)
 
+    # Se llama cuando un emulador se cierra (desde el hilo que lo vigila).
     def _al_cerrar_juego(self):
         # Solo se borra el aviso cuando ya no queda ningún emulador abierto
         with self._lock_juegos:
@@ -146,6 +164,7 @@ class API:
 
     # --- SOCIAL ---
 
+    # Amigos, solicitudes recibidas y solicitudes enviadas.
     def obtener_social(self):
         return self.cloud.obtener_social()
 
@@ -155,15 +174,19 @@ class API:
 
     # --- CHAT ---
 
+    # Lista de chats: último mensaje y cantidad sin leer.
     def obtener_conversaciones(self):
         return self.cloud.obtener_conversaciones()
 
+    # Mensajes de un chat; "antes_id" trae los anteriores a ese mensaje.
     def obtener_mensajes(self, amigo_id, antes_id=None):
         return self.cloud.obtener_mensajes(amigo_id, antes_id)
 
+    # Consulta periódica: mensajes nuevos y cuáles de los míos ya se vieron.
     def sincronizar_chat(self, amigo_id, ultimo_id, ids_pendientes):
         return self.cloud.sincronizar_chat(amigo_id, ultimo_id, ids_pendientes or [])
 
+    # Envía un mensaje de texto.
     def enviar_mensaje(self, amigo_id, texto):
         return self.cloud.enviar_mensaje(amigo_id, texto)
 
@@ -195,10 +218,12 @@ class API:
         self._imagen_elegida = ruta
         return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
 
+    # Olvida la imagen elegida sin enviarla.
     def descartar_imagen(self):
         self._imagen_elegida = ""
         return {"exito": True}
 
+    # Reduce la imagen elegida, le quita los metadatos y la envía.
     def enviar_imagen(self, amigo_id):
         if not self._imagen_elegida:
             return {"exito": False, "error": "Primero elegí una imagen."}
@@ -211,6 +236,7 @@ class API:
             self._imagen_elegida = ""
         return resultado
 
+    # Genera la vista previa del sticker con las opciones actuales.
     def previsualizar_sticker(self, forma, ajuste, contorno):
         if not self._imagen_elegida:
             return {"exito": False, "error": "Primero elegí una imagen."}
@@ -219,6 +245,7 @@ class API:
         except imagenes.ErrorImagen as e:
             return {"exito": False, "error": str(e)}
 
+    # Crea el sticker definitivo y lo suma a tu colección.
     def crear_sticker(self, forma, ajuste, contorno):
         if not self._imagen_elegida:
             return {"exito": False, "error": "Primero elegí una imagen."}
@@ -228,12 +255,15 @@ class API:
             return {"exito": False, "error": str(e)}
         return self.cloud.guardar_sticker(datos, mime, extension)
 
+    # Stickers de tu colección.
     def obtener_stickers(self):
         return self.cloud.obtener_stickers()
 
+    # Quita un sticker de tu colección.
     def eliminar_sticker(self, sticker_id):
         return self.cloud.eliminar_sticker(sticker_id)
 
+    # Envía uno de tus stickers por el chat.
     def enviar_sticker(self, amigo_id, ruta):
         return self.cloud.enviar_sticker(amigo_id, ruta)
 
@@ -249,9 +279,11 @@ class API:
             return {"exito": False, "error": "No se pudieron buscar GIFs. Probá de nuevo en un momento."}
         return {"exito": True, **resultado}
 
+    # Envía un GIF de KLIPY por el chat.
     def enviar_gif(self, amigo_id, url):
         return self.cloud.enviar_gif(amigo_id, url)
 
+    # Últimos emojis usados en esta cuenta.
     def obtener_emojis_recientes(self):
         try:
             lista = json.loads(db_local.obtener_config_usuario("emojis_recientes", "[]"))
@@ -259,6 +291,7 @@ class API:
             lista = []
         return [e for e in lista if isinstance(e, str)][:24]
 
+    # Pone un emoji al principio de los recientes (máximo 24).
     def registrar_emoji_reciente(self, emoji):
         if not isinstance(emoji, str) or not emoji or len(emoji) > 16:
             return {"exito": False}
@@ -274,6 +307,7 @@ class API:
 
     # --- PUBLICACIONES ---
 
+    # Elige la imagen de la publicación que se está escribiendo.
     def seleccionar_imagen_publicacion(self):
         ruta, vista, error = self._elegir_archivo_imagen()
         if error:
@@ -281,6 +315,7 @@ class API:
         self._imagen_publicacion = ruta
         return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
 
+    # Olvida la imagen elegida para la publicación.
     def descartar_imagen_publicacion(self):
         self._imagen_publicacion = ""
         return {"exito": True}
@@ -298,45 +333,59 @@ class API:
             self._imagen_publicacion = ""
         return resultado
 
+    # Página del feed; "autor_id" filtra por autor.
     def obtener_publicaciones(self, antes_id=None, autor_id=None):
         return self.cloud.obtener_publicaciones(antes_id, autor_id)
 
+    # Una sola publicación.
     def obtener_publicacion(self, pub_id):
         return self.cloud.obtener_publicacion(pub_id)
 
+    # Borra una publicación propia y su imagen.
     def eliminar_publicacion(self, pub_id):
         return self.cloud.eliminar_publicacion(pub_id)
 
+    # Da o quita un me gusta / no me gusta.
     def alternar_reaccion(self, pub_id, tipo):
         return self.cloud.alternar_reaccion(pub_id, tipo)
 
+    # Envía una publicación por chat a los amigos elegidos.
     def compartir_publicacion(self, pub_id, amigos_ids):
         return self.cloud.compartir_publicacion(pub_id, amigos_ids or [])
 
+    # Quita tu "compartido"; los mensajes ya enviados quedan.
     def quitar_compartido(self, pub_id):
         return self.cloud.quitar_compartido(pub_id)
 
+    # Comentarios de una publicación.
     def obtener_comentarios(self, pub_id):
         return self.cloud.obtener_comentarios(pub_id)
 
+    # Agrega un comentario.
     def comentar_publicacion(self, pub_id, texto):
         return self.cloud.comentar_publicacion(pub_id, texto)
 
+    # Borra un comentario (tuyo, o de una publicación tuya).
     def eliminar_comentario(self, comentario_id, pub_id):
         return self.cloud.eliminar_comentario(comentario_id, pub_id)
 
+    # Busca usuarios por nombre.
     def buscar_usuarios(self, texto):
         return self.cloud.buscar_usuarios(texto)
 
+    # Perfil de otro usuario y su relación contigo.
     def obtener_perfil_social(self, user_id):
         return self.cloud.obtener_perfil_social(user_id)
 
+    # Envía una solicitud de amistad.
     def enviar_solicitud_amistad(self, user_id):
         return self.cloud.enviar_solicitud_amistad(user_id)
 
+    # Acepta o rechaza una solicitud recibida.
     def responder_solicitud_amistad(self, friendship_id, aceptar):
         return self.cloud.responder_solicitud_amistad(friendship_id, aceptar)
 
+    # Quita a un amigo o cancela una solicitud enviada.
     def eliminar_amistad(self, friendship_id):
         return self.cloud.eliminar_amistad(friendship_id)
 
@@ -347,6 +396,7 @@ class API:
         nombre = db_local.obtener_nombre_consola(identificativo)
         return boxart.buscar_titulos(identificativo, nombre, texto)
 
+    # Tu lista de deseados.
     def obtener_mis_deseados(self):
         return self.cloud.obtener_mis_deseados()
 
@@ -379,9 +429,11 @@ class API:
         url = boxart.ruta_a_uri(ruta) if ruta else ""
         return {"url": url, "path": ruta} if url else None
 
+    # Juegos recientes y deseados para tu perfil.
     def obtener_mi_actividad(self):
         return self.cloud.obtener_mi_actividad()
 
+    # Quita un juego de tu lista de deseados.
     def quitar_deseado(self, clave):
         return self.cloud.quitar_deseado(clave)
 
@@ -395,6 +447,7 @@ class API:
             "deseados": db_local.obtener_config_usuario("compartir_deseados", "1") == "1",
         }
 
+    # Ajuste de Privacidad: mostrar a qué juegas y si estás en una llamada.
     def guardar_compartir_actividad(self, activo):
         db_local.guardar_config_usuario("compartir_actividad", "1" if activo else "0")
         if not activo:
@@ -409,6 +462,7 @@ class API:
             db_local.guardar_config_usuario("compartir_deseados", "1" if activo else "0")
         return resultado
 
+    # Ajuste de Privacidad: compartir el historial; al apagarlo se borra el publicado.
     def guardar_compartir_historial(self, activo):
         db_local.guardar_config_usuario("compartir_historial", "1" if activo else "0")
         if not activo:
@@ -417,6 +471,7 @@ class API:
 
     # --- CONFIGURACIÓN: RUTAS Y EMULADORES ---
 
+    # Carpetas de la app y consolas con juegos, para Configuración.
     def obtener_config_rutas(self):
         return {
             "roms_base": os.path.abspath(boxart.CARPETA_ROMS_BASE),
@@ -433,6 +488,7 @@ class API:
             file_types=('Todos los archivos (*.*)',))
         return resultado[0] if resultado else ""
 
+    # Guarda el emulador de una consola, comprobando que exista y se pueda ejecutar.
     def guardar_ruta_emulador(self, consola_id, ruta):
         ruta = os.path.expanduser((ruta or "").strip())
         if ruta:
@@ -445,6 +501,7 @@ class API:
 
     # --- CONFIGURACIÓN: INFORMACIÓN ---
 
+    # Datos de la sección Información.
     def obtener_info_launcher(self):
         return {
             "version": VERSION,
@@ -467,6 +524,7 @@ class API:
 
     # --- DETALLE DE JUEGO ---
 
+    # Datos de un juego para su pantalla de detalle.
     def obtener_detalle_juego(self, game_id):
         juego = db_local.obtener_juego_detalle(game_id)
         if not juego:
@@ -488,6 +546,7 @@ class API:
             return {"exito": True, "aviso": publicada.get("error")}
         return {"exito": True}
 
+    # Logros de RetroAchievements de un juego.
     def obtener_logros_juego(self, game_id):
         juego = db_local.obtener_juego_detalle(game_id)
         if not juego:
@@ -508,12 +567,15 @@ class API:
 
     # --- RETROACHIEVEMENTS ---
 
+    # Indica si hay una cuenta de RetroAchievements conectada.
     def obtener_estado_ra(self):
         return ra_client.estado_credenciales()
 
+    # Prueba las credenciales de RetroAchievements y las guarda si funcionan.
     def guardar_credenciales_ra(self, usuario, api_key):
         return ra_client.guardar_credenciales(usuario, api_key)
 
+    # Desconecta la cuenta de RetroAchievements.
     def borrar_credenciales_ra(self):
         return ra_client.borrar_credenciales()
 
@@ -521,6 +583,7 @@ class API:
     def obtener_config_llamadas(self):
         return self._llamadas.config_realtime()
 
+    # Cierra llamadas que quedaron abiertas tras un cierre brusco.
     def limpiar_llamadas_colgadas(self):
         return self._llamadas.limpiar_colgadas()
 
@@ -529,6 +592,7 @@ class API:
         return {"mic": db_local.obtener_config("audio_mic", ""),
                 "altavoz": db_local.obtener_config("audio_altavoz", "")}
 
+    # Guarda el micrófono y el altavoz elegidos (por nombre).
     def guardar_audio_llamadas(self, mic, altavoz):
         if not all(isinstance(v, str) and len(v) <= 200 for v in (mic, altavoz)):
             return {"exito": False, "error": "Dispositivo no válido."}
@@ -536,21 +600,27 @@ class API:
         db_local.guardar_config("audio_altavoz", altavoz)
         return {"exito": True}
 
+    # Inicia una llamada; los amigos invitados reciben el timbre.
     def crear_llamada(self, amigo_ids, con_video=False):
         return self._llamadas.crear_llamada(amigo_ids, con_video)
 
+    # Datos de una llamada y quién participa.
     def obtener_llamada(self, llamada_id):
         return self._llamadas.obtener_llamada(llamada_id)
 
+    # Acepta o rechaza una invitación.
     def responder_llamada(self, llamada_id, aceptar):
         return self._llamadas.responder_llamada(llamada_id, aceptar)
 
+    # Sale de una llamada; si no queda nadie, se cierra.
     def salir_llamada(self, llamada_id, terminar=False):
         return self._llamadas.salir_llamada(llamada_id, terminar)
 
+    # Llamadas terminadas con un amigo, para mostrarlas en el chat.
     def obtener_historial_llamadas(self, amigo_id):
         return self._llamadas.historial_con(amigo_id)
 
+    # Agrega amigos a una llamada en curso (máximo 6 personas).
     def invitar_a_llamada(self, llamada_id, amigo_ids):
         return self._llamadas.invitar(llamada_id, amigo_ids)
 
@@ -561,13 +631,20 @@ def _elegir_motor():
     if sys.platform.startswith("linux"):
         try:
             from qtpy import QtWebEngineWidgets  # noqa: F401
-            return "qt"
         except Exception:
             print("[LLAMADAS] Falta Qt WebEngine: pip install PyQt6 PyQt6-WebEngine qtpy. "
                   "Sin él, las llamadas no funcionan en Linux.")
+            return None
+        try:
+            from nucleo import pantalla_qt
+            pantalla_qt.activar()
+        except Exception as e:   # las llamadas siguen funcionando aunque no se pueda compartir pantalla
+            print(f"[LLAMADAS] Compartir pantalla no disponible: {e}")
+        return "qt"
     return None
 
 
+# Prepara la carpeta de trabajo, crea la ventana y deja la app funcionando hasta que se cierre.
 def main():
     # La base local, las ROMs y la caché usan rutas relativas: desde otra carpeta aparecerían vacías
     raiz = os.path.dirname(os.path.abspath(__file__))

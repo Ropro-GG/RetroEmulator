@@ -2,18 +2,21 @@
 llamadas_cloud.py - Parte de las llamadas que habla con Supabase desde Python.
 
 Se encarga de crear la llamada, invitar amigos, aceptar/rechazar y salir.
-Los audios y las señales de conexión (WebRTC) viajan por el JS (ui/llamadas.js), no por aquí.
+El audio, el video y las señales de conexión (WebRTC) viajan por el JS (ui/llamadas.js), no por aquí.
 """
 from datetime import datetime, timezone
 
 from . import cloud_client, db_local
 
 
+# Fecha y hora actual en UTC, en el formato de la base de datos.
 def _ahora():
     return datetime.now(timezone.utc).isoformat()
 
 
+# Operaciones de llamadas en Supabase; la conexión de audio y video va en ui/llamadas.js.
 class Llamadas:
+    # Reutiliza la sesión de CloudClient.
     def __init__(self, cloud):
         self.cloud = cloud          # instancia de CloudClient (reutiliza su sesión)
         self.activa = None          # llamada en la que estoy (para salir de ella al cerrar la app)
@@ -35,6 +38,7 @@ class Llamadas:
             return "Supabase rechazó la operación de llamadas por permisos. Detalle: " + texto[:240]
         return self.cloud._error_social(e)
 
+    # Atajo para consultar una tabla.
     def _tabla(self, nombre):
         return self.cloud.client.table(nombre)
 
@@ -126,6 +130,7 @@ class Llamadas:
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
 
+    # Registra la respuesta; quien atiende primero marca el inicio de la llamada.
     def responder_llamada(self, llamada_id, aceptar):
         error = self.cloud._requiere_sesion()
         if error:
@@ -232,6 +237,7 @@ class Llamadas:
             partes = self._tabla("llamada_participantes").select("llamada_id, usuario_id, estado") \
                 .in_("llamada_id", [l["id"] for l in llamadas]).execute().data or []
 
+            # Convierte un texto a fecha; devuelve None si no es válido.
             def fecha(texto):
                 try:
                     return datetime.fromisoformat(texto)

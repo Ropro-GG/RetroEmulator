@@ -1,3 +1,7 @@
+# cloud_client.py - Todo lo que la app guarda o lee en Supabase, salvo las llamadas.
+# Sesión de usuario, amigos, presencia, chat, stickers, deseados, opiniones, publicaciones
+# y perfil. Los métodos devuelven {"exito": True, ...} o {"exito": False, "error": "..."}
+# para que la interfaz pueda mostrar el mensaje. Los permisos reales los aplica Supabase (RLS).
 import hashlib
 import os
 import uuid
@@ -28,7 +32,9 @@ def clave_juego(identificativo, titulo):
     return f"{identificativo}|{base or (titulo or '').lower()}"
 
 
+# Cliente único de Supabase; recuerda el usuario con la sesión iniciada.
 class CloudClient:
+    # Conecta al crear el objeto; la sesión se abre más tarde.
     def __init__(self):
         self.client: Client = None
         self.usuario_actual = None
@@ -74,6 +80,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": str(e)}
 
+    # Datos del usuario que se envían a la interfaz.
     @staticmethod
     def _datos_usuario(user):
         return {"id": user.id, "email": user.email, "user_metadata": user.user_metadata}
@@ -121,6 +128,7 @@ class CloudClient:
         except Exception as e:
             return f"No se pudo enviar el correo de confirmación ({e}). Entraste igual, pero no se recordará la sesión."
 
+    # Vuelve a enviar el código al mismo correo.
     def reenviar_codigo_recordar(self):
         if not self._email_recordar:
             return {"exito": False, "error": "No hay una confirmación pendiente."}
@@ -172,6 +180,7 @@ class CloudClient:
                 session_store.borrar("sesion")   # ya no sirve: se pide login normal
             return {"exito": False, "error": str(e)}
 
+    # Borra la presencia, cierra la sesión y olvida la sesión recordada.
     def cerrar_sesion(self):
         self.limpiar_jugando()
         try:
@@ -188,6 +197,7 @@ class CloudClient:
 
     VIGENCIA_PRESENCIA_HORAS = 8   # pasado este tiempo se ignora un "jugando" que quedó colgado
 
+    # Convierte un error técnico en un mensaje comprensible.
     @staticmethod
     def _error_social(e):
         texto = str(e)
@@ -203,9 +213,11 @@ class CloudClient:
             return "No se pudo conectar con el servidor. Revisá tu conexión a internet."
         return texto
 
+    # Id del usuario actual, o None sin sesión.
     def _yo(self):
         return self.usuario_actual.id if self.usuario_actual else None
 
+    # Devuelve el error a mostrar si falta conexión o sesión; si no, None.
     def _requiere_sesion(self):
         if not self.client:
             return {"exito": False, "error": "No hay conexión con la nube (revisá el archivo .env)."}
@@ -222,6 +234,7 @@ class CloudClient:
             .execute()
         return res.data or []
 
+    # Nombre y foto de varios usuarios de una sola vez.
     def _perfiles_por_id(self, ids):
         if not ids:
             return {}
@@ -397,6 +410,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    # Si la otra persona ya te envió una solicitud, se acepta directamente.
     def enviar_solicitud_amistad(self, user_id):
         error = self._requiere_sesion()
         if error:
@@ -420,6 +434,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    # Solo la persona que recibió la solicitud puede responderla.
     def responder_solicitud_amistad(self, friendship_id, aceptar):
         error = self._requiere_sesion()
         if error:
@@ -451,6 +466,7 @@ class CloudClient:
     LIMITE_MENSAJE = 1000
     _COLUMNAS_MENSAJE = "id, de, para, tipo, contenido, creado_en, leido_en"
 
+    # Da a un mensaje el formato que espera la interfaz.
     def _mensaje_para_ui(self, m):
         return {
             "id": m["id"],
@@ -461,10 +477,12 @@ class CloudClient:
             "leido": bool(m.get("leido_en")),
         }
 
+    # Filtro de PostgREST: mensajes entre tú y ese amigo, en cualquier dirección.
     def _filtro_par(self, amigo):
         yo = self._yo()
         return f"and(de.eq.{yo},para.eq.{amigo}),and(de.eq.{amigo},para.eq.{yo})"
 
+    # Texto corto del último mensaje en la lista de chats.
     @staticmethod
     def _resumen_mensaje(m):
         tipo = m.get("tipo", "texto")
@@ -473,6 +491,7 @@ class CloudClient:
         return {"imagen": "📷 Imagen", "sticker": "Sticker", "gif": "GIF",
                 "publicacion": "📰 Publicación"}.get(tipo, "Mensaje")
 
+    # Ids de tus amigos con la solicitud aceptada.
     def _amigos_aceptados(self):
         yo = self._yo()
         return [f["addressee_id"] if f["requester_id"] == yo else f["requester_id"]
@@ -588,6 +607,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    # Inserción común a todos los tipos de mensaje.
     def _insertar_mensaje(self, amigo_id, tipo, contenido):
         try:
             res = self.client.table("mensajes").insert({
@@ -605,6 +625,7 @@ class CloudClient:
                 return {"exito": False, "error": "Falta actualizar el chat en Supabase."}
             return {"exito": False, "error": self._error_social(e)}
 
+    # Valida el texto y lo envía.
     def enviar_mensaje(self, amigo_id, texto):
         error = self._requiere_sesion()
         if error:
@@ -630,6 +651,7 @@ class CloudClient:
     BUCKET_CHAT = "chat"
     MAX_STICKERS = 60
 
+    # Traduce los errores de subida de imágenes.
     def _error_subida(self, e):
         bajo = str(e).lower()
         if "bucket not found" in bajo or ("bucket" in bajo and "not found" in bajo):
@@ -640,10 +662,12 @@ class CloudClient:
             return "Ese tipo de archivo no está permitido (usá PNG, JPG o WEBP)."
         return self._error_social(e)
 
+    # Sube un archivo al espacio privado del chat, sin reemplazar otro.
     def _subir_a_chat(self, ruta, datos, mime):
         self.client.storage.from_(self.BUCKET_CHAT).upload(
             path=ruta, file=datos, file_options={"content-type": mime, "upsert": "false"})
 
+    # Sube la imagen y crea el mensaje; si el mensaje falla, borra el archivo.
     def enviar_imagen(self, amigo_id, datos, mime, extension):
         error = self._requiere_sesion()
         if error:
@@ -682,6 +706,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_subida(e)}
 
+    # Tus stickers, del más nuevo al más viejo.
     def obtener_stickers(self):
         error = self._requiere_sesion()
         if error:
@@ -704,6 +729,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    # Solo permite enviar stickers de tu propia carpeta.
     def enviar_sticker(self, amigo_id, ruta):
         error = self._requiere_sesion()
         if error:
@@ -753,6 +779,7 @@ class CloudClient:
         except Exception as e:
             print(f"[SOCIAL] No se pudo publicar la actividad: {self._error_social(e)}")
 
+    # Borra tu aviso de "jugando ahora".
     def limpiar_jugando(self):
         if not self.client or not self.usuario_actual:
             return
@@ -875,6 +902,7 @@ class CloudClient:
 
     # --- LISTA DE DESEADOS (visible solo para tus amigos, si la compartís) ---
 
+    # Agrega un juego a tu lista si todavía no está.
     def agregar_deseado(self, identificativo, titulo, consola, publica=True):
         error = self._requiere_sesion()
         if error:
@@ -900,6 +928,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    # Quita un juego de tu lista.
     def quitar_deseado(self, clave):
         error = self._requiere_sesion()
         if error:
@@ -910,6 +939,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    # Lista de un usuario; Supabase solo devuelve lo que puedes ver.
     def _lista_deseados_de(self, user_id):
         res = self.client.table("lista_deseados") \
             .select("clave, titulo, consola, identificativo, agregado_en").eq("user_id", user_id).execute()
@@ -917,6 +947,7 @@ class CloudClient:
         filas.sort(key=lambda r: r.get("agregado_en") or "", reverse=True)
         return filas
 
+    # Tu lista de deseados completa.
     def obtener_mis_deseados(self):
         error = self._requiere_sesion()
         if error:
@@ -947,6 +978,7 @@ class CloudClient:
 
     # --- OPINIONES DE JUEGOS (las ven tus amigos si las dejás visibles) ---
 
+    # Publica tu opinión; si está vacía, la retira de la nube.
     def publicar_opinion(self, identificativo, titulo, consola, puntuacion, texto, publica=True):
         error = self._requiere_sesion()
         if error:
@@ -1004,6 +1036,7 @@ class CloudClient:
     POR_PAGINA_PUBLICACIONES = 15
     REACCIONES = ("like", "dislike")
 
+    # Traduce los errores propios de las publicaciones.
     def _error_publicaciones(self, e):
         bajo = str(e).lower()
         falta_algo = any(x in bajo for x in ("does not exist", "could not find", "schema cache", "pgrst202", "pgrst205"))
@@ -1029,6 +1062,7 @@ class CloudClient:
             return f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/{self.BUCKET_PUBLICACIONES}/{ruta}"
         return ""
 
+    # Da a una publicación el formato que espera la interfaz.
     def _publicacion_para_ui(self, f):
         url = self._url_media(f)
         return {
@@ -1050,6 +1084,7 @@ class CloudClient:
             "mi_compartido": bool(f.get("mi_compartido")),
         }
 
+    # Llama a la función listar_publicaciones de Supabase.
     def _consultar_publicaciones(self, antes_id=None, autor_id=None, pub_id=None):
         res = self.client.rpc("listar_publicaciones", {
             "p_antes": int(antes_id) if antes_id else None,
@@ -1059,6 +1094,7 @@ class CloudClient:
         }).execute()
         return res.data or []
 
+    # Vuelve a leer una publicación para tener sus contadores al día.
     def _devolver_publicacion(self, pub_id, **extra):
         filas = self._consultar_publicaciones(pub_id=pub_id)
         if not filas:
@@ -1078,6 +1114,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_publicaciones(e)}
 
+    # Una publicación por su id.
     def obtener_publicacion(self, pub_id):
         error = self._requiere_sesion()
         if error:
@@ -1127,6 +1164,7 @@ class CloudClient:
                     pass
             return {"exito": False, "error": self._error_publicaciones(e)}
 
+    # Comprueba que sea tuya y borra también su imagen.
     def eliminar_publicacion(self, pub_id):
         error = self._requiere_sesion()
         if error:
@@ -1214,6 +1252,7 @@ class CloudClient:
 
     # --- PUBLICACIONES: COMENTARIOS ---
 
+    # Comentarios de una publicación con el nombre de cada autor.
     def obtener_comentarios(self, pub_id):
         error = self._requiere_sesion()
         if error:
@@ -1236,6 +1275,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_publicaciones(e)}
 
+    # Valida el texto, guarda el comentario y devuelve los contadores.
     def comentar_publicacion(self, pub_id, texto):
         error = self._requiere_sesion()
         if error:
@@ -1347,6 +1387,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": str(e)}
 
+    # Sube tu foto; ?t=... evita que se siga mostrando la versión anterior en caché.
     def subir_avatar(self, ruta_imagen_local):
         if not self.client or not self.usuario_actual:
             return {"exito": False, "error": "Debes iniciar sesión."}

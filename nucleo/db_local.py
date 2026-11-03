@@ -1,3 +1,6 @@
+# db_local.py - Base SQLite de este equipo (retrolauncher_local.db).
+# Guarda consolas, juegos encontrados, rutas de emuladores, opiniones y ajustes.
+# No sale del equipo. Las credenciales NO van aquí: están en session_store.py.
 import sqlite3
 import threading
 
@@ -9,12 +12,14 @@ _lock_usuario = threading.Lock()
 _usuario_id = ""
 
 
+# Indica qué cuenta está activa ("" al cerrar sesión).
 def establecer_usuario(usuario):
     global _usuario_id
     with _lock_usuario:
         _usuario_id = usuario or ""
 
 
+# Id de la cuenta activa en este equipo.
 def usuario_id():
     with _lock_usuario:
         return _usuario_id
@@ -277,6 +282,7 @@ def obtener_opinion(consola_id, titulo):
             (usuario_id(), consola_id, titulo)).fetchone()
     return {"puntuacion": fila[0], "texto": fila[1], "publica": bool(fila[2])} if fila else None
 
+# Guarda la opinión de la cuenta activa; la puntuación queda entre 0 y 5.
 def guardar_opinion(consola_id, titulo, puntuacion, texto, publica=True):
     puntuacion = max(0, min(5, int(puntuacion or 0)))
     with obtener_conexion() as conn:
@@ -327,6 +333,7 @@ def contar_emuladores():
         return conn.execute(
             "SELECT COUNT(DISTINCT ruta_emulador) FROM consolas WHERE ruta_emulador <> '';").fetchone()[0]
 
+# Id de RetroAchievements ya asociado a un juego, o 0.
 def obtener_ra_juego(consola_id, titulo):
     with obtener_conexion() as conn:
         fila = conn.execute(
@@ -334,6 +341,7 @@ def obtener_ra_juego(consola_id, titulo):
             (consola_id, titulo)).fetchone()
     return fila[0] if fila else 0
 
+# Recuerda esa asociación para no volver a buscarla.
 def guardar_ra_juego(consola_id, titulo, ra_game_id):
     with obtener_conexion() as conn:
         conn.execute("""
@@ -344,11 +352,13 @@ def guardar_ra_juego(consola_id, titulo, ra_game_id):
 
 # --- AJUSTES SIMPLES (tabla 'configuracion') ---
 
+# Lee un ajuste general de este equipo.
 def obtener_config(clave, defecto=""):
     with obtener_conexion() as conn:
         fila = conn.execute("SELECT valor FROM configuracion WHERE clave = ?;", (clave,)).fetchone()
     return fila[0] if fila else defecto
 
+# Crea o actualiza un ajuste general.
 def guardar_config(clave, valor):
     with obtener_conexion() as conn:
         conn.execute("""
@@ -359,6 +369,7 @@ def guardar_config(clave, valor):
 
 # --- AJUSTES POR CUENTA ---
 
+# Nombre interno de un ajuste personal, separado por cuenta.
 def _clave_usuario(clave):
     return f"u:{usuario_id()}:{clave}"
 
@@ -366,6 +377,7 @@ def obtener_config_usuario(clave, defecto=""):
     """Ajuste personal de la cuenta con sesión iniciada (no se comparte entre cuentas)."""
     return obtener_config(_clave_usuario(clave), defecto)
 
+# Guarda un ajuste personal de la cuenta activa.
 def guardar_config_usuario(clave, valor):
     guardar_config(_clave_usuario(clave), valor)
 
@@ -389,7 +401,9 @@ def adoptar_datos_antiguos(usuario_id):
     guardar_config("migracion_cuentas_v1", usuario_id)
     return True
 
+# Consultas que usa la interfaz para mostrar la biblioteca.
 class LocalDB:
+    # Se asegura de que las tablas existan.
     def __init__(self):
         inicializar_db_local()
 

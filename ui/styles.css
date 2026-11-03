@@ -1,3 +1,6 @@
+/* styles.css - Todos los estilos de la app, por secciones. Colores principales: fondo #0B0C10,
+   paneles #1F2833, acento #45A29E y #66FCF1. El orden importa: si dos reglas empatan, gana la última. */
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -1401,7 +1404,7 @@ select.settings-input option { background-color: #141722; color: #FFFFFF; }
 .chat-post-media { font-size: 0.78em; color: #7d8590; margin-top: 4px; }
 
 /* ===== compat ===== */
-/* compat.css - que la app se vea igual con Qt/Chromium (Linux) y WebView2 (Windows)
+/* Compatibilidad: que la app se vea igual con Qt/Chromium (Linux) y WebView2 (Windows)
    que como se veía con WebKit: misma tipografía y barras de desplazamiento finas del tema. */
 
 /* WebKit sustituía Verdana/Tahoma por 'DejaVu Sans' a través de fontconfig; Chromium no. */
@@ -1417,7 +1420,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 ::-webkit-scrollbar-thumb:hover { background: #66FCF1; }
 
 /* ===== amigos ===== */
-/* amigos.css - botones circulares por acción y menú desplegable de cada amigo */
+/* Botones circulares por acción y menú desplegable de cada amigo */
 .amigo-icono {
     width: 36px; height: 36px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
@@ -1444,7 +1447,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .amigo-menu-item.peligro:hover { background: rgba(192, 57, 43, 0.18); color: #ff8a80; }
 
 /* ===== llamadas ===== */
-/* llamadas.css - timbre, barra de llamada y avisos (misma paleta que el resto de la app) */
+/* Timbre, barra de llamada y avisos (misma paleta que el resto de la app) */
 .llamada-panel {
     position: fixed; right: 20px; bottom: 20px; z-index: 9000;
     display: flex; align-items: center; gap: 12px;
@@ -1511,6 +1514,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
     background: #000; object-fit: cover; border-radius: 8px; border: 1px solid #66FCF1;
     transform: scaleX(-1);                 /* se ve como un espejo, como en cualquier videollamada */
 }
+#llamada-local.pantalla { transform: none; object-fit: contain; }   /* la pantalla no se ve en espejo */
 #llamada-videos.solo-local #llamada-local { position: static; width: 100%; height: 100%; }
 .llamada-grande-btn {
     position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px; border-radius: 8px;

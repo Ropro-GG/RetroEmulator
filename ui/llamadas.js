@@ -1,5 +1,5 @@
 // ============================================================================
-// LLAMADAS: voz y video, 1 a 1 o en grupo (hasta 6 personas, cada una conectada con todas)
+// LLAMADAS: voz, video y compartir pantalla, 1 a 1 o en grupo (hasta 6 personas, cada una conectada con todas)
 //
 //  - Python (gui_app.py) crea/responde/cierra la llamada en Supabase.
 //  - Este archivo escucha Realtime (timbre) y arma la conexión WebRTC entre equipos.
@@ -30,6 +30,7 @@ let llIniciando = false;         // evita dos llamadas por un doble clic mientra
 // Arranque y cierre (se llaman desde app.js al entrar / salir de la cuenta)
 // ---------------------------------------------------------------------------
 
+// Al entrar a la cuenta: limpia llamadas colgadas y empieza a escuchar el timbre.
 async function llamadasIniciar() {
     await llamadasDetener();
     llCrearUI();
@@ -68,6 +69,7 @@ async function llamadasIniciar() {
     llTimerToken = setInterval(llRenovarToken, 40 * 60 * 1000);
 }
 
+// Al salir de la cuenta: cuelga y deja de escuchar.
 async function llamadasDetener() {
     if (llTimerToken) clearInterval(llTimerToken);
     llTimerToken = null;
@@ -79,6 +81,7 @@ async function llamadasDetener() {
     llYo = null;
 }
 
+// Entrega a Realtime un token vigente para que no se desconecte.
 async function llRenovarToken() {
     try {
         const cfg = await window.pywebview.api.obtener_config_llamadas();
@@ -90,6 +93,7 @@ async function llRenovarToken() {
 // Interfaz (se crea por código para no tocar mucho index.html)
 // ---------------------------------------------------------------------------
 
+// Crea una sola vez el timbre, la barra de llamada y las ventanas de video.
 function llCrearUI() {
     if (document.getElementById('llamada-timbre')) return;
     const cont = document.createElement('div');
@@ -110,6 +114,7 @@ function llCrearUI() {
             <div class="llamada-texto"><strong id="llamada-barra-nombre"></strong><small id="llamada-barra-estado"></small></div>
             <button id="llamada-mute" class="llamada-btn" title="Silenciar micrófono" onclick="llAlternarMute()">🎤</button>
             <button id="llamada-camara" class="llamada-btn" title="Activar cámara" onclick="llAlternarCamara()">📷</button>
+            <button id="llamada-pantalla" class="llamada-btn" title="Compartir pantalla" onclick="llAlternarPantalla()">🖥️</button>
             <button class="llamada-btn" title="Elegir micrófono y altavoz" onclick="abrirConfiguracion('audio')">🎧</button>
             <button class="llamada-btn" title="Agregar a alguien a la llamada" onclick="llAbrirInvitar()">➕</button>
             <button class="llamada-btn llamada-colgar" title="Colgar" onclick="llColgarManual()">📵</button>
@@ -125,12 +130,16 @@ function llCrearUI() {
         <div id="llamada-aviso" class="llamada-aviso" style="display:none;"></div>
         <div id="llamada-audios" style="display:none;"></div>`;
     while (cont.firstChild) document.body.appendChild(cont.firstChild);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) llOcultar('llamada-pantalla');
 }
 
+// Muestra un elemento.
 function llMostrar(id) { const e = document.getElementById(id); if (e) e.style.display = 'flex'; }
+// Oculta un elemento.
 function llOcultar(id) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
 
 let llAvisoTimer = null;
+// Aviso flotante que desaparece a los 4 s.
 function llAviso(texto) {
     const e = document.getElementById('llamada-aviso');
     if (!e) return;
@@ -140,6 +149,7 @@ function llAviso(texto) {
     llAvisoTimer = setTimeout(() => { e.style.display = 'none'; }, 4000);
 }
 
+// Actualiza el nombre y el estado en la barra de llamada.
 function llEstadoBarra(nombre, estado) {
     document.getElementById('llamada-barra-nombre').textContent = nombre || '';
     document.getElementById('llamada-barra-estado').textContent = estado || '';
@@ -163,12 +173,14 @@ function llTimbre(activo) {
         llTimbreTimer = setInterval(pitido, 1500);
     } catch (e) { /* sin sonido, pero el aviso visual sigue */ }
 }
+// Detiene el timbre.
 function llDetenerTimbre() { if (llTimbreTimer) clearInterval(llTimbreTimer); llTimbreTimer = null; }
 
 // ---------------------------------------------------------------------------
 // Llamar (botones del chat y de la lista de amigos)
 // ---------------------------------------------------------------------------
 
+// Botones de llamada dentro del chat.
 async function llamarAmigoChat(conVideo = false) {
     if (!chatAmigo) return;
     await llIniciarLlamada([chatAmigo.user_id], conVideo, chatAmigo.username);
@@ -191,6 +203,7 @@ async function llListarDispositivos() {
     return lista;
 }
 
+// Busca por nombre el dispositivo elegido; null usa el predeterminado.
 async function llIdElegido(campo, tipo) {
     try {
         const nombre = (await window.pywebview.api.obtener_audio_llamadas())[campo];
@@ -202,6 +215,7 @@ async function llIdElegido(campo, tipo) {
     }
 }
 
+// Opciones de micrófono. "ideal" permite seguir si ese micrófono no está.
 async function llAudioConstraints() {
     const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
     const id = await llIdElegido('mic', 'audioinput');
@@ -209,6 +223,7 @@ async function llAudioConstraints() {
     return audio;
 }
 
+// Envía el audio de un participante al altavoz elegido.
 async function llAplicarAltavoz(elemento) {
     if (!elemento.setSinkId) return;
     try { await elemento.setSinkId((await llIdElegido('altavoz', 'audiooutput')) || ''); }
@@ -263,6 +278,7 @@ async function cargarConfigAudio() {
     msg.textContent = '';
 }
 
+// Guarda la elección y la aplica si hay una llamada en curso.
 async function guardarConfigAudio(cambio) {
     const msg = document.getElementById('audio-msg');
     const res = await window.pywebview.api.guardar_audio_llamadas(
@@ -300,12 +316,13 @@ async function llObtenerMedios(conVideo) {
     }
 }
 
+// Crea el objeto con todo el estado de la llamada actual.
 function llNuevaLlamada(id, soyCreador, medios) {
     const a = {
         id, soyCreador, local: medios.stream, canal: null,
         estado: soyCreador ? 'sonando' : 'conectando',   // sonando | conectando | en_curso
         invitados: new Set(), peers: new Map(), nombres: {},
-        silenciado: false, camara: false, videoTrack: null,
+        silenciado: false, camara: false, videoTrack: null, pantallaTrack: null,
         inicio: null, timerSonando: null,
     };
     const pista = medios.video ? medios.stream.getVideoTracks()[0] : null;
@@ -317,6 +334,7 @@ function llNuevaLlamada(id, soyCreador, medios) {
     return a;
 }
 
+// Pide el micrófono, crea la llamada y espera a que atiendan.
 async function llIniciarLlamada(ids, conVideo, nombre) {
     if (!llSb) { alert('Las llamadas no están disponibles ahora (revisá tu conexión y reiniciá sesión).'); return; }
     if (llActual || llEntrante || llIniciando) { llAviso('Ya estás en una llamada.'); return; }
@@ -358,6 +376,7 @@ async function llIniciarLlamada(ids, conVideo, nombre) {
 // Recibir (timbre)
 // ---------------------------------------------------------------------------
 
+// Llegó una invitación: rechaza si estás ocupado; si no, hace sonar el timbre.
 async function llAlInvitacion(fila) {
     if (!fila || fila.estado !== 'invitado') return;
     if (llActual || llEntrante) {                       // ocupado: se rechaza sin molestar
@@ -386,6 +405,7 @@ async function llAlInvitacion(fila) {
     setTimeout(() => { if (llEntrante && llEntrante.id === id) llCerrarTimbre('Llamada perdida.'); }, LL_TIMBRE_MS);
 }
 
+// Oculta el timbre, con un aviso opcional.
 function llCerrarTimbre(aviso) {
     llDetenerTimbre();
     llOcultar('llamada-timbre');
@@ -424,6 +444,7 @@ async function llAceptar(conVideo = false) {
     }
 }
 
+// Rechaza la invitación que está sonando.
 async function llRechazar() {
     const ent = llEntrante;
     if (!ent) return;
@@ -447,6 +468,7 @@ function llEsperarConexion(a) {
     }, LL_CONEXION_MS);
 }
 
+// La llamada terminó: cierra lo abierto y actualiza el registro del chat.
 function llAlCambioLlamada(fila) {
     if (!fila || fila.estado !== 'terminada') return;
     if (llEntrante && llEntrante.id === fila.id) llCerrarTimbre('Llamada perdida.');
@@ -456,6 +478,7 @@ function llAlCambioLlamada(fila) {
     setTimeout(chatRefrescarLlamadas, 1500);
 }
 
+// Alguien atendió, rechazó o salió de la llamada.
 function llAlCambioParticipante(fila) {
     if (fila && fila.usuario_id === llYo) {
         // Me agregaron (de nuevo) a una llamada: se trata como una invitación más
@@ -485,6 +508,7 @@ function llAlCambioParticipante(fila) {
 // cámara) y si dos ofertas se cruzan, el de id menor cede.
 // ---------------------------------------------------------------------------
 
+// Se une al canal de señales de esta llamada y saluda a los demás.
 async function llUnirseCanal() {
     const a = llActual;
     const canal = llSb.channel('llamada:' + a.id, { config: { broadcast: { self: false } } });
@@ -500,11 +524,13 @@ async function llUnirseCanal() {
     llCargarNombres();
 }
 
+// Envía una señal; "para" la dirige a una sola persona.
 function llEnviar(msg, para = null) {
     if (!llActual || !llActual.canal) return;
     llActual.canal.send({ type: 'broadcast', event: 'senal', payload: { de: llYo, para, ...msg } });
 }
 
+// Reparte cada señal recibida según su tipo.
 async function llAlSenal(p) {
     if (!llActual || !p || p.de === llYo) return;
     if (p.para && p.para !== llYo) return;
@@ -522,6 +548,7 @@ async function llAlSenal(p) {
     }
 }
 
+// Devuelve o crea la conexión WebRTC con un participante.
 function llPeer(id) {
     if (llActual.peers.has(id)) return llActual.peers.get(id);
     const pc = new RTCPeerConnection(LL_ICE);
@@ -579,13 +606,15 @@ function llPeer(id) {
     return peer;
 }
 
+// Alguien entró: se crea la conexión y se responde el saludo.
 function llAlHola(p) {
     llPeer(p.de);
     if (!llActual.nombres[p.de]) llCargarNombres();   // alguien nuevo: se pide su nombre
     if (!p.responde) llEnviar({ tipo: 'hola', responde: true }, p.de);
-    if (llActual.camara) llEnviar({ tipo: 'camara', activa: true }, p.de);   // que me vea desde el inicio
+    if (llVideoSaliente(llActual)) llEnviar({ tipo: 'camara', activa: true }, p.de);   // que me vea desde el inicio
 }
 
+// Recibe una oferta o respuesta, resolviendo los cruces de ofertas.
 async function llAlDescripcion(p) {
     const peer = llPeer(p.de);
     const pc = peer.pc;
@@ -601,6 +630,7 @@ async function llAlDescripcion(p) {
     }
 }
 
+// Agrega un candidato de red; si llegó antes de tiempo, lo guarda.
 async function llAlIce(p) {
     const peer = llActual.peers.get(p.de);             // una señal tardía de quien ya se fue no lo revive
     if (!peer) return;
@@ -612,12 +642,14 @@ async function llAlIce(p) {
     }
 }
 
+// Aplica los candidatos que estaban guardados.
 async function llVaciarHielo(peer) {
     while (peer.hielo.length) {
         try { await peer.pc.addIceCandidate(peer.hielo.shift()); } catch (e) { /* candidato de una oferta ignorada */ }
     }
 }
 
+// Primera conexión lograda: arranca el contador de duración.
 function llMarcarConectada() {
     const a = llActual;
     if (!a || a.estado === 'en_curso') return;
@@ -633,6 +665,7 @@ function llMarcarConectada() {
     llDuracionTimer = setInterval(pintar, 1000);
 }
 
+// Cierra la conexión con alguien; sin nadie más, termina la llamada.
 function llCerrarPeer(id) {
     if (!llActual) return;
     const peer = llActual.peers.get(id);
@@ -646,14 +679,20 @@ function llCerrarPeer(id) {
 // Video: cámara propia y ventanas de los demás
 // ---------------------------------------------------------------------------
 
+// Refleja en el botón si la cámara está encendida.
 function llActualizarBotonCamara() {
     const b = document.getElementById('llamada-camara');
     if (!b) return;
     const activa = !!(llActual && llActual.camara);
     b.classList.toggle('activo', activa);
     b.title = activa ? 'Apagar cámara' : 'Activar cámara';
+    const p = document.getElementById('llamada-pantalla');
+    const compartiendo = !!(llActual && llActual.pantallaTrack);
+    p.classList.toggle('activo', compartiendo);
+    p.title = compartiendo ? 'Dejar de compartir' : 'Compartir pantalla';
 }
 
+// Enciende o apaga la cámara durante la llamada.
 async function llAlternarCamara() {
     const a = llActual;
     if (!a) return;
@@ -669,32 +708,72 @@ async function llAlternarCamara() {
     if (llActual !== a) { pista.stop(); return; }       // la llamada terminó mientras se pedía la cámara
     a.videoTrack = pista;
     a.camara = true;
-    a.local.addTrack(pista);
-    a.peers.forEach(peer => {
-        if (peer.videoSender) peer.videoSender.replaceTrack(pista);          // ya había canal de video
-        else peer.videoSender = peer.pc.addTrack(pista, a.local);            // primera vez: se renegocia
-    });
     pista.onended = () => { if (llActual === a && a.videoTrack === pista) llApagarCamara(); };
-    llEnviar({ tipo: 'camara', activa: true });
-    llActualizarBotonCamara();
-    llRefrescarVideos();
+    llPublicarVideo(a);
 }
 
+// Apaga la cámara y avisa a los demás.
 function llApagarCamara() {
     const a = llActual;
     if (!a || !a.camara) return;
     const pista = a.videoTrack;
     a.camara = false;
     a.videoTrack = null;
-    if (pista) { pista.stop(); a.local.removeTrack(pista); }
+    if (pista) pista.stop();
+    llPublicarVideo(a);
+}
+
+// Cada persona envía un solo video: la pantalla si la está compartiendo y, si no, la cámara
+function llVideoSaliente(a) {
+    return a.pantallaTrack || a.videoTrack;
+}
+
+// Envía a todos el video que corresponde ahora. La cámara no se apaga mientras se comparte
+// pantalla: al dejar de compartir vuelve sola.
+function llPublicarVideo(a) {
+    const pista = llVideoSaliente(a);
+    a.local.getVideoTracks().forEach(t => { if (t !== pista) a.local.removeTrack(t); });
+    if (pista && !a.local.getVideoTracks().includes(pista)) a.local.addTrack(pista);
     a.peers.forEach(peer => {
-        if (peer.videoSender) peer.videoSender.replaceTrack(null).catch(() => { /* nada */ });
+        if (peer.videoSender) peer.videoSender.replaceTrack(pista).catch(() => { /* la conexión se está cerrando */ });
+        else if (pista) peer.videoSender = peer.pc.addTrack(pista, a.local);  // primera vez: se renegocia
     });
-    llEnviar({ tipo: 'camara', activa: false });
+    llEnviar({ tipo: 'camara', activa: !!pista });
     llActualizarBotonCamara();
     llRefrescarVideos();
 }
 
+// Botón 🖥️: abre el selector o deja de compartir
+async function llAlternarPantalla() {
+    const a = llActual;
+    if (!a) return;
+    if (a.pantallaTrack) { llDetenerPantalla(a); return; }
+    let captura;
+    try {
+        captura = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 30, max: 30 }, width: { max: 1920 }, height: { max: 1080 } },
+            audio: false,
+        });
+    } catch (e) {
+        if (e.name !== 'NotAllowedError') llAviso('No se pudo compartir la pantalla: ' + (e.message || e.name));  // NotAllowedError = canceló
+        return;
+    }
+    const pista = captura.getVideoTracks()[0];
+    if (llActual !== a) { pista.stop(); return; }       // la llamada terminó mientras elegía
+    pista.contentHint = 'detail';                       // imagen nítida desde el inicio; con poca conexión baja primero los FPS
+    pista.onended = () => { if (llActual === a && a.pantallaTrack === pista) llDetenerPantalla(a); };
+    a.pantallaTrack = pista;
+    llPublicarVideo(a);
+}
+
+function llDetenerPantalla(a) {
+    const pista = a.pantallaTrack;
+    a.pantallaTrack = null;
+    if (pista) pista.stop();
+    llPublicarVideo(a);
+}
+
+// Agranda o achica la ventana de video.
 function llAlternarGrande() {
     const c = document.getElementById('llamada-videos');
     if (c) c.classList.toggle('grande');
@@ -729,17 +808,19 @@ function llRefrescarVideos() {
     });
 
     const local = document.getElementById('llamada-local');
-    if (a && a.camara && a.videoTrack) {
-        if (!local.srcObject || local.srcObject.getVideoTracks()[0] !== a.videoTrack) {
-            local.srcObject = new MediaStream([a.videoTrack]);
+    const saliente = a && llVideoSaliente(a);
+    if (saliente) {
+        if (!local.srcObject || local.srcObject.getVideoTracks()[0] !== saliente) {
+            local.srcObject = new MediaStream([saliente]);
         }
+        local.classList.toggle('pantalla', !!a.pantallaTrack);
         local.style.display = 'block';
     } else {
         local.srcObject = null;
         local.style.display = 'none';
     }
 
-    const hay = visibles.size > 0 || !!(a && a.camara);
+    const hay = visibles.size > 0 || !!saliente;
     cont.style.display = hay ? 'flex' : 'none';
     cont.classList.toggle('solo-local', hay && visibles.size === 0);
     if (!hay) cont.classList.remove('grande');
@@ -749,6 +830,7 @@ function llRefrescarVideos() {
 // Controles y cierre
 // ---------------------------------------------------------------------------
 
+// Silencia o activa el micrófono.
 function llAlternarMute() {
     if (!llActual) return;
     llActual.silenciado = !llActual.silenciado;
@@ -756,11 +838,13 @@ function llAlternarMute() {
     document.getElementById('llamada-mute').textContent = llActual.silenciado ? '🔇' : '🎤';
 }
 
+// Botón colgar: si aún suena y llamaste tú, se cancela para todos.
 function llColgarManual() {
     // Si todavía suena y la inicié yo, se cancela para todos
     if (llActual) llColgar(null, llActual.soyCreador && llActual.estado === 'sonando');
 }
 
+// Cierra conexiones, apaga micrófono y cámara, y avisa a Supabase.
 async function llColgar(aviso, terminar = false) {
     const a = llActual;
     if (!a) return;
@@ -777,7 +861,7 @@ async function llColgar(aviso, terminar = false) {
         } catch (e) { /* nada */ }
     }
     a.peers.forEach(p => { try { p.pc.close(); } catch (e) { /* nada */ } });
-    a.local.getTracks().forEach(t => t.stop());               // incluye la cámara
+    [...a.local.getTracks(), a.videoTrack, a.pantallaTrack].forEach(t => { if (t) t.stop(); });   // la cámara puede estar en pausa
     if (a.canal && llSb) { try { llSb.removeChannel(a.canal); } catch (e) { /* nada */ } }
     document.getElementById('llamada-audios').innerHTML = '';
     document.getElementById('llamada-videos-grid').innerHTML = '';
@@ -817,6 +901,7 @@ function llTextoNombres() {
     return `${n[0]}, ${n[1]} y ${n.length - 2} más`;
 }
 
+// Lista los amigos que todavía no están en la llamada.
 async function llAbrirInvitar() {
     const a = llActual;
     if (!a) return;
@@ -850,10 +935,12 @@ async function llAbrirInvitar() {
     });
 }
 
+// Cierra esa lista.
 function llCerrarInvitar() {
     document.getElementById('llamada-invitar').style.display = 'none';
 }
 
+// Invita a los amigos marcados, respetando el máximo de personas.
 async function llEnviarInvitaciones() {
     const a = llActual;
     if (!a) { llCerrarInvitar(); return; }
@@ -883,6 +970,7 @@ async function llEnviarInvitaciones() {
 
 let chatLlamadas = [];   // registros de llamadas con el amigo cuyo chat está abierto
 
+// Trae las llamadas terminadas con este amigo.
 async function chatCargarLlamadas(amigoId) {
     try {
         const res = await window.pywebview.api.obtener_historial_llamadas(amigoId);
@@ -895,6 +983,7 @@ async function chatCargarLlamadas(amigoId) {
     return false;
 }
 
+// Actualiza el registro si el chat sigue abierto.
 async function chatRefrescarLlamadas() {
     if (!chatAmigo || socialSeccion !== 'chat') return;
     const id = chatAmigo.user_id;
@@ -906,11 +995,13 @@ function chatItemsOrdenados() {
     return [...chatMensajes, ...chatLlamadas].sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en));
 }
 
+// Hora en formato de 24 horas.
 function llHora(iso) {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+// Duración legible: 1 h 05 min, 3 min 20 s.
 function llDuracionTexto(segundos) {
     const s = Math.max(0, Math.round(segundos));
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
@@ -919,6 +1010,7 @@ function llDuracionTexto(segundos) {
     return `${r} s`;
 }
 
+// Tarjeta del chat con el resultado de una llamada.
 function crearRegistroLlamada(l) {
     const fila = document.createElement('div');
     const titulo = document.createElement('strong');

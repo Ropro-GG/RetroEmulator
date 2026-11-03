@@ -26,14 +26,17 @@ FORMAS = ("redondeado", "circulo", "cuadrado")
 AJUSTES = ("recortar", "ajustar")
 
 
+# Error con un mensaje listo para mostrar.
 class ErrorImagen(Exception):
     pass
 
 
+# Indica si Pillow está instalado.
 def disponible():
     return Image is not None
 
 
+# Abre la imagen, limita su peso y corrige su orientación.
 def _abrir(ruta):
     if Image is None:
         raise ErrorImagen("Falta instalar Pillow: ejecutá  pip install pillow  y reiniciá el launcher.")
@@ -49,10 +52,12 @@ def _abrir(ruta):
     return ImageOps.exif_transpose(img)   # respeta la orientación de las fotos de celular
 
 
+# Indica si la imagen tiene partes transparentes (se conserva como PNG).
 def _tiene_transparencia(img):
     return img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
 
 
+# Convierte bytes en una dirección que un <img> puede mostrar directamente.
 def _data_uri(datos, mime):
     return f"data:{mime};base64," + base64.b64encode(datos).decode("ascii")
 
@@ -88,6 +93,7 @@ def preparar_para_chat(ruta):
     raise ErrorImagen("La imagen es demasiado pesada incluso después de achicarla.")
 
 
+# Recorta o ajusta, aplica la forma y agrega el contorno blanco opcional.
 def _construir_sticker(img, forma, ajuste, contorno):
     L = LADO_STICKER
     margen = 14 if contorno else 0
@@ -137,6 +143,7 @@ def crear_sticker(ruta, forma="redondeado", ajuste="recortar", contorno=True):
     return salida.getvalue(), "image/png", "png"
 
 
+# Vista previa del sticker lista para mostrar.
 def vista_sticker(ruta, forma, ajuste, contorno):
     datos, mime, _ = crear_sticker(ruta, forma, ajuste, contorno)
     return _data_uri(datos, mime)
@@ -155,6 +162,7 @@ def tipo_mime(datos):
     return ""
 
 
+# Convierte bytes a data URI, solo si son una imagen reconocida.
 def a_data_uri(datos):
     mime = tipo_mime(datos or b"")
     return _data_uri(datos, mime) if mime else ""
