@@ -5,13 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RetroEmulator</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="compat.css">
+    <link rel="stylesheet" href="fuente.css">
+    <link rel="stylesheet" href="amigos.css">
+    <link rel="stylesheet" href="llamadas.css">
 </head>
 <body>
 
     <!-- PANTALLA DE LOGIN / REGISTRO -->
     <div id="auth-screen" class="auth-container">
         <div class="auth-box">
-            <h1 class="logo">RETRO<span>EMULATOR</span></h1>
+            <h1 class="logo">R<span>E</span></h1>
             
             <div id="login-form">
                 <h2>Iniciar Sesión</h2>
@@ -141,9 +145,9 @@
                 <ul>
                     <li class="active" data-social="amigos" onclick="seleccionarSeccionSocial('amigos')"><span>👥 Amigos</span><span id="social-amigos-badge" class="count-badge" style="display: none;"></span></li>
                     <li data-social="deseados" onclick="seleccionarSeccionSocial('deseados')">⭐ Deseados</li>
-                    <li data-social="chat" onclick="seleccionarSeccionSocial('chat')"><span>💬 Chat</span><span id="social-chat-badge" class="count-badge" style="display: none;"></span></li>
+                    <!-- Chat: se abre desde Amigos (botón 💬) -->
                     <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')">📰 Publicaciones</li>
-                    <li data-social="llamadas" onclick="seleccionarSeccionSocial('llamadas')">📞 Llamadas <em>PRONTO</em></li>
+                    <!-- Llamadas: se hacen desde Amigos (botón 📞) -->
                 </ul>
             </aside>
 
@@ -168,11 +172,14 @@
                             </div>
                             <div id="chat-activo" class="chat-activo" style="display: none;">
                                 <header class="chat-header">
+                                    <button class="btn-secondary-sm" onclick="seleccionarSeccionSocial('amigos')">← Amigos</button>
                                     <img id="chat-avatar" alt="">
                                     <div class="chat-header-info">
                                         <strong id="chat-nombre"></strong>
                                         <small id="chat-estado"></small>
                                     </div>
+                                    <button class="chat-icono" title="Llamada de voz" onclick="llamarAmigoChat()">📞</button>
+                                    <button class="chat-icono" title="Videollamada" onclick="llamarAmigoChat(true)">🎥</button>
                                     <button class="btn-secondary-sm" onclick="verPerfilDelChat()">Ver perfil</button>
                                 </header>
                                 <div id="chat-mensajes" class="chat-mensajes" onscroll="alScrollChat()"></div>
@@ -519,6 +526,9 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+    <script src="amigos.js"></script>
+    <script src="llamadas.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

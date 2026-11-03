@@ -13,6 +13,8 @@ import ra_client
 import contexto
 import gifs
 import imagenes
+import sys
+from llamadas_cloud import Llamadas
 import webbrowser
 from urllib.parse import urlparse
 
@@ -27,6 +29,7 @@ class API:
         self.scanner = ROMScanner()
         self.launcher = GameLauncher()
         self.cloud = CloudClient()
+        self._llamadas = Llamadas(self.cloud)   # '_' = no se expone al JS
         self.window = None
         self._juegos_activos = 0          # emuladores abiertos desde el launcher
         self._imagen_elegida = ""         # archivo que elegiste para enviar o convertir en sticker
@@ -523,20 +526,57 @@ class API:
     def borrar_credenciales_ra(self):
         return ra_client.borrar_credenciales()
 
+    # --- LLAMADAS (la conexión de audio va por ui/llamadas.js; esto solo habla con Supabase) ---
+    def obtener_config_llamadas(self):
+        return self._llamadas.config_realtime()
+
+    def crear_llamada(self, amigo_ids, con_video=False):
+        return self._llamadas.crear_llamada(amigo_ids, con_video)
+
+    def obtener_llamada(self, llamada_id):
+        return self._llamadas.obtener_llamada(llamada_id)
+
+    def responder_llamada(self, llamada_id, aceptar):
+        return self._llamadas.responder_llamada(llamada_id, aceptar)
+
+    def salir_llamada(self, llamada_id, terminar=False):
+        return self._llamadas.salir_llamada(llamada_id, terminar)
+
+    def obtener_historial_llamadas(self, amigo_id):
+        return self._llamadas.historial_con(amigo_id)
+
+    def invitar_a_llamada(self, llamada_id, amigo_ids):
+        return self._llamadas.invitar(llamada_id, amigo_ids)
+
+
+def _elegir_motor():
+    """Linux: Qt WebEngine (Chromium) porque WebKitGTK no trae WebRTC en muchas distros.
+    Windows: motor por defecto (WebView2, también Chromium)."""
+    if sys.platform.startswith("linux"):
+        try:
+            from qtpy import QtWebEngineWidgets  # noqa: F401
+            return "qt"
+        except Exception:
+            print("[LLAMADAS] Falta Qt WebEngine: pip install PyQt6 PyQt6-WebEngine qtpy. "
+                  "Sin él, las llamadas no funcionan en Linux.")
+    return None
+
+
 def main():
     api = API()
     html_path = os.path.join(os.path.dirname(__file__), 'ui', 'index.html')
     
     window = webview.create_window(
         title='RetroEmulator',
-        url=f'file://{html_path}',
+        url=html_path,
         js_api=api,
         width=1024,
         height=720,
         resizable=True
     )
     api.set_window(window)
-    webview.start(debug=True)
+    # RETRO_DEBUG=1 abre las herramientas de desarrollo (en Qt abre una ventana extra)
+    webview.start(debug=os.environ.get("RETRO_DEBUG") == "1", gui=_elegir_motor(), http_server=True)
     api.cloud.limpiar_jugando()   # al cerrar el launcher no queda un "jugando ahora" publicado
 
 if __name__ == '__main__':

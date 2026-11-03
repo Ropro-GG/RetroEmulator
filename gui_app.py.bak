@@ -1,0 +1,580 @@
+import webview
+from webview import FileDialog
+import json
+import os
+import threading
+from db_local import LocalDB
+from scanner import ROMScanner
+from launcher import GameLauncher
+from cloud_client import CloudClient
+import boxart
+import db_local
+import ra_client
+import contexto
+import gifs
+import imagenes
+import sys
+from llamadas_cloud import Llamadas
+import webbrowser
+from urllib.parse import urlparse
+
+VERSION = "BETA v1"
+DESARROLLADOR = "Rocco Flores"
+URL_GITHUB = "https://github.com/Ropro-GG/RetroEmulator"
+HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"}
+
+class API:
+    def __init__(self):
+        self.db = LocalDB()
+        self.scanner = ROMScanner()
+        self.launcher = GameLauncher()
+        self.cloud = CloudClient()
+        self._llamadas = Llamadas(self.cloud)   # '_' = no se expone al JS
+        self.window = None
+        self._juegos_activos = 0          # emuladores abiertos desde el launcher
+        self._imagen_elegida = ""         # archivo que elegiste para enviar o convertir en sticker
+        self._imagen_publicacion = ""     # imagen elegida para la publicación que estás escribiendo
+        self._lock_juegos = threading.Lock()
+
+    def set_window(self, window):
+        self.window = window
+
+    def _establecer_cuenta(self, resultado):
+        """Registra qué cuenta está activa para separar los datos por cuenta en este equipo."""
+        if resultado and resultado.get("exito"):
+            uid = (resultado.get("usuario") or {}).get("id")
+            if uid:
+                contexto.establecer(uid)
+                if db_local.adoptar_datos_antiguos(uid):
+                    ra_client.adoptar_credenciales_antiguas(uid)
+
+    def registrar_usuario(self, email, password, username):
+        resultado = self.cloud.registrar_usuario(email, password, username)
+        self._establecer_cuenta(resultado)
+        return resultado
+
+    def _limpiar_presencia_vieja(self, resultado):
+        """Al entrar, borra un 'jugando ahora' que haya quedado colgado (por ejemplo tras un cierre brusco)."""
+        if resultado and resultado.get("exito") and self._juegos_activos == 0:
+            threading.Thread(target=self.cloud.limpiar_jugando, daemon=True).start()
+
+    def iniciar_sesion(self, email, password, recordar=False):
+        resultado = self.cloud.iniciar_sesion(email, password, recordar)
+        self._establecer_cuenta(resultado)
+        self._limpiar_presencia_vieja(resultado)
+        return resultado
+
+    def confirmar_recordar(self, codigo):
+        return self.cloud.confirmar_recordar(codigo)
+
+    def reenviar_codigo_recordar(self):
+        return self.cloud.reenviar_codigo_recordar()
+
+    def restaurar_sesion(self):
+        resultado = self.cloud.restaurar_sesion()
+        self._establecer_cuenta(resultado)
+        self._limpiar_presencia_vieja(resultado)
+        return resultado
+
+    def cerrar_sesion(self):
+        resultado = self.cloud.cerrar_sesion()
+        contexto.establecer("")   # nada de la cuenta anterior queda activo
+        self._imagen_elegida = ""
+        self._imagen_publicacion = ""
+        return resultado
+
+    def obtener_perfil(self, user_id=None):
+        return self.cloud.obtener_perfil(user_id)
+
+    def actualizar_perfil(self, bio, username=None):
+        return self.cloud.actualizar_perfil(bio, username)
+
+    def cambiar_username(self, nuevo_username):
+        return self.cloud.cambiar_username(nuevo_username)
+
+    def seleccionar_foto_avatar(self):
+        """Abre el selector nativo usando FileDialog.OPEN sin advertencias."""
+        if not self.window:
+            return {"exito": False, "error": "Ventana no inicializada."}
+            
+        file_types = ('Archivos de Imagen (*.png;*.jpg;*.jpeg;*.webp)', 'Todos los archivos (*.*)')
+        result = self.window.create_file_dialog(FileDialog.OPEN, allow_multiple=False, file_types=file_types)
+        
+        if result and len(result) > 0:
+            ruta_imagen = result[0]
+            return self.cloud.subir_avatar(ruta_imagen)
+        return {"exito": False, "error": "No se seleccionó ninguna imagen."}
+
+    def escanear_roms(self):
+        """Lanza el escaneo (juegos + carátulas) en segundo plano."""
+        iniciado = self.scanner.iniciar()
+        return {"exito": True, "ya_en_curso": not iniciado}
+
+    def obtener_estado_escaneo(self):
+        """La interfaz lo consulta periódicamente para mostrar el progreso."""
+        return self.scanner.estado()
+
+    def obtener_portada_data_uri(self, ruta_portada):
+        """Plan B si el webview no puede abrir la imagen por file://."""
+        return boxart.leer_como_data_uri(ruta_portada)
+
+    def obtener_juegos(self):
+        return self.db.obtener_todos_los_juegos()
+
+    def obtener_juegos_filtrados(self, texto_busqueda="", consola_id=None):
+        """Retorna juegos filtrados por búsqueda y/o consola para pywebview."""
+        juegos = self.db.obtener_juegos_filtrados(texto_busqueda, consola_id)
+        for juego in juegos:
+            juego["portada_url"] = boxart.ruta_a_uri(juego.get("portada_path"))
+        return juegos
+
+    def obtener_consolas(self):
+        """Retorna las consolas registradas para llenar el selector/filtro de la UI."""
+        return self.db.obtener_consolas()
+
+    def lanzar_juego(self, game_id):
+        return self.launcher.lanzar_por_id(
+            game_id, al_iniciar=self._al_iniciar_juego, al_cerrar=self._al_cerrar_juego)
+
+    def _al_iniciar_juego(self, titulo, consola):
+        """Avisa a tus amigos a qué jugás (si no lo desactivaste en Privacidad)."""
+        with self._lock_juegos:
+            self._juegos_activos += 1
+        if db_local.obtener_config_usuario("compartir_actividad", "1") == "1":
+            self.cloud.establecer_jugando(titulo, consola)
+        if db_local.obtener_config_usuario("compartir_historial", "1") == "1":
+            identificativo = db_local.obtener_identificativo_por_consola(consola)
+            self.cloud.registrar_jugada(identificativo, titulo, consola)
+
+    def _al_cerrar_juego(self):
+        # Solo se borra el aviso cuando ya no queda ningún emulador abierto
+        with self._lock_juegos:
+            self._juegos_activos = max(0, self._juegos_activos - 1)
+            quedan = self._juegos_activos
+        if quedan == 0:
+            self.cloud.limpiar_jugando()
+
+    # --- SOCIAL ---
+
+    def obtener_social(self):
+        return self.cloud.obtener_social()
+
+    def obtener_resumen_social(self):
+        """Datos livianos para las insignias: solicitudes pendientes y mensajes sin leer."""
+        return self.cloud.resumen_social()
+
+    # --- CHAT ---
+
+    def obtener_conversaciones(self):
+        return self.cloud.obtener_conversaciones()
+
+    def obtener_mensajes(self, amigo_id, antes_id=None):
+        return self.cloud.obtener_mensajes(amigo_id, antes_id)
+
+    def sincronizar_chat(self, amigo_id, ultimo_id, ids_pendientes):
+        return self.cloud.sincronizar_chat(amigo_id, ultimo_id, ids_pendientes or [])
+
+    def enviar_mensaje(self, amigo_id, texto):
+        return self.cloud.enviar_mensaje(amigo_id, texto)
+
+    # --- CHAT: IMÁGENES Y STICKERS ---
+
+    def _elegir_archivo_imagen(self):
+        """Selector de imagen compartido. Devuelve (ruta, vista, None) o (None, None, error)."""
+        if not self.window:
+            return None, None, {"exito": False, "error": "Ventana no inicializada."}
+        if not imagenes.disponible():
+            return None, None, {"exito": False, "error": "Falta instalar Pillow: ejecutá  pip install pillow  y reiniciá el launcher."}
+        resultado = self.window.create_file_dialog(
+            FileDialog.OPEN, allow_multiple=False,
+            file_types=('Imágenes (*.png;*.jpg;*.jpeg;*.webp;*.bmp)', 'Todos los archivos (*.*)'))
+        if not resultado:
+            return None, None, {"exito": False, "error": "cancelado"}
+        ruta = resultado[0]
+        try:
+            vista = imagenes.miniatura_data_uri(ruta)
+        except imagenes.ErrorImagen as e:
+            return None, None, {"exito": False, "error": str(e)}
+        return ruta, vista, None
+
+    def seleccionar_imagen(self):
+        """Abre el selector de archivos. Queda guardada la ruta elegida (Python no acepta rutas desde la página)."""
+        ruta, vista, error = self._elegir_archivo_imagen()
+        if error:
+            return error
+        self._imagen_elegida = ruta
+        return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
+
+    def descartar_imagen(self):
+        self._imagen_elegida = ""
+        return {"exito": True}
+
+    def enviar_imagen(self, amigo_id):
+        if not self._imagen_elegida:
+            return {"exito": False, "error": "Primero elegí una imagen."}
+        try:
+            datos, mime, extension = imagenes.preparar_para_chat(self._imagen_elegida)
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        resultado = self.cloud.enviar_imagen(amigo_id, datos, mime, extension)
+        if resultado.get("exito"):
+            self._imagen_elegida = ""
+        return resultado
+
+    def previsualizar_sticker(self, forma, ajuste, contorno):
+        if not self._imagen_elegida:
+            return {"exito": False, "error": "Primero elegí una imagen."}
+        try:
+            return {"exito": True, "vista": imagenes.vista_sticker(self._imagen_elegida, forma, ajuste, contorno)}
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+
+    def crear_sticker(self, forma, ajuste, contorno):
+        if not self._imagen_elegida:
+            return {"exito": False, "error": "Primero elegí una imagen."}
+        try:
+            datos, mime, extension = imagenes.crear_sticker(self._imagen_elegida, forma, ajuste, contorno)
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        return self.cloud.guardar_sticker(datos, mime, extension)
+
+    def obtener_stickers(self):
+        return self.cloud.obtener_stickers()
+
+    def eliminar_sticker(self, sticker_id):
+        return self.cloud.eliminar_sticker(sticker_id)
+
+    def enviar_sticker(self, amigo_id, ruta):
+        return self.cloud.enviar_sticker(amigo_id, ruta)
+
+    # --- CHAT: GIFS Y EMOJIS ---
+
+    def buscar_gifs(self, texto, pagina=1):
+        """Busca en KLIPY (sin texto devuelve los GIFs del momento)."""
+        try:
+            resultado = gifs.buscar(texto, pagina, contexto.usuario_id())
+        except gifs.ErrorGifs as e:
+            return {"exito": False, "error": str(e)}
+        except Exception:
+            return {"exito": False, "error": "No se pudieron buscar GIFs. Probá de nuevo en un momento."}
+        return {"exito": True, **resultado}
+
+    def enviar_gif(self, amigo_id, url):
+        return self.cloud.enviar_gif(amigo_id, url)
+
+    def obtener_emojis_recientes(self):
+        try:
+            lista = json.loads(db_local.obtener_config_usuario("emojis_recientes", "[]"))
+        except ValueError:
+            lista = []
+        return [e for e in lista if isinstance(e, str)][:24]
+
+    def registrar_emoji_reciente(self, emoji):
+        if not isinstance(emoji, str) or not emoji or len(emoji) > 16:
+            return {"exito": False}
+        lista = [e for e in self.obtener_emojis_recientes() if e != emoji]
+        lista.insert(0, emoji)
+        db_local.guardar_config_usuario("emojis_recientes", json.dumps(lista[:24], ensure_ascii=False))
+        return {"exito": True}
+
+    def obtener_imagen_chat(self, ruta):
+        """Imagen o sticker de un mensaje, listo para mostrar (data URI), o None."""
+        datos = self.cloud.descargar_imagen_chat(ruta)
+        return imagenes.a_data_uri(datos) or None if datos else None
+
+    # --- PUBLICACIONES ---
+
+    def seleccionar_imagen_publicacion(self):
+        ruta, vista, error = self._elegir_archivo_imagen()
+        if error:
+            return error
+        self._imagen_publicacion = ruta
+        return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
+
+    def descartar_imagen_publicacion(self):
+        self._imagen_publicacion = ""
+        return {"exito": True}
+
+    def crear_publicacion(self, texto, gif_url=None):
+        """Publica texto + (una imagen elegida antes, o un GIF de KLIPY). Es pública para todos."""
+        imagen = None
+        if not gif_url and self._imagen_publicacion:
+            try:
+                imagen = imagenes.preparar_para_chat(self._imagen_publicacion)
+            except imagenes.ErrorImagen as e:
+                return {"exito": False, "error": str(e)}
+        resultado = self.cloud.crear_publicacion(texto, imagen, gif_url)
+        if resultado.get("exito"):
+            self._imagen_publicacion = ""
+        return resultado
+
+    def obtener_publicaciones(self, antes_id=None, autor_id=None):
+        return self.cloud.obtener_publicaciones(antes_id, autor_id)
+
+    def obtener_publicacion(self, pub_id):
+        return self.cloud.obtener_publicacion(pub_id)
+
+    def eliminar_publicacion(self, pub_id):
+        return self.cloud.eliminar_publicacion(pub_id)
+
+    def alternar_reaccion(self, pub_id, tipo):
+        return self.cloud.alternar_reaccion(pub_id, tipo)
+
+    def compartir_publicacion(self, pub_id, amigos_ids):
+        return self.cloud.compartir_publicacion(pub_id, amigos_ids or [])
+
+    def quitar_compartido(self, pub_id):
+        return self.cloud.quitar_compartido(pub_id)
+
+    def obtener_comentarios(self, pub_id):
+        return self.cloud.obtener_comentarios(pub_id)
+
+    def comentar_publicacion(self, pub_id, texto):
+        return self.cloud.comentar_publicacion(pub_id, texto)
+
+    def eliminar_comentario(self, comentario_id, pub_id):
+        return self.cloud.eliminar_comentario(comentario_id, pub_id)
+
+    def buscar_usuarios(self, texto):
+        return self.cloud.buscar_usuarios(texto)
+
+    def obtener_perfil_social(self, user_id):
+        return self.cloud.obtener_perfil_social(user_id)
+
+    def enviar_solicitud_amistad(self, user_id):
+        return self.cloud.enviar_solicitud_amistad(user_id)
+
+    def responder_solicitud_amistad(self, friendship_id, aceptar):
+        return self.cloud.responder_solicitud_amistad(friendship_id, aceptar)
+
+    def eliminar_amistad(self, friendship_id):
+        return self.cloud.eliminar_amistad(friendship_id)
+
+    # --- LISTA DE DESEADOS ---
+
+    def buscar_titulos(self, identificativo, texto):
+        """Sugerencias de títulos de una consola (para agregar a deseados)."""
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        return boxart.buscar_titulos(identificativo, nombre, texto)
+
+    def obtener_mis_deseados(self):
+        return self.cloud.obtener_mis_deseados()
+
+    def agregar_deseado(self, identificativo, titulo):
+        """Solo se aceptan juegos que existan en el catálogo de la consola; se guarda con su nombre oficial."""
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        if not (titulo or "").strip():
+            return {"exito": False, "error": "Escribí el nombre del juego y elegí uno de los sugeridos."}
+        oficial, motivo = boxart.validar_titulo(identificativo, nombre, titulo)
+        if not oficial:
+            mensajes = {
+                "no_existe": f'No encontramos "{(titulo or "").strip()}" en el catálogo de {nombre}. '
+                             'Elegí uno de los juegos sugeridos.',
+                "sin_conexion": "No se pudo consultar el catálogo (sin conexión). Probá de nuevo en un momento.",
+                "sin_catalogo": "Todavía no hay catálogo de juegos para esta consola.",
+            }
+            return {"exito": False, "error": mensajes.get(motivo, "No se pudo verificar el juego.")}
+        publica = db_local.obtener_config_usuario("compartir_deseados", "1") == "1"
+        return self.cloud.agregar_deseado(identificativo, oficial, nombre, publica)
+
+    def obtener_consolas_catalogo(self):
+        """Solo las consolas que tienen catálogo de juegos (para elegir en la lista de deseados)."""
+        con_catalogo = boxart.consolas_con_catalogo()
+        return [c for c in self.db.obtener_consolas() if c["identificativo"] in con_catalogo]
+
+    def obtener_portada_juego(self, identificativo, titulo):
+        """Carátula de un juego por título (también para juegos que no tenés)."""
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        ruta = boxart.portada_de_juego(identificativo, nombre, titulo)
+        url = boxart.ruta_a_uri(ruta) if ruta else ""
+        return {"url": url, "path": ruta} if url else None
+
+    def obtener_mi_actividad(self):
+        return self.cloud.obtener_mi_actividad()
+
+    def quitar_deseado(self, clave):
+        return self.cloud.quitar_deseado(clave)
+
+    # --- PRIVACIDAD ---
+
+    def obtener_privacidad(self):
+        """Ajustes de privacidad de la cuenta actual (cada cuenta tiene los suyos)."""
+        return {
+            "actividad": db_local.obtener_config_usuario("compartir_actividad", "1") == "1",
+            "historial": db_local.obtener_config_usuario("compartir_historial", "1") == "1",
+            "deseados": db_local.obtener_config_usuario("compartir_deseados", "1") == "1",
+        }
+
+    def guardar_compartir_actividad(self, activo):
+        db_local.guardar_config_usuario("compartir_actividad", "1" if activo else "0")
+        if not activo:
+            self.cloud.limpiar_jugando()   # se borra lo que ya estuviera publicado
+        return {"exito": True}
+
+    def guardar_compartir_deseados(self, activo):
+        """La visibilidad se aplica en Supabase a toda tu lista (y a lo que agregues después)."""
+        resultado = self.cloud.actualizar_visibilidad_deseados(activo)
+        if resultado.get("exito"):
+            db_local.guardar_config_usuario("compartir_deseados", "1" if activo else "0")
+        return resultado
+
+    def guardar_compartir_historial(self, activo):
+        db_local.guardar_config_usuario("compartir_historial", "1" if activo else "0")
+        if not activo:
+            self.cloud.borrar_historial()   # se borra lo que ya estuviera publicado
+        return {"exito": True}
+
+    # --- CONFIGURACIÓN: RUTAS Y EMULADORES ---
+
+    def obtener_config_rutas(self):
+        return {
+            "roms_base": os.path.abspath(boxart.CARPETA_ROMS_BASE),
+            "boxarts": os.path.abspath(boxart.CARPETA_BOXARTS),
+            "consolas": db_local.obtener_consolas_con_juegos(),
+        }
+
+    def seleccionar_ejecutable_emulador(self):
+        """Abre el selector de archivos y devuelve la ruta elegida ('' si se cancela)."""
+        if not self.window:
+            return ""
+        resultado = self.window.create_file_dialog(
+            FileDialog.OPEN, allow_multiple=False,
+            file_types=('Todos los archivos (*.*)',))
+        return resultado[0] if resultado else ""
+
+    def guardar_ruta_emulador(self, consola_id, ruta):
+        ruta = os.path.expanduser((ruta or "").strip())
+        if ruta:
+            if not os.path.isfile(ruta):
+                return {"exito": False, "error": "Ese archivo no existe."}
+            if not os.access(ruta, os.X_OK):
+                return {"exito": False, "error": "El archivo no tiene permiso de ejecución (en Linux: chmod +x)."}
+        db_local.actualizar_rutas_consola(consola_id, ruta_emulador=ruta)
+        return {"exito": True, "ruta": ruta}
+
+    # --- CONFIGURACIÓN: INFORMACIÓN ---
+
+    def obtener_info_launcher(self):
+        return {
+            "version": VERSION,
+            "desarrollador": DESARROLLADOR,
+            "juegos": db_local.contar_juegos(),
+            "emuladores": db_local.contar_emuladores(),
+            "github": URL_GITHUB,
+        }
+
+    def abrir_enlace(self, url):
+        """Abre un enlace en el navegador (solo sitios de la lista permitida)."""
+        try:
+            partes = urlparse(url)
+            if partes.scheme == "https" and partes.hostname in HOSTS_PERMITIDOS:
+                webbrowser.open(url)
+                return {"exito": True}
+        except ValueError:
+            pass
+        return {"exito": False, "error": "Enlace no permitido."}
+
+    # --- DETALLE DE JUEGO ---
+
+    def obtener_detalle_juego(self, game_id):
+        juego = db_local.obtener_juego_detalle(game_id)
+        if not juego:
+            return {"exito": False, "error": "No se encontró el juego."}
+        juego["portada_url"] = boxart.ruta_a_uri(juego.get("portada_path"))
+        juego["opinion"] = db_local.obtener_opinion(juego["consola_id"], juego["titulo"])
+        return {"exito": True, "juego": juego}
+
+    def guardar_opinion(self, game_id, puntuacion, texto, publica=True):
+        """Guarda la opinión en tu equipo y la publica para tus amigos (si la dejás visible)."""
+        juego = db_local.obtener_juego_detalle(game_id)
+        if not juego:
+            return {"exito": False, "error": "No se encontró el juego."}
+        db_local.guardar_opinion(juego["consola_id"], juego["titulo"], puntuacion, texto, publica)
+        publicada = self.cloud.publicar_opinion(
+            juego["identificativo"], juego["titulo"], juego["consola"],
+            puntuacion, texto, publica)
+        if not publicada.get("exito"):
+            return {"exito": True, "aviso": publicada.get("error")}
+        return {"exito": True}
+
+    def obtener_logros_juego(self, game_id):
+        juego = db_local.obtener_juego_detalle(game_id)
+        if not juego:
+            return {"exito": False, "motivo": "error", "error": "No se encontró el juego."}
+        return ra_client.obtener_logros(juego["identificativo"], juego["consola_id"], juego["titulo"])
+
+    def obtener_amigos_juego(self, game_id):
+        """Pendiente de desarrollar: hoy devuelve listas vacías."""
+        juego = db_local.obtener_juego_detalle(game_id)
+        if not juego:
+            return {"exito": False, "jugaron": [], "deseado": []}
+        return {
+            "exito": True,
+            "jugaron": self.cloud.obtener_amigos_que_jugaron(juego["identificativo"], juego["titulo"]),
+            "deseado": self.cloud.obtener_amigos_con_deseado(juego["identificativo"], juego["titulo"]),
+            "opiniones": self.cloud.obtener_opiniones_amigos(juego["identificativo"], juego["titulo"]),
+        }
+
+    # --- RETROACHIEVEMENTS ---
+
+    def obtener_estado_ra(self):
+        return ra_client.estado_credenciales()
+
+    def guardar_credenciales_ra(self, usuario, api_key):
+        return ra_client.guardar_credenciales(usuario, api_key)
+
+    def borrar_credenciales_ra(self):
+        return ra_client.borrar_credenciales()
+
+    # --- LLAMADAS (la conexión de audio va por ui/llamadas.js; esto solo habla con Supabase) ---
+    def obtener_config_llamadas(self):
+        return self._llamadas.config_realtime()
+
+    def crear_llamada(self, amigo_ids, con_video=False):
+        return self._llamadas.crear_llamada(amigo_ids, con_video)
+
+    def obtener_llamada(self, llamada_id):
+        return self._llamadas.obtener_llamada(llamada_id)
+
+    def responder_llamada(self, llamada_id, aceptar):
+        return self._llamadas.responder_llamada(llamada_id, aceptar)
+
+    def salir_llamada(self, llamada_id, terminar=False):
+        return self._llamadas.salir_llamada(llamada_id, terminar)
+
+    def obtener_historial_llamadas(self, amigo_id):
+        return self._llamadas.historial_con(amigo_id)
+
+
+def _elegir_motor():
+    """Linux: Qt WebEngine (Chromium) porque WebKitGTK no trae WebRTC en muchas distros.
+    Windows: motor por defecto (WebView2, también Chromium)."""
+    if sys.platform.startswith("linux"):
+        try:
+            from qtpy import QtWebEngineWidgets  # noqa: F401
+            return "qt"
+        except Exception:
+            print("[LLAMADAS] Falta Qt WebEngine: pip install PyQt6 PyQt6-WebEngine qtpy. "
+                  "Sin él, las llamadas no funcionan en Linux.")
+    return None
+
+
+def main():
+    api = API()
+    html_path = os.path.join(os.path.dirname(__file__), 'ui', 'index.html')
+    
+    window = webview.create_window(
+        title='RetroEmulator',
+        url=html_path,
+        js_api=api,
+        width=1024,
+        height=720,
+        resizable=True
+    )
+    api.set_window(window)
+    # RETRO_DEBUG=1 abre las herramientas de desarrollo (en Qt abre una ventana extra)
+    webview.start(debug=os.environ.get("RETRO_DEBUG") == "1", gui=_elegir_motor(), http_server=True)
+    api.cloud.limpiar_jugando()   # al cerrar el launcher no queda un "jugando ahora" publicado
+
+if __name__ == '__main__':
+    main()

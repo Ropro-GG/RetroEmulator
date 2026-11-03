@@ -70,6 +70,7 @@ async function cargarPantallaPrincipal() {
     await cargarConsolas();
     await filtrarCatalogo();
     iniciarInsignias();
+    llamadasIniciar();
 }
 
 async function cargarPerfilUsuario() {
@@ -442,6 +443,7 @@ async function reenviarCodigo() {
 
 async function cerrarSesion() {
     if (!confirm('¿Cerrar sesión? Dejará de recordarse tu cuenta en este equipo.')) return;
+    try { await llamadasDetener(); } catch (e) { /* se sigue igual */ }
     try { await window.pywebview.api.cerrar_sesion(); } catch (e) { /* se sigue igual */ }
 
     usuarioActual = null;
@@ -915,9 +917,7 @@ function mostrarVista(nombre) {
 // SOCIAL
 // ============================================================================
 
-const SECCIONES_PRONTO = {
-    llamadas:       { icono: '📞', titulo: 'Llamadas',      texto: 'Llamadas de voz con tus amigos.' },
-};
+const SECCIONES_PRONTO = {};
 
 let socialSeccion = 'amigos';
 let socialTimer = null;
@@ -947,7 +947,7 @@ function seleccionarSeccionSocial(nombre) {
     perfilAjenoId = null;
     document.getElementById('social-perfil').style.display = 'none';
     document.querySelectorAll('.social-nav li').forEach(li => {
-        li.classList.toggle('active', li.dataset.social === nombre);
+        li.classList.toggle('active', li.dataset.social === (nombre === 'chat' ? 'amigos' : nombre));
     });
 
     const reales = { amigos: 'social-amigos', deseados: 'social-deseados', chat: 'social-chat', publicaciones: 'social-publicaciones' };
@@ -1076,8 +1076,10 @@ async function cargarSocial() {
     res.amigos.forEach(u => {
         const jugando = u.jugando ? `🎮 Jugando a ${u.jugando.titulo}` + (u.jugando.consola ? ` · ${u.jugando.consola}` : '') : '';
         cont.appendChild(filaUsuario(u, jugando, !!u.jugando, [
-            boton('💬 Mensaje', 'btn-primary-sm', () => irAlChat(u.user_id)),
-            boton('Quitar', 'btn-secondary-sm', () => quitarAmistad(u.friendship_id, u.username)),
+            botonIcono('💬', 'Enviar mensaje', () => irAlChat(u.user_id)),
+            botonIcono('📞', 'Llamada de voz', () => llamarAmigo(u.user_id, u.username)),
+            botonIcono('🎥', 'Videollamada', () => llamarAmigo(u.user_id, u.username, true)),
+            menuAmigo(u),
         ]));
     });
 
@@ -1295,7 +1297,7 @@ function pintarInsignias(solicitudes, mensajes) {
     if (solicitudes !== undefined) insignias.solicitudes = solicitudes;
     if (mensajes !== undefined) insignias.mensajes = mensajes;
     const total = insignias.solicitudes + insignias.mensajes;
-    [['nav-social-badge', total], ['social-amigos-badge', insignias.solicitudes],
+    [['nav-social-badge', total], ['social-amigos-badge', insignias.solicitudes + insignias.mensajes],
      ['social-chat-badge', insignias.mensajes]].forEach(([id, n]) => {
         const el = document.getElementById(id);
         if (!el) return;
@@ -1815,6 +1817,7 @@ function reiniciarChat() {
     chatUltimoId = 0;
     chatHayMas = false;
     chatOcupado = false;
+    chatLlamadas = [];
     imagenesChat.clear();
     imagenesChatPendientes.clear();
     imagenesChatFallidas.clear();
@@ -1974,11 +1977,11 @@ function renderizarChat(modo, alturaAntes) {
     if (chatHayMas) {
         cont.appendChild(boton('Cargar mensajes anteriores', 'btn-secondary-sm chat-mas', cargarAnteriores));
     }
-    if (chatMensajes.length === 0) {
+    if (chatItemsOrdenados().length === 0) {
         cont.appendChild(mensajeVacio('Todavía no hay mensajes. ¡Escribí el primero!'));
     }
     let dia = '';
-    chatMensajes.forEach(m => {
+    chatItemsOrdenados().forEach(m => {
         const etiqueta = etiquetaDia(m.creado_en);
         if (etiqueta !== dia) {
             const sep = document.createElement('div');
@@ -1987,7 +1990,7 @@ function renderizarChat(modo, alturaAntes) {
             cont.appendChild(sep);
             dia = etiqueta;
         }
-        cont.appendChild(crearBurbuja(m));
+        cont.appendChild(m.tipo === 'registro_llamada' ? crearRegistroLlamada(m) : crearBurbuja(m));
     });
 
     chatPegadoAbajo = (modo === 'fondo' || distanciaAlFondo < 80);
@@ -2028,8 +2031,10 @@ async function abrirConversacion(amigoId) {
     chatUltimoId = 0;
     res.mensajes.forEach(registrarMensaje);
     chatHayMas = !!res.hay_mas;
+    chatLlamadas = [];
     renderizarChat('fondo');
     document.getElementById('chat-texto').focus();
+    chatRefrescarLlamadas();   // registro de llamadas con este amigo
     cargarConversaciones();   // refresca "sin leer"
 }
 

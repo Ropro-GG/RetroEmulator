@@ -20,9 +20,20 @@ class Llamadas:
 
     # -- utilidades -------------------------------------------------------
     def _error(self, e):
-        bajo = str(e).lower()
+        texto = str(e)
+        bajo = texto.lower()
+        print(f"[LLAMADAS] Error de Supabase: {texto}")      # queda en la terminal para depurar
         if "llamada" in bajo and ("does not exist" in bajo or "pgrst205" in bajo or "42p01" in bajo):
             return "Faltan las tablas de Llamadas en Supabase. Ejecutá supabase_llamadas.sql en el SQL Editor."
+        if "invitar_a_llamada" in bajo and ("could not find" in bajo or "does not exist" in bajo or "pgrst202" in bajo):
+            return "Falta ejecutar supabase_llamadas_fase4.sql en el SQL Editor de Supabase."
+        if "maximo 6" in bajo:
+            return "Una llamada admite hasta 6 personas."
+        if "la llamada ya termino" in bajo or "no estas en esa llamada" in bajo:
+            return "Esa llamada ya no está disponible."
+        if "42501" in bajo or "row-level security" in bajo or "permission denied" in bajo:
+            return ("Supabase rechazó la operación de llamadas por permisos. Ejecutá de nuevo "
+                    "supabase_llamadas.sql y supabase_llamadas_fase2.sql. Detalle: " + texto[:240])
         return self.cloud._error_social(e)
 
     def _tabla(self, nombre):
@@ -108,8 +119,9 @@ class Llamadas:
                 .update({"estado": "unido" if aceptar else "rechazado"}) \
                 .eq("llamada_id", llamada_id).eq("usuario_id", yo).execute()
             if aceptar:
-                self._tabla("llamadas").update({"estado": "en_curso"}) \
-                    .eq("id", llamada_id).eq("estado", "sonando").execute()
+                # La primera persona que atiende marca el inicio real de la llamada
+                self._tabla("llamadas").update({"estado": "en_curso", "inicio_en": _ahora()}) \
+                    .eq("id", llamada_id).is_("inicio_en", "null").execute()
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
@@ -128,6 +140,78 @@ class Llamadas:
             if terminar or not quedan:
                 self._tabla("llamadas").update({"estado": "terminada", "terminada_en": _ahora()}) \
                     .eq("id", llamada_id).neq("estado", "terminada").execute()
+            return {"exito": True}
+        except Exception as e:
+            return {"exito": False, "error": self._error(e)}
+
+    def historial_con(self, amigo_id, limite=40):
+        """Llamadas ya terminadas en las que participaron vos y este amigo, para mostrarlas
+        como registro dentro del chat (duración, horarios y cuántas personas hubo)."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        yo = self.cloud._yo()
+        try:
+            # Solo se ven las filas de llamadas en las que estoy, así que esto ya es "con vos"
+            filas = self._tabla("llamada_participantes").select("llamada_id") \
+                .eq("usuario_id", amigo_id).execute().data or []
+            ids = list(dict.fromkeys(f["llamada_id"] for f in filas))[:300]
+            if not ids:
+                return {"exito": True, "llamadas": []}
+            llamadas = self._tabla("llamadas") \
+                .select("id, creador_id, con_video, creada_en, inicio_en, terminada_en") \
+                .in_("id", ids).eq("estado", "terminada") \
+                .order("terminada_en", desc=True).limit(int(limite)).execute().data or []
+            if not llamadas:
+                return {"exito": True, "llamadas": []}
+            partes = self._tabla("llamada_participantes").select("llamada_id, usuario_id, estado") \
+                .in_("llamada_id", [l["id"] for l in llamadas]).execute().data or []
+
+            def fecha(texto):
+                try:
+                    return datetime.fromisoformat(texto)
+                except (TypeError, ValueError):
+                    return None
+
+            salida = []
+            for l in llamadas:
+                suyas = [p for p in partes if p["llamada_id"] == l["id"]]
+                inicio, fin = fecha(l.get("inicio_en")), fecha(l.get("terminada_en"))
+                if inicio:
+                    resultado = "completada"
+                elif any(p["estado"] == "rechazado" for p in suyas):
+                    resultado = "rechazada"
+                else:
+                    resultado = "sin_respuesta"
+                salida.append({
+                    "id": l["id"],
+                    "resultado": resultado,
+                    "yo_llame": l["creador_id"] == yo,
+                    "con_video": bool(l.get("con_video")),
+                    "rechazada_por_mi": any(p["usuario_id"] == yo and p["estado"] == "rechazado" for p in suyas),
+                    "duracion_s": max(0, int((fin - inicio).total_seconds())) if inicio and fin else 0,
+                    "inicio": l.get("inicio_en") or l.get("creada_en"),
+                    "fin": l.get("terminada_en") or l.get("creada_en"),
+                    "personas": sum(1 for p in suyas if p["estado"] in ("unido", "salio")),
+                })
+            return {"exito": True, "llamadas": salida}
+        except Exception as e:
+            return {"exito": False, "error": self._error(e)}
+
+    def invitar(self, llamada_id, amigo_ids):
+        """Agrega amigos a una llamada en la que ya estás (máx. 6 personas)."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        yo = self.cloud._yo()
+        ids = [i for i in dict.fromkeys(amigo_ids or []) if i and i != yo]
+        if not ids:
+            return {"exito": False, "error": "Elegí a quién invitar."}
+        try:
+            validos = set(self.cloud._amigos_aceptados())
+            if any(i not in validos for i in ids):
+                return {"exito": False, "error": "Solo podés invitar a tus amigos."}
+            self.cloud.client.rpc("invitar_a_llamada", {"p_llamada": llamada_id, "p_usuarios": ids}).execute()
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error(e)}

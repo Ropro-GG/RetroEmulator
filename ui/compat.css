@@ -1,0 +1,14 @@
+/* compat.css - que la app se vea igual con Qt/Chromium (Linux) y WebView2 (Windows)
+   que como se veía con WebKit: misma tipografía y barras de desplazamiento finas del tema. */
+
+/* WebKit sustituía Verdana/Tahoma por 'DejaVu Sans' a través de fontconfig; Chromium no. */
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-serif; }
+
+/* Barras finas y oscuras con el color de acento (estándar, Chromium 121+) */
+* { scrollbar-width: thin; scrollbar-color: #45A29E transparent; }
+
+/* Respaldo para motores más viejos */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #45A29E; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #66FCF1; }
