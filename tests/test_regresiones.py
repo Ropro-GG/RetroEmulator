@@ -527,5 +527,106 @@ class IdentidadDeAmigos(unittest.TestCase):
         self.assertFalse(abierto["alerta_llave"])
 
 
+class SenalesDeLlamada(unittest.TestCase):
+    def setUp(self):
+        self.parches = {"ana": bytes(16), "beto": bytes(range(16)), "intruso": b"i" * 16}
+        self.publicas = {n: cifrado.publica_de(e) for n, e in self.parches.items()}
+        self.ana, self.beto, self.intruso = (self._persona(n) for n in ("ana", "beto", "intruso"))
+
+    def _persona(self, nombre):
+        cuenta = _CuentaFalsa()
+        cuenta._yo = lambda: f"{self.id()}-{nombre}"
+        llaves = cifrado.Llaves(cuenta)
+        llaves._privada = (cuenta._yo(), cifrado.privada_de(self.parches[nombre]))
+        llaves._publicada = lambda amigo: self.publicas[amigo.rsplit("-", 1)[1]]
+        return llaves
+
+    def _id(self, nombre):
+        return f"{self.id()}-{nombre}"
+
+    def test_llega_entera_y_solo_a_su_destinatario(self):
+        s = self.ana.sellar_senal("c1", self._id("beto"), "datos-sdp")["sellada"]
+        self.assertNotIn("datos-sdp", s)
+        self.assertEqual(self.beto.abrir_senal("c1", self._id("ana"), s), {"exito": True, "datos": "datos-sdp"})
+        self.assertFalse(self.intruso.abrir_senal("c1", self._id("ana"), s)["exito"])
+
+    def test_rechaza_otra_llamada_otro_emisor_y_alteraciones(self):
+        s = self.ana.sellar_senal("c1", self._id("beto"), "x")["sellada"]
+        self.assertFalse(self.beto.abrir_senal("c2", self._id("ana"), s)["exito"])
+        self.assertFalse(self.beto.abrir_senal("c1", self._id("intruso"), s)["exito"])
+        self.assertFalse(self.beto.abrir_senal("c1", self._id("ana"), s[:-6] + "AAAA" + s[-2:])["exito"])
+        self.assertFalse(self.beto.abrir_senal("c1", self._id("ana"), "basura")["exito"])
+
+    def test_no_se_puede_devolver_una_senal_a_quien_la_envio(self):
+        s = self.ana.sellar_senal("c1", self._id("beto"), "x")["sellada"]
+        self.assertFalse(self.ana.abrir_senal("c1", self._id("beto"), s)["exito"])
+
+    def test_si_la_llave_cambio_la_llamada_no_conecta(self):
+        self.ana.estado_amigo(self._id("beto"))
+        self.publicas["beto"] = self.publicas["intruso"]
+        self.assertFalse(self.ana.sellar_senal("c1", self._id("beto"), "x")["exito"])
+        self.assertFalse(self.ana.abrir_senal("c1", self._id("beto"), "AAAA")["exito"])
+
+
+class AdjuntosDeDenuncia(unittest.TestCase):
+    class Consulta:
+        def __init__(self, filas):
+            self.filas = filas
+
+        def __getattr__(self, _):
+            return lambda *a, **k: self
+
+        def execute(self):
+            return mock.Mock(data=self.filas)
+
+    def _cliente(self, filas):
+        from nucleo.cloud_client import CloudClient
+        cloud = CloudClient.__new__(CloudClient)
+        cloud.usuario_actual = type("U", (), {"id": "yo"})()
+        cloud.client = mock.Mock()
+        cloud.client.table = lambda _: self.Consulta(filas)
+        cloud.llaves = cifrado.Llaves(cloud)
+        cloud.llaves.abrir = lambda m: m
+        cloud.descargar_imagen_chat = lambda ruta: b"\x89PNG\r\n\x1a\n" if "buena" in ruta else b"no es imagen"
+        return cloud
+
+    def test_copia_el_texto_y_las_imagenes_a_un_espacio_aparte(self):
+        filas = [{"id": 1, "de": "otro", "para": "yo", "tipo": "texto", "contenido": "insulto", "creado_en": "t"},
+                 {"id": 2, "de": "otro", "para": "yo", "tipo": "imagen", "contenido": "otro/cifrados/buena.bin", "creado_en": "t"},
+                 {"id": 3, "de": "otro", "para": "yo", "tipo": "sticker", "contenido": "otro/cifrados/falsa.bin", "creado_en": "t"},
+                 {"id": 4, "de": "otro", "para": "yo", "tipo": "texto", "contenido": cifrado.ILEGIBLE_OTRA_FRASE, "creado_en": "t"}]
+        cloud = self._cliente(filas)
+        cloud.client.rpc = mock.Mock(return_value=self.Consulta(True))
+        self.assertTrue(cloud.denunciar_usuario("otro", "acoso", "", [1, 2, 3, 4])["exito"])
+        adjuntos = cloud.client.rpc.call_args[0][1]["p_adjuntos"]
+        self.assertEqual([(a["tipo"], a["contenido"]) for a in adjuntos],
+                         [("texto", "insulto"), ("imagen", None), ("sticker", None)])
+        self.assertRegex(adjuntos[1]["archivo"], r"^yo/[0-9a-f]{32}\.png$")
+        self.assertIsNone(adjuntos[2]["archivo"])                    # lo que no es una imagen no se sube
+        cloud.client.storage.from_.assert_called_once_with("denuncias")
+        self.assertNotIn("cifrados", str(adjuntos))
+
+    def test_si_falla_subir_una_imagen_no_se_envia_una_denuncia_incompleta(self):
+        cloud = self._cliente([{"id": 2, "de": "otro", "para": "yo", "tipo": "imagen", "contenido": "otro/cifrados/buena.bin", "creado_en": "t"}])
+        cloud.client.rpc = mock.Mock()
+        cloud.client.storage.from_.return_value.upload.side_effect = RuntimeError("connection")
+        self.assertFalse(cloud.denunciar_usuario("otro", "acoso", "", [2])["exito"])
+        cloud.client.rpc.assert_not_called()
+
+    def test_sin_elegir_no_se_adjunta_nada_y_hay_un_limite(self):
+        cloud = self._cliente([{"id": 1, "de": "otro", "para": "yo", "tipo": "texto", "contenido": "privado", "creado_en": "t"}])
+        cloud.client.rpc = mock.Mock(return_value=self.Consulta(True))
+        cloud.denunciar_usuario("otro", "acoso")
+        self.assertEqual(cloud.client.rpc.call_args[0][1]["p_adjuntos"], [])
+        self.assertFalse(cloud.denunciar_usuario("otro", "acoso", "", list(range(21)))["exito"])
+
+    def test_listar_para_denunciar_no_marca_nada_como_leido(self):
+        cloud = self._cliente([{"id": 1, "de": "otro", "para": "yo", "tipo": "texto", "contenido": "hola", "creado_en": "t"}])
+        with mock.patch.object(cloud, "marcar_leidos") as marcar:
+            res = cloud.mensajes_para_denunciar("otro")
+        marcar.assert_not_called()
+        self.assertEqual(res["mensajes"][0]["texto"], "hola")
+
+
 if __name__ == "__main__":
     unittest.main()

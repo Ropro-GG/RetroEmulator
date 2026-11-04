@@ -14,7 +14,7 @@ from supabase.lib.client_options import SyncClientOptions
 
 from pathlib import Path
 
-from . import cifrado, gifs, session_store
+from . import cifrado, gifs, imagenes, session_store
 from .boxart import analizar_titulo
 
 # El .env se busca junto a este archivo, sin importar desde dónde se ejecute la app
@@ -533,8 +533,57 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
+    LIMITE_ADJUNTOS_DENUNCIA = 20
+    BUCKET_DENUNCIAS = "denuncias"
+
+    def mensajes_para_denunciar(self, user_id):
+        """Últimos mensajes legibles con esa persona, para elegir cuáles adjuntar. No los marca como leídos."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        try:
+            filas = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
+                .or_(self._filtro_par(user_id)).order("id", desc=True).limit(30).execute().data or []
+            abiertos = [self.llaves.abrir(m) for m in filas]
+            return {"exito": True, "mensajes": [{
+                "id": m["id"], "mio": m["de"] == self._yo(), "texto": self._resumen_mensaje(m), "creado_en": m.get("creado_en"),
+                "ruta": m["contenido"] if m.get("tipo") in cifrado.TIPOS_ADJUNTO else None,
+            } for m in abiertos if m.get("contenido") not in cifrado.ILEGIBLES]}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def _copiar_para_denuncia(self, ruta):
+        """Sube una copia legible a un espacio que los usuarios no pueden leer. None si no es una imagen."""
+        datos = self.descargar_imagen_chat(ruta)
+        mime = imagenes.tipo_mime(datos or b"")
+        if not mime:
+            return None
+        copia = f"{self._yo()}/{uuid.uuid4().hex}.{mime.split('/')[1].replace('jpeg', 'jpg')}"
+        # shortcut: si ya había una denuncia pendiente la copia queda sin usar; sin borrado, nadie puede quitar pruebas
+        self.client.storage.from_(self.BUCKET_DENUNCIAS).upload(
+            path=copia, file=datos, file_options={"content-type": mime, "upsert": "false"})
+        return copia
+
+    def _adjuntos_de_denuncia(self, user_id, ids):
+        """Copia legible de los mensajes elegidos, y de sus imágenes y stickers."""
+        filas = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
+            .or_(self._filtro_par(user_id)).in_("id", [int(i) for i in ids]).order("id").execute().data or []
+        adjuntos = []
+        for fila in filas:
+            m = self.llaves.abrir(fila)
+            if m.get("contenido") in cifrado.ILEGIBLES:
+                continue
+            tipo = m.get("tipo", "texto")
+            adjuntos.append({
+                "autor": "denunciado" if m["de"] == user_id else "denunciante", "tipo": tipo,
+                "contenido": None if tipo in cifrado.TIPOS_ADJUNTO else m.get("contenido"),
+                "archivo": self._copiar_para_denuncia(m["contenido"]) if tipo in cifrado.TIPOS_ADJUNTO else None,
+                "creado_en": m.get("creado_en"), "llave_no_confirmada": bool(m.get("alerta_llave")),
+            })
+        return adjuntos
+
     # Registra una denuncia para revisarla en el panel de Supabase. No avisa a la persona denunciada.
-    def denunciar_usuario(self, user_id, motivo, detalle=""):
+    def denunciar_usuario(self, user_id, motivo, detalle="", mensajes_ids=None):
         error = self._requiere_sesion()
         if error:
             return error
@@ -545,9 +594,13 @@ class CloudClient:
             return {"exito": False, "error": "Elegí un motivo."}
         if len(detalle) > self.LIMITE_DETALLE_DENUNCIA:
             return {"exito": False, "error": f"El detalle es demasiado largo (máximo {self.LIMITE_DETALLE_DENUNCIA} caracteres)."}
+        mensajes_ids = mensajes_ids or []
+        if len(mensajes_ids) > self.LIMITE_ADJUNTOS_DENUNCIA:
+            return {"exito": False, "error": f"Podés adjuntar hasta {self.LIMITE_ADJUNTOS_DENUNCIA} mensajes."}
         try:
+            adjuntos = self._adjuntos_de_denuncia(user_id, mensajes_ids) if mensajes_ids else []
             nueva = self.client.rpc("denunciar_usuario", {
-                "p_usuario": user_id, "p_motivo": motivo, "p_detalle": detalle}).execute().data
+                "p_usuario": user_id, "p_motivo": motivo, "p_detalle": detalle, "p_adjuntos": adjuntos}).execute().data
             return {"exito": True, "ya_existia": nueva is False}
         except Exception as e:
             if "demasiadas denuncias" in str(e).lower():

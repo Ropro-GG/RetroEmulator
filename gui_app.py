@@ -465,8 +465,12 @@ class API:
         return self.cloud.obtener_bloqueados()
 
     # Registra una denuncia, que se revisa en el panel de Supabase.
-    def denunciar_usuario(self, user_id, motivo, detalle=""):
-        return self.cloud.denunciar_usuario(user_id, motivo, detalle)
+    def denunciar_usuario(self, user_id, motivo, detalle="", mensajes_ids=None):
+        return self.cloud.denunciar_usuario(user_id, motivo, detalle, mensajes_ids)
+
+    # Mensajes con esa persona que se pueden adjuntar a una denuncia.
+    def mensajes_para_denunciar(self, user_id):
+        return self.cloud.mensajes_para_denunciar(user_id)
 
     # --- LISTA DE DESEADOS ---
 
@@ -659,6 +663,14 @@ class API:
         return ra_client.borrar_credenciales()
 
     # --- LLAMADAS (la conexión de audio va por ui/llamadas.js; esto solo habla con Supabase) ---
+    # Sella los datos de conexión de una llamada para una persona.
+    def llamada_sellar(self, llamada_id, amigo_id, datos):
+        return self._llaves.sellar_senal(llamada_id, amigo_id, datos)
+
+    # Abre y comprueba los datos de conexión recibidos.
+    def llamada_abrir(self, llamada_id, de, sellada):
+        return self._llaves.abrir_senal(llamada_id, de, sellada)
+
     def obtener_config_llamadas(self):
         return self._llamadas.config_realtime()
 

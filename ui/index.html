@@ -516,6 +516,11 @@
             </select>
             <label for="denuncia-detalle" class="denuncia-etiqueta">Detalle (opcional)</label>
             <textarea id="denuncia-detalle" class="settings-input" rows="4" maxlength="500" placeholder="Contá qué pasó"></textarea>
+            <div id="denuncia-adjuntos" style="display: none;">
+                <label class="denuncia-etiqueta">Adjuntar mensajes (opcional)</label>
+                <p class="settings-help">Tus chats están cifrados: nadie puede leerlos por su cuenta. Los que marques, con sus imágenes y stickers, se envían legibles a quienes revisan denuncias, y no se puede comprobar que sean auténticos.</p>
+                <div id="denuncia-mensajes" class="denuncia-mensajes"></div>
+            </div>
             <label class="toggle-row denuncia-bloquear">
                 <input type="checkbox" id="denuncia-bloquear">
                 Bloquear también a esta persona

@@ -326,3 +326,79 @@ create policy mensajes_insert on public.mensajes for insert with check (
     and exists (select 1 from public.friendships f where f.status = 'accepted'
         and ((f.requester_id = mensajes.de and f.addressee_id = mensajes.para)
           or (f.addressee_id = mensajes.de and f.requester_id = mensajes.para))));
+
+-- Etapa 5 del cifrado: mensajes adjuntos en denuncias, elegidos por quien denuncia.
+alter table public.denuncias add column if not exists adjuntos jsonb not null default '[]'::jsonb;
+drop function if exists public.denunciar_usuario(uuid, text, text);
+create or replace function public.denunciar_usuario(p_usuario uuid, p_motivo text, p_detalle text default '', p_adjuntos jsonb default '[]'::jsonb)
+returns boolean language plpgsql security definer set search_path to 'public' as $function$
+declare
+    filas int;
+begin
+    if auth.uid() is null then raise exception 'Debes iniciar sesion'; end if;
+    if p_usuario = auth.uid() then raise exception 'No podes denunciarte a vos mismo'; end if;
+    if jsonb_typeof(coalesce(p_adjuntos, '[]'::jsonb)) <> 'array'
+       or jsonb_array_length(coalesce(p_adjuntos, '[]'::jsonb)) > 20
+       or octet_length(coalesce(p_adjuntos, '[]'::jsonb)::text) > 100000 then
+        raise exception 'Demasiados mensajes adjuntos';
+    end if;
+    if (select count(*) from public.denuncias
+         where denunciante = auth.uid() and creada_en > now() - interval '1 day') >= 20 then
+        raise exception 'Demasiadas denuncias en un dia';
+    end if;
+    insert into public.denuncias (denunciante, denunciado, motivo, detalle, adjuntos)
+        values (auth.uid(), p_usuario, p_motivo, coalesce(p_detalle, ''), coalesce(p_adjuntos, '[]'::jsonb))
+        on conflict (denunciante, denunciado) where estado = 'pendiente' do nothing;
+    get diagnostics filas = row_count;
+    return filas > 0;
+end;
+$function$;
+revoke execute on function public.denunciar_usuario(uuid, text, text, jsonb) from public, anon;
+grant execute on function public.denunciar_usuario(uuid, text, text, jsonb) to authenticated;
+
+-- Etapa 5 del cifrado: el canal de señales de una llamada solo admite a quienes están unidos a ella.
+drop policy if exists llamada_senales_leer on realtime.messages;
+create policy llamada_senales_leer on realtime.messages for select to authenticated using (
+    extension = 'broadcast' and case when (select realtime.topic()) ~ '^llamada:[0-9a-f-]{36}$'
+        then public.esta_unido_llamada(substring((select realtime.topic()) from 9)::uuid) else false end);
+drop policy if exists llamada_senales_enviar on realtime.messages;
+create policy llamada_senales_enviar on realtime.messages for insert to authenticated with check (
+    extension = 'broadcast' and case when (select realtime.topic()) ~ '^llamada:[0-9a-f-]{36}$'
+        then public.esta_unido_llamada(substring((select realtime.topic()) from 9)::uuid) else false end);
+
+-- Imágenes y stickers adjuntos en denuncias. Cada usuario sube solo a su carpeta; nadie puede leer ni borrar:
+-- los revisa dev/denuncias.py con la clave service_role.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('denuncias', 'denuncias', false, 5242880, array['image/png','image/jpeg','image/webp','image/gif'])
+    on conflict (id) do nothing;
+drop policy if exists denuncias_subir on storage.objects;
+create policy denuncias_subir on storage.objects for insert to authenticated with check (
+    bucket_id = 'denuncias' and (storage.foldername(name))[1] = auth.uid()::text);
+create or replace function public.denunciar_usuario(p_usuario uuid, p_motivo text, p_detalle text default '', p_adjuntos jsonb default '[]'::jsonb)
+returns boolean language plpgsql security definer set search_path to 'public' as $function$
+declare
+    filas int;
+begin
+    if auth.uid() is null then raise exception 'Debes iniciar sesion'; end if;
+    if p_usuario = auth.uid() then raise exception 'No podes denunciarte a vos mismo'; end if;
+    if jsonb_typeof(coalesce(p_adjuntos, '[]'::jsonb)) <> 'array'
+       or jsonb_array_length(coalesce(p_adjuntos, '[]'::jsonb)) > 20
+       or octet_length(coalesce(p_adjuntos, '[]'::jsonb)::text) > 100000 then
+        raise exception 'Demasiados mensajes adjuntos';
+    end if;
+    if exists (select 1 from jsonb_array_elements(coalesce(p_adjuntos, '[]'::jsonb)) a
+               where a ->> 'archivo' is not null
+                 and a ->> 'archivo' !~ ('^' || auth.uid()::text || '/[0-9a-f]{32}\.(png|jpg|webp|gif)$')) then
+        raise exception 'Archivo adjunto no valido';
+    end if;
+    if (select count(*) from public.denuncias
+         where denunciante = auth.uid() and creada_en > now() - interval '1 day') >= 20 then
+        raise exception 'Demasiadas denuncias en un dia';
+    end if;
+    insert into public.denuncias (denunciante, denunciado, motivo, detalle, adjuntos)
+        values (auth.uid(), p_usuario, p_motivo, coalesce(p_detalle, ''), coalesce(p_adjuntos, '[]'::jsonb))
+        on conflict (denunciante, denunciado) where estado = 'pendiente' do nothing;
+    get diagnostics filas = row_count;
+    return filas > 0;
+end;
+$function$;

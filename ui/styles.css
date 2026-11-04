@@ -1551,6 +1551,10 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .denuncia-etiqueta { display: block; margin: 12px 0 5px; font-size: 0.85em; color: #C5C6C7; }
 .denuncia-card textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 .denuncia-bloquear { margin-top: 12px; }
+.denuncia-mensajes { max-height: 150px; overflow-y: auto; border: 1px solid #2a3544; border-radius: 6px; padding: 6px; }
+.denuncia-mensaje { display: flex; gap: 8px; align-items: flex-start; padding: 4px; font-size: 0.85em; color: #C5C6C7; cursor: pointer; overflow-wrap: anywhere; }
+.denuncia-mensaje:hover { background: #141722; }
+.denuncia-miniatura { max-width: 70px; max-height: 70px; border-radius: 4px; display: block; margin-top: 4px; }
 .llaves-palabras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 24px; margin: 14px 0; padding-left: 24px; color: #66FCF1; font-weight: 600; }
 .llaves-palabras li { user-select: text; }
 #llaves-modal input[type=password] { width: 100%; box-sizing: border-box; }

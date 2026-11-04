@@ -75,6 +75,7 @@ TIPOS_ADJUNTO = ("imagen", "sticker")
 ILEGIBLE_OTRA_FRASE = "🔒 No se puede leer este mensaje: se cifró con otra frase de recuperación."
 ILEGIBLE_SIN_FRASE = "🔒 Escribí tu frase de recuperación para leer este mensaje."
 ILEGIBLE_DANADO = "🔒 No se puede leer este mensaje: llegó dañado o alterado."
+ILEGIBLES = (ILEGIBLE_OTRA_FRASE, ILEGIBLE_SIN_FRASE, ILEGIBLE_DANADO)
 
 
 def _b64(datos):
@@ -154,6 +155,7 @@ class Llaves:
         self.visible = None     # entropía de "Ver mi frase", ya verificada con la contraseña
         self._privada = None    # (cuenta, llave): evita ir al llavero por cada mensaje
         self.adjuntos = {}      # ruta -> llave de los archivos de los mensajes ya abiertos; nunca llega al JS
+        self._senal = (None, {})   # (llamada, {amigo: llave}): evita consultar la llave en cada señal
 
     # Se separa por cuenta. Cerrar sesión no la borra: sin ella, quien perdió la frase perdería sus chats.
     def _nombre(self):
@@ -322,6 +324,57 @@ class Llaves:
         except Exception as e:
             return {"exito": False, "error": self.cloud._error_social(e)}
 
+    def _publica_de_llamada(self, llamada, amigo):
+        """Llave aceptada de quien participa. Si cambió, la llamada no se conecta hasta aceptarla en el chat."""
+        if self._senal[0] != llamada:
+            self._senal = (llamada, {})
+        conocidas = self._senal[1]
+        if amigo not in conocidas:
+            publicada = self._publicada(amigo)
+            if not publicada:
+                raise SinLlave("Una persona de la llamada todavía no activó sus mensajes privados.")
+            if self._actual_o_primera(amigo, publicada) != publicada:
+                raise LlaveCambiada("La llave de una persona de la llamada cambió. Revisá el aviso en su chat.")
+            conocidas[amigo] = publicada
+        return conocidas[amigo]
+
+    def _caja_de_llamada(self, llamada, amigo):
+        privada = self._privada_actual()
+        if not privada:
+            raise SinLlave("Para hacer llamadas, primero activá tu frase de recuperación.", propia=True)
+        return Box(privada, PublicKey(self._publica_de_llamada(llamada, amigo), Base64Encoder))
+
+    def sellar_senal(self, llamada, amigo, datos):
+        """Sella los datos de conexión para una persona. Incluyen la huella que protege el audio y el video:
+        si el servidor pudiera cambiarla, podría ponerse en medio de la llamada."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        try:
+            interior = json.dumps({"llamada": llamada, "de": self.cloud._yo(), "para": amigo, "datos": datos}).encode()
+            return {"exito": True, "sellada": _b64(bytes(self._caja_de_llamada(llamada, amigo).encrypt(interior)))}
+        except SinLlave as e:
+            return {"exito": False, "error": str(e), "falta_mi_llave": e.propia}
+        except Exception as e:
+            return {"exito": False, "error": self.cloud._error_social(e)}
+
+    def abrir_senal(self, llamada, de, sellada):
+        """Devuelve los datos si vienen de esa persona, para mí y para esta llamada."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        try:
+            interior = json.loads(self._caja_de_llamada(llamada, de).decrypt(sellada, encoder=Base64Encoder))
+            if (interior["llamada"], interior["de"], interior["para"]) != (llamada, de, self.cloud._yo()):
+                return {"exito": False, "error": "Se rechazó una señal que no era para esta llamada."}
+            return {"exito": True, "datos": interior["datos"]}
+        except SinLlave as e:
+            return {"exito": False, "error": str(e), "falta_mi_llave": e.propia}
+        except (CryptoError, ValueError, KeyError, TypeError):
+            return {"exito": False, "error": "Se rechazó una señal alterada o de otra persona."}
+        except Exception as e:
+            return {"exito": False, "error": self.cloud._error_social(e)}
+
     def _llave_propia(self):
         """Llave de lo que solo ve su dueño (la colección de stickers). Cambia junto con la frase."""
         privada = self._privada_actual()
@@ -361,7 +414,7 @@ class Llaves:
         privada = self._privada_actual()
         tipo, contenido = descifrar_de(privada, mensaje["de"], mensaje["contenido"], mensaje.get("adjunto"), self.adjuntos) \
             if privada else ("texto", ILEGIBLE_SIN_FRASE)
-        legible = contenido not in (ILEGIBLE_OTRA_FRASE, ILEGIBLE_SIN_FRASE, ILEGIBLE_DANADO)
+        legible = contenido not in ILEGIBLES
         return {**mensaje, "tipo": tipo, "contenido": contenido,
                 "alerta_llave": legible and self._llave_no_aceptada(mensaje, privada)}
 

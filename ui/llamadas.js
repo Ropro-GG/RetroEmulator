@@ -3,7 +3,8 @@
 //
 //  - Python (gui_app.py) crea/responde/cierra la llamada en Supabase.
 //  - Este archivo escucha Realtime (timbre) y arma la conexión WebRTC entre equipos.
-//  - Las señales de conexión viajan por un canal "broadcast" por llamada
+//  - Las señales de conexión viajan por un canal "broadcast" privado por llamada. Las que definen
+//    la conexión van además selladas en Python, para que ni el servidor pueda alterarlas
 //    (llamada:<id>) y no se guardan en ninguna tabla.
 // Requiere: supabase-js (CDN, en index.html) y los métodos de gui_app.py.
 // ============================================================================
@@ -511,8 +512,11 @@ function llAlCambioParticipante(fila) {
 // Se une al canal de señales de esta llamada y saluda a los demás.
 async function llUnirseCanal() {
     const a = llActual;
-    const canal = llSb.channel('llamada:' + a.id, { config: { broadcast: { self: false } } });
-    canal.on('broadcast', { event: 'senal' }, ({ payload }) => llAlSenal(payload));
+    const canal = llSb.channel('llamada:' + a.id, { config: { private: true, broadcast: { self: false } } });
+    // En orden: abrirlas lleva un instante y una oferta no debe adelantarse a la anterior
+    canal.on('broadcast', { event: 'senal' }, ({ payload }) => {
+        llColaEntrada = llColaEntrada.then(() => llAlSenal(payload));
+    });
     await new Promise((ok, mal) => {
         canal.subscribe(estado => {
             if (estado === 'SUBSCRIBED') ok();
@@ -524,17 +528,57 @@ async function llUnirseCanal() {
     llCargarNombres();
 }
 
+const LL_SELLADAS = new Set(['descripcion', 'ice']);   // llevan la huella de cifrado y la dirección de red
+let llColaEntrada = Promise.resolve();
+let llColaSalida = Promise.resolve();
+
 // Envía una señal; "para" la dirige a una sola persona.
 function llEnviar(msg, para = null) {
     if (!llActual || !llActual.canal) return;
-    llActual.canal.send({ type: 'broadcast', event: 'senal', payload: { de: llYo, para, ...msg } });
+    const a = llActual;
+    if (LL_SELLADAS.has(msg.tipo)) {
+        llColaSalida = llColaSalida.then(() => llEnviarSellada(a, msg, para));
+        return;
+    }
+    a.canal.send({ type: 'broadcast', event: 'senal', payload: { de: llYo, para, ...msg } });
+}
+
+// Sella la señal en Python y la envía. Sin sellar no sale: mejor que no conecte a que conecte sin protección.
+async function llEnviarSellada(a, msg, para) {
+    try {
+        const res = await window.pywebview.api.llamada_sellar(a.id, para, JSON.stringify(msg));
+        if (!res || !res.exito) { llAvisarSenal(res); return; }
+        if (llActual === a && a.canal) {
+            a.canal.send({ type: 'broadcast', event: 'senal', payload: { de: llYo, para, tipo: 'sellada', sellada: res.sellada } });
+        }
+    } catch (e) {
+        console.warn('[LLAMADAS] No se pudo sellar la señal', e);
+    }
+}
+
+// Explica por qué una señal no se pudo enviar o abrir.
+function llAvisarSenal(res) {
+    llAviso((res && res.error) || 'No se pudo proteger la conexión de la llamada.');
+    if (res && res.falta_mi_llave && typeof llavesIniciar === 'function') llavesIniciar();
+}
+
+// Abre una señal sellada. Las de estos tipos sin sellar se descartan: podrían venir de cualquiera.
+async function llAbrirSenal(p) {
+    if (LL_SELLADAS.has(p.tipo)) return null;
+    if (p.tipo !== 'sellada') return p;
+    const res = await window.pywebview.api.llamada_abrir(llActual.id, p.de, p.sellada);
+    if (!res || !res.exito) { llAvisarSenal(res); return null; }
+    const datos = JSON.parse(res.datos);
+    return LL_SELLADAS.has(datos.tipo) ? { ...datos, de: p.de, para: p.para } : null;
 }
 
 // Reparte cada señal recibida según su tipo.
-async function llAlSenal(p) {
-    if (!llActual || !p || p.de === llYo) return;
-    if (p.para && p.para !== llYo) return;
+async function llAlSenal(recibida) {
+    if (!llActual || !recibida || recibida.de === llYo) return;
+    if (recibida.para && recibida.para !== llYo) return;
     try {
+        const p = await llAbrirSenal(recibida);
+        if (!p || !llActual) return;
         if (p.tipo === 'hola') llAlHola(p);
         else if (p.tipo === 'descripcion') await llAlDescripcion(p);
         else if (p.tipo === 'ice') await llAlIce(p);
@@ -544,7 +588,7 @@ async function llAlSenal(p) {
         }
         else if (p.tipo === 'chau') llCerrarPeer(p.de);
     } catch (e) {
-        console.warn('[LLAMADAS] Error con la señal', p.tipo, e);
+        console.warn('[LLAMADAS] Error con la señal', recibida.tipo, e);
     }
 }
 

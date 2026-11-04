@@ -1284,6 +1284,39 @@ function abrirDenuncia(userId, nombre) {
     document.getElementById('denuncia-enviar').disabled = false;
     document.getElementById('denuncia-modal').style.display = 'flex';
     document.getElementById('denuncia-motivo').focus();
+    cargarMensajesDenuncia(userId);
+}
+
+// Lista los mensajes que se pueden adjuntar. Si no hay, la sección no aparece.
+async function cargarMensajesDenuncia(userId) {
+    const seccion = document.getElementById('denuncia-adjuntos');
+    const lista = document.getElementById('denuncia-mensajes');
+    seccion.style.display = 'none';
+    lista.replaceChildren();
+    let res = null;
+    try {
+        res = await window.pywebview.api.mensajes_para_denunciar(userId);
+    } catch (e) { /* se puede denunciar sin adjuntar */ }
+    if (!denunciaActual || denunciaActual.userId !== userId || !res || !res.exito || !res.mensajes.length) return;
+    lista.replaceChildren(...res.mensajes.map(m => {
+        const fila = document.createElement('label');
+        fila.className = 'denuncia-mensaje';
+        const marca = document.createElement('input');
+        marca.type = 'checkbox';
+        marca.value = m.id;
+        const texto = document.createElement('span');
+        texto.textContent = `${m.mio ? 'Vos' : denunciaActual.nombre}: ${m.texto}`;
+        if (m.ruta) {
+            const img = document.createElement('img');
+            img.className = 'denuncia-miniatura';
+            img.alt = '';
+            cargarImagenEn(img, m.ruta);
+            texto.appendChild(img);
+        }
+        fila.append(marca, texto);
+        return fila;
+    }));
+    seccion.style.display = 'block';
 }
 
 // Cierra el formulario sin enviar.
@@ -1304,7 +1337,8 @@ async function confirmarDenuncia() {
     msg.textContent = 'Enviando…';
     let res;
     try {
-        res = await window.pywebview.api.denunciar_usuario(userId, motivo, document.getElementById('denuncia-detalle').value);
+        const ids = [...document.querySelectorAll('#denuncia-mensajes input:checked')].map(m => Number(m.value));
+        res = await window.pywebview.api.denunciar_usuario(userId, motivo, document.getElementById('denuncia-detalle').value, ids);
     } catch (e) {
         res = { exito: false, error: String(e) };
     }
