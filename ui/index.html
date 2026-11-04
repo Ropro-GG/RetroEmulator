@@ -516,6 +516,7 @@
     <!-- VENTANA DE CONFIGURACIÓN (estilo Parámetros de Steam) -->
     <div id="settings-modal" class="modal" style="display: none;">
         <div class="settings-window">
+            <button class="close-btn settings-close" onclick="cerrarConfiguracion()" aria-label="Cerrar" title="Cerrar">&times;</button>
             <aside class="settings-nav">
                 <h3>Parámetros</h3>
                 <ul>
@@ -529,8 +530,6 @@
             </aside>
 
             <div class="settings-content">
-                <span class="close-btn" onclick="cerrarConfiguracion()">&times;</span>
-
                 <section id="settings-paths" class="settings-section">
                     <h2>Rutas y Emuladores</h2>
                     <div class="scan-box">

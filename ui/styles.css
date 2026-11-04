@@ -295,7 +295,9 @@ body {
     font-size: 1.5em;
     cursor: pointer;
     color: #C5C6C7;
+    transition: color 0.15s, transform 0.15s;
 }
+.close-btn:hover, .close-btn:focus-visible { color: #66FCF1; transform: scale(1.3); }
 
 .profile-header {
     display: flex;
@@ -463,7 +465,11 @@ body {
     border: 1px solid #45A29E;
     border-radius: 12px;
     overflow: hidden;
+    position: relative;
 }
+
+/* Va en la ventana y no en el panel con scroll, para quedar siempre en la misma esquina. */
+.settings-close { top: 12px; left: 14px; right: auto; z-index: 1; padding: 0; line-height: 1; background: none; border: none; font-family: inherit; }
 
 .settings-nav {
     width: 220px;
@@ -474,7 +480,7 @@ body {
     border-right: 1px solid #0B0C10;
     flex-shrink: 0;
 }
-.settings-nav h3 { color: #66FCF1; margin: 0 8px 14px; font-size: 1.05em; letter-spacing: 0.5px; }
+.settings-nav h3 { color: #66FCF1; margin: 0 8px 14px 34px; font-size: 1.05em; letter-spacing: 0.5px; }
 .settings-nav ul { list-style: none; flex: 1; }
 .settings-nav li {
     padding: 10px 12px;
