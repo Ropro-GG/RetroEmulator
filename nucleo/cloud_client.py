@@ -15,7 +15,7 @@ from supabase.lib.client_options import SyncClientOptions
 
 from pathlib import Path
 
-from . import cifrado, gifs, imagenes, session_store
+from . import cifrado, gifs, grupos_cloud, imagenes, session_store
 from .boxart import analizar_titulo
 
 # El .env se busca junto a este archivo, sin importar desde dónde se ejecute la app
@@ -42,6 +42,7 @@ class CloudClient:
         self.usuario_actual = None
         self._email_recordar = None   # correo con confirmación de "Recuérdame" pendiente
         self.llaves = cifrado.Llaves(self)
+        self.grupos = grupos_cloud.Grupos(self)
         self.conectar()
 
     def conectar(self):
@@ -662,6 +663,9 @@ class CloudClient:
             res = self.client.table("mensajes").select("de") \
                 .eq("para", self._yo()).is_("leido_en", "null").limit(1000).execute()
             mensajes = sum(1 for r in (res.data or []) if r["de"] in amigos)
+            resumen_grupos = self.grupos.resumen()
+            solicitudes += resumen_grupos["invitaciones"]
+            mensajes += resumen_grupos["mensajes"]
         except Exception as e:
             print(f"[SOCIAL] Sin datos de mensajes: {self._error_social(e)}")
         return {"exito": True, "solicitudes": solicitudes, "mensajes": mensajes}
@@ -707,6 +711,8 @@ class CloudClient:
                 })
             conversaciones.sort(key=lambda c: (c["ultimo"] is None, -(c["ultimo"]["id"] if c["ultimo"] else 0),
                                                c["username"].lower()))
+            # Los grupos numeran sus mensajes aparte: van primero, ordenados entre sí
+            conversaciones = self.grupos.conversaciones() + conversaciones
             return {"exito": True, "conversaciones": conversaciones}
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
@@ -727,6 +733,8 @@ class CloudClient:
         error = self._requiere_sesion()
         if error:
             return error
+        if grupos_cloud.es_chat_de_grupo(amigo_id):
+            return self.grupos.mensajes(amigo_id, antes_id, limite)
         try:
             consulta = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
                 .or_(self._filtro_par(amigo_id)).order("id", desc=True).limit(limite)
@@ -745,6 +753,8 @@ class CloudClient:
         error = self._requiere_sesion()
         if error:
             return error
+        if grupos_cloud.es_chat_de_grupo(amigo_id):
+            return self.grupos.sincronizar(amigo_id, ultimo_id)
         try:
             res = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
                 .or_(self._filtro_par(amigo_id)).gt("id", ultimo_id or 0).order("id").limit(100).execute()
@@ -763,6 +773,8 @@ class CloudClient:
 
     # Inserción común: todo mensaje se cifra aquí. La base solo ve el tipo "cifrado", no si es texto, imagen o GIF.
     def _insertar_mensaje(self, amigo_id, tipo, contenido, adjunto=None, llave=None):
+        if grupos_cloud.es_chat_de_grupo(amigo_id):
+            return self.grupos.insertar(amigo_id, tipo, contenido, adjunto, llave)
         try:
             res = self.client.table("mensajes").insert({
                 "de": self._yo(), "para": amigo_id, "tipo": "cifrado", "adjunto": adjunto,

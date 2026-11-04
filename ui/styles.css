@@ -1559,3 +1559,75 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .llaves-palabras li { user-select: text; }
 #llaves-modal input[type=password] { width: 100%; box-sizing: border-box; }
 #llaves-modal textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+
+/* CARGA. Cubo: From Uiverse.io by Juanes200122. Su tamaño sale de --cubo para poder usarlo chico en las listas. */
+.pantalla-carga {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #0B0C10;
+}
+.cube-loader {
+    --cubo: 75px;
+    position: relative;
+    width: var(--cubo);
+    height: var(--cubo);
+    transform-style: preserve-3d;
+    transform: rotateX(-30deg);
+    animation: cubo-girar 4s linear infinite;
+}
+.cube-loader-chico { --cubo: 34px; }
+@keyframes cubo-girar {
+    from { transform: rotateX(-30deg) rotateY(0); }
+    to { transform: rotateX(-30deg) rotateY(360deg); }
+}
+.cube-loader .cube-wrapper { position: absolute; width: 100%; height: 100%; transform-style: preserve-3d; }
+.cube-loader .cube-span {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transform: rotateY(calc(90deg * var(--i))) translateZ(calc(var(--cubo) / 2));
+    background: hsl(176.89, 99.07%, 58.04%);
+}
+.cube-top {
+    position: absolute;
+    width: var(--cubo);
+    height: var(--cubo);
+    background: hsl(176.89, 99.07%, 58.04%);
+    transform: rotateX(90deg) translateZ(calc(var(--cubo) / 2));
+    transform-style: preserve-3d;
+}
+.cube-top::before {
+    content: '';
+    position: absolute;
+    width: var(--cubo);
+    height: var(--cubo);
+    background: hsl(176.61, 42.28%, 40.7%);
+    transform: translateZ(calc(var(--cubo) * -1.2));
+    filter: blur(calc(var(--cubo) / 7.5));
+}
+/* Aparece con retraso: si los datos llegan enseguida, el cubo no llega a parpadear */
+.cargador-lista {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 18px 12px;
+    color: #7d8590;
+    font-size: 0.85em;
+    opacity: 0;
+    animation: cargador-aparece 0.2s 0.15s forwards;
+}
+@keyframes cargador-aparece { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    .cube-loader { animation: none; transform: rotateX(-30deg) rotateY(45deg); }
+}
+
+/* GRUPOS */
+.social-block-accion { margin-left: auto; font-size: 0.72em; }
+.msg-autor { font-size: 0.72em; color: #66FCF1; padding-left: 4px; }
+.grupo-miembros-card { width: 620px; text-align: left; }
+.grupo-miembros-card h2 { text-align: center; }
+

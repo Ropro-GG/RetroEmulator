@@ -402,3 +402,289 @@ begin
     return filas > 0;
 end;
 $function$;
+
+-- Canal de señales (2026-11-04): solo quienes siguen unidos a una llamada que no terminó.
+-- esta_unido_llamada no sirve aquí: también vale para el creador, aunque ya haya salido.
+create or replace function public.puede_usar_senales(p_llamada uuid)
+returns boolean language sql stable security definer set search_path to 'public' as $function$
+    select exists (
+        select 1 from public.llamada_participantes p join public.llamadas l on l.id = p.llamada_id
+        where p.llamada_id = p_llamada and p.usuario_id = auth.uid()
+          and p.estado = 'unido' and l.estado <> 'terminada'
+    );
+$function$;
+revoke execute on function public.puede_usar_senales(uuid) from public, anon;
+grant execute on function public.puede_usar_senales(uuid) to authenticated;
+drop policy if exists llamada_senales_leer on realtime.messages;
+create policy llamada_senales_leer on realtime.messages for select to authenticated using (
+    extension = 'broadcast' and case when (select realtime.topic()) ~ '^llamada:[0-9a-f-]{36}$'
+        then public.puede_usar_senales(substring((select realtime.topic()) from 9)::uuid) else false end);
+drop policy if exists llamada_senales_enviar on realtime.messages;
+create policy llamada_senales_enviar on realtime.messages for insert to authenticated with check (
+    extension = 'broadcast' and case when (select realtime.topic()) ~ '^llamada:[0-9a-f-]{36}$'
+        then public.puede_usar_senales(substring((select realtime.topic()) from 9)::uuid) else false end);
+
+-- Antes se podía cambiar la llamada de la fila propia y entrar a otra conversación.
+revoke update on public.llamada_participantes from anon, authenticated;
+grant update (estado) on public.llamada_participantes to authenticated;
+-- A otra persona solo se la puede invitar: nadie la une a una llamada sin que atienda.
+drop policy if exists llamada_part_insert on public.llamada_participantes;
+create policy llamada_part_insert on public.llamada_participantes for insert with check (
+    public.esta_unido_llamada(llamada_id)
+    and (usuario_id = auth.uid() or (estado = 'invitado' and public.son_amigos(auth.uid(), usuario_id))));
+
+-- Quien salió o rechazó no puede volver solo, y una llamada admite hasta 10 personas unidas.
+create or replace function public.revisar_participante_llamada()
+returns trigger language plpgsql security definer set search_path to 'public' as $function$
+begin
+    if new.estado is not distinct from old.estado then return new; end if;
+    if auth.uid() = new.usuario_id
+       and (new.estado = 'invitado' or (new.estado = 'unido' and old.estado <> 'invitado')) then
+        raise exception 'Ya no estas invitado a esa llamada';
+    end if;
+    if new.estado = 'unido' then
+        perform pg_advisory_xact_lock(hashtext(new.llamada_id::text));   -- dos personas no toman el último lugar
+        if (select count(*) from public.llamada_participantes
+             where llamada_id = new.llamada_id and estado = 'unido') >= 10 then
+            raise exception 'Maximo 10 personas por llamada';
+        end if;
+    end if;
+    return new;
+end;
+$function$;
+revoke execute on function public.revisar_participante_llamada() from public, anon, authenticated;
+drop trigger if exists revisar_participante_llamada on public.llamada_participantes;
+create trigger revisar_participante_llamada before update on public.llamada_participantes
+    for each row execute function public.revisar_participante_llamada();
+
+create or replace function public.invitar_a_llamada(p_llamada uuid, p_usuarios uuid[])
+returns void language plpgsql security definer set search_path to 'public' as $function$
+declare
+    u uuid;
+    ocupados int;
+begin
+    if not public.esta_unido_llamada(p_llamada) then
+        raise exception 'No estas en esa llamada';
+    end if;
+    if (select estado from public.llamadas where id = p_llamada) = 'terminada' then
+        raise exception 'La llamada ya termino';
+    end if;
+    select count(*) into ocupados from public.llamada_participantes
+        where llamada_id = p_llamada
+          and (estado = 'unido' or (estado = 'invitado' and invitado_en > now() - interval '60 seconds'));
+    if ocupados + coalesce(array_length(p_usuarios, 1), 0) > 10 then
+        raise exception 'Maximo 10 personas por llamada';
+    end if;
+    foreach u in array coalesce(p_usuarios, '{}'::uuid[]) loop
+        if u = auth.uid() or not public.son_amigos(auth.uid(), u) then
+            continue;
+        end if;
+        insert into public.llamada_participantes (llamada_id, usuario_id, estado, invitado_por, invitado_en)
+        values (p_llamada, u, 'invitado', auth.uid(), now())
+        on conflict (llamada_id, usuario_id) do update
+            set estado = 'invitado', invitado_por = auth.uid(), invitado_en = now()
+            where public.llamada_participantes.estado in ('salio', 'rechazado')
+               or (public.llamada_participantes.estado = 'invitado'
+                   and public.llamada_participantes.invitado_en <= now() - interval '60 seconds');
+    end loop;
+end;
+$function$;
+
+-- Grupos de amigos: el creador invita y quita; cada persona acepta y puede salir.
+create table if not exists public.grupos (
+    id uuid primary key default gen_random_uuid(),
+    nombre text not null check (char_length(btrim(nombre)) between 1 and 50),
+    -- shortcut: si se borra la cuenta del creador el grupo queda sin administrador; pasar el mando si llega a ocurrir
+    creador_id uuid references auth.users(id) on delete set null,
+    creado_en timestamptz not null default now()
+);
+create table if not exists public.grupo_miembros (
+    grupo_id uuid not null references public.grupos(id) on delete cascade,
+    usuario_id uuid not null references auth.users(id) on delete cascade,
+    estado text not null default 'invitado' check (estado in ('invitado', 'miembro')),
+    leido_hasta bigint not null default 0,
+    creado_en timestamptz not null default now(),
+    primary key (grupo_id, usuario_id)
+);
+create index if not exists grupo_miembros_usuario_idx on public.grupo_miembros (usuario_id);
+
+-- SECURITY DEFINER: consultando grupo_miembros desde su propia regla, la regla se llamaría a sí misma.
+create or replace function public.es_miembro_grupo(p_grupo uuid)
+returns boolean language sql stable security definer set search_path to 'public' as $function$
+    select exists (select 1 from public.grupo_miembros
+        where grupo_id = p_grupo and usuario_id = auth.uid() and estado = 'miembro');
+$function$;
+create or replace function public.esta_en_grupo(p_grupo uuid)
+returns boolean language sql stable security definer set search_path to 'public' as $function$
+    select exists (select 1 from public.grupo_miembros where grupo_id = p_grupo and usuario_id = auth.uid());
+$function$;
+
+alter table public.grupos enable row level security;
+alter table public.grupo_miembros enable row level security;
+revoke all on public.grupos, public.grupo_miembros from anon, authenticated;
+grant select on public.grupos, public.grupo_miembros to authenticated;
+drop policy if exists grupos_leer on public.grupos;
+create policy grupos_leer on public.grupos for select to authenticated using (public.esta_en_grupo(id));
+drop policy if exists grupo_miembros_leer on public.grupo_miembros;
+create policy grupo_miembros_leer on public.grupo_miembros for select to authenticated using (public.esta_en_grupo(grupo_id));
+
+-- Cada mensaje guarda su llave cifrada para cada persona que estaba en el grupo al enviarlo:
+-- quien entra después no lee lo anterior, y quien sale no lee lo nuevo.
+create table if not exists public.mensajes_grupo (
+    id bigint generated always as identity primary key,
+    grupo_id uuid not null references public.grupos(id) on delete cascade,
+    de uuid references auth.users(id) on delete set null,
+    tipo text not null default 'cifrado' check (tipo = 'cifrado'),
+    contenido text not null check (char_length(contenido) <= 10000
+        and contenido ~ '^e2:[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]+={0,2}$'),
+    llaves jsonb not null check (jsonb_typeof(llaves) = 'object' and octet_length(llaves::text) <= 20000),
+    adjunto text,
+    creado_en timestamptz not null default now()
+);
+create index if not exists mensajes_grupo_grupo_idx on public.mensajes_grupo (grupo_id, id desc);
+create index if not exists mensajes_grupo_adjunto_idx on public.mensajes_grupo (adjunto) where adjunto is not null;
+alter table public.mensajes_grupo enable row level security;
+revoke all on public.mensajes_grupo from anon, authenticated;
+grant select on public.mensajes_grupo to authenticated;
+grant insert (grupo_id, de, tipo, contenido, llaves, adjunto) on public.mensajes_grupo to authenticated;
+drop policy if exists mensajes_grupo_leer on public.mensajes_grupo;
+create policy mensajes_grupo_leer on public.mensajes_grupo for select to authenticated using (
+    public.es_miembro_grupo(grupo_id) and llaves ? (select auth.uid())::text
+    and not public.hay_bloqueo((select auth.uid()), de));
+drop policy if exists mensajes_grupo_enviar on public.mensajes_grupo;
+create policy mensajes_grupo_enviar on public.mensajes_grupo for insert to authenticated with check (
+    de = (select auth.uid()) and public.es_miembro_grupo(grupo_id)
+    and (adjunto is null or adjunto ~ ('^' || de::text || '/cifrados/[0-9a-f]{32}\.bin$')));
+
+-- Los archivos del chat de un grupo los descarga quien puede leer el mensaje que los lleva.
+drop policy if exists chat_leer on storage.objects;
+create policy chat_leer on storage.objects for select to authenticated using (
+    bucket_id = 'chat' and ((storage.foldername(name))[1] = auth.uid()::text
+        or exists (select 1 from public.mensajes m
+            where m.adjunto = objects.name and (auth.uid() = m.de or auth.uid() = m.para))
+        or exists (select 1 from public.mensajes_grupo g where g.adjunto = objects.name)));
+
+create or replace function public.invitar_a_grupo(p_grupo uuid, p_usuarios uuid[])
+returns void language plpgsql security definer set search_path to 'public' as $function$
+declare
+    u uuid;
+begin
+    perform 1 from public.grupos where id = p_grupo and creador_id = auth.uid() for update;
+    if not found then raise exception 'Solo el creador puede invitar'; end if;
+    if (select count(*) from public.grupo_miembros where grupo_id = p_grupo)
+       + coalesce(array_length(p_usuarios, 1), 0) > 20 then
+        raise exception 'Maximo 20 personas por grupo';
+    end if;
+    foreach u in array coalesce(p_usuarios, '{}'::uuid[]) loop
+        if not public.son_amigos(auth.uid(), u) then
+            raise exception 'Solo podes invitar a tus amigos';
+        end if;
+        insert into public.grupo_miembros (grupo_id, usuario_id) values (p_grupo, u) on conflict do nothing;
+    end loop;
+end;
+$function$;
+
+create or replace function public.crear_grupo(p_nombre text, p_usuarios uuid[] default '{}')
+returns uuid language plpgsql security definer set search_path to 'public' as $function$
+declare
+    nuevo uuid;
+begin
+    if auth.uid() is null then raise exception 'Debes iniciar sesion'; end if;
+    insert into public.grupos (nombre, creador_id) values (btrim(p_nombre), auth.uid()) returning id into nuevo;
+    insert into public.grupo_miembros (grupo_id, usuario_id, estado) values (nuevo, auth.uid(), 'miembro');
+    perform public.invitar_a_grupo(nuevo, array_remove(p_usuarios, auth.uid()));
+    return nuevo;
+end;
+$function$;
+
+-- Rechazar una invitación borra la fila: el creador puede volver a invitar.
+create or replace function public.responder_invitacion_grupo(p_grupo uuid, p_aceptar boolean)
+returns void language plpgsql security definer set search_path to 'public' as $function$
+begin
+    if p_aceptar then
+        update public.grupo_miembros set estado = 'miembro',
+            leido_hasta = coalesce((select max(id) from public.mensajes_grupo where grupo_id = p_grupo), 0)
+            where grupo_id = p_grupo and usuario_id = auth.uid() and estado = 'invitado';
+    else
+        delete from public.grupo_miembros
+            where grupo_id = p_grupo and usuario_id = auth.uid() and estado = 'invitado';
+    end if;
+    if not found then raise exception 'Esa invitacion ya no esta disponible'; end if;
+end;
+$function$;
+
+create or replace function public.quitar_de_grupo(p_grupo uuid, p_usuario uuid)
+returns void language plpgsql security definer set search_path to 'public' as $function$
+begin
+    if p_usuario = auth.uid() then raise exception 'Para irte, sal del grupo'; end if;
+    perform 1 from public.grupos where id = p_grupo and creador_id = auth.uid() for update;
+    if not found then raise exception 'Solo el creador puede quitar personas'; end if;
+    delete from public.grupo_miembros where grupo_id = p_grupo and usuario_id = p_usuario;
+end;
+$function$;
+
+-- Si sale el creador, el mando pasa al miembro más antiguo; sin miembros, el grupo se borra.
+create or replace function public.salir_de_grupo(p_grupo uuid)
+returns void language plpgsql security definer set search_path to 'public' as $function$
+declare
+    sucesor uuid;
+begin
+    perform 1 from public.grupos where id = p_grupo for update;
+    delete from public.grupo_miembros where grupo_id = p_grupo and usuario_id = auth.uid();
+    if not found then raise exception 'No estas en ese grupo'; end if;
+    if (select creador_id from public.grupos where id = p_grupo) = auth.uid() then
+        select usuario_id into sucesor from public.grupo_miembros
+            where grupo_id = p_grupo and estado = 'miembro' order by creado_en, usuario_id limit 1;
+        if sucesor is null then
+            -- shortcut: los archivos cifrados del grupo quedan en Storage, ilegibles; limpiarlos si ocupan espacio
+            delete from public.grupos where id = p_grupo;
+        else
+            update public.grupos set creador_id = sucesor where id = p_grupo;
+        end if;
+    end if;
+end;
+$function$;
+
+create or replace function public.marcar_grupo_leido(p_grupo uuid, p_hasta bigint)
+returns void language sql security definer set search_path to 'public' as $function$
+    update public.grupo_miembros set leido_hasta = greatest(leido_hasta, p_hasta)
+        where grupo_id = p_grupo and usuario_id = auth.uid();
+$function$;
+
+alter table public.llamadas add column if not exists grupo_id uuid references public.grupos(id) on delete set null;
+
+-- Llama a los miembros del grupo. Pueden no ser amigos entre sí, por eso no pasa por las reglas de amistad;
+-- no suena a quienes tienen un bloqueo con quien llama.
+create or replace function public.llamar_a_grupo(p_grupo uuid, p_con_video boolean default false)
+returns uuid language plpgsql security definer set search_path to 'public' as $function$
+declare
+    nueva uuid;
+begin
+    if not public.es_miembro_grupo(p_grupo) then raise exception 'No estas en ese grupo'; end if;
+    if not exists (select 1 from public.grupo_miembros
+                    where grupo_id = p_grupo and estado = 'miembro' and usuario_id <> auth.uid()
+                      and not public.hay_bloqueo(auth.uid(), usuario_id)) then
+        raise exception 'No hay nadie mas en el grupo';
+    end if;
+    insert into public.llamadas (creador_id, con_video, grupo_id) values (auth.uid(), coalesce(p_con_video, false), p_grupo)
+        returning id into nueva;
+    insert into public.llamada_participantes (llamada_id, usuario_id, estado, invitado_por)
+        values (nueva, auth.uid(), 'unido', auth.uid());
+    insert into public.llamada_participantes (llamada_id, usuario_id, estado, invitado_por)
+        select nueva, usuario_id, 'invitado', auth.uid() from public.grupo_miembros
+        where grupo_id = p_grupo and estado = 'miembro' and usuario_id <> auth.uid()
+          and not public.hay_bloqueo(auth.uid(), usuario_id);
+    return nueva;
+end;
+$function$;
+
+revoke execute on function public.es_miembro_grupo(uuid), public.esta_en_grupo(uuid),
+    public.invitar_a_grupo(uuid, uuid[]), public.crear_grupo(text, uuid[]),
+    public.responder_invitacion_grupo(uuid, boolean), public.quitar_de_grupo(uuid, uuid),
+    public.salir_de_grupo(uuid), public.marcar_grupo_leido(uuid, bigint),
+    public.llamar_a_grupo(uuid, boolean) from public, anon;
+grant execute on function public.es_miembro_grupo(uuid), public.esta_en_grupo(uuid),
+    public.invitar_a_grupo(uuid, uuid[]), public.crear_grupo(text, uuid[]),
+    public.responder_invitacion_grupo(uuid, boolean), public.quitar_de_grupo(uuid, uuid),
+    public.salir_de_grupo(uuid), public.marcar_grupo_leido(uuid, bigint),
+    public.llamar_a_grupo(uuid, boolean) to authenticated;

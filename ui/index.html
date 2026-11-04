@@ -8,6 +8,20 @@
 </head>
 <body>
 
+    <!-- PANTALLA DE CARGA: tapa todo hasta saber si hay una sesión recordada y tener los juegos listos -->
+    <div id="pantalla-carga" class="pantalla-carga" role="status" aria-label="Cargando">
+        <!-- Cubo: From Uiverse.io by Juanes200122 -->
+        <div class="cube-loader" aria-hidden="true">
+            <div class="cube-top"></div>
+            <div class="cube-wrapper">
+                <span class="cube-span" style="--i:0"></span>
+                <span class="cube-span" style="--i:1"></span>
+                <span class="cube-span" style="--i:2"></span>
+                <span class="cube-span" style="--i:3"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- PANTALLA DE LOGIN / REGISTRO -->
     <div id="auth-screen" class="auth-container">
         <div class="auth-box">
@@ -177,7 +191,7 @@
                                     <button id="chat-seguridad" class="chat-icono" title="Código de seguridad" onclick="abrirCodigoSeguridad()">🔒</button>
                                     <button class="chat-icono" title="Llamada de voz" onclick="llamarAmigoChat()">📞</button>
                                     <button class="chat-icono" title="Videollamada" onclick="llamarAmigoChat(true)">🎥</button>
-                                    <button class="btn-secondary-sm" onclick="verPerfilDelChat()">Ver perfil</button>
+                                    <button id="chat-ver-perfil" class="btn-secondary-sm" onclick="verPerfilDelChat()">Ver perfil</button>
                                 </header>
                                 <div id="chat-llave-aviso" class="chat-llave-aviso" role="alert" style="display: none;">
                                     <span id="chat-llave-texto"></span>
@@ -481,6 +495,39 @@
             <div class="code-actions">
                 <button id="compartir-enviar" class="btn-primary-sm" onclick="confirmarCompartir()">Enviar</button>
                 <button class="btn-secondary-sm" onclick="cerrarCompartir()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CREAR UN GRUPO -->
+    <div id="grupo-crear-modal" class="modal" style="display: none;">
+        <div class="dialog-card">
+            <h2>Crear grupo</h2>
+            <input id="grupo-nombre" class="settings-input" type="text" maxlength="50" placeholder="Nombre del grupo" aria-label="Nombre del grupo" autocomplete="off">
+            <p class="settings-help">Elegí a quién invitar. Cada persona decide si se une.</p>
+            <div id="grupo-amigos" class="compartir-lista"></div>
+            <p id="grupo-msg" class="code-msg" role="status"></p>
+            <div class="code-actions">
+                <button id="grupo-crear" class="btn-primary-sm" onclick="confirmarCrearGrupo()">Crear</button>
+                <button class="btn-secondary-sm" onclick="cerrarCrearGrupo()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: MIEMBROS DE UN GRUPO -->
+    <div id="grupo-miembros-modal" class="modal" style="display: none;">
+        <div class="dialog-card grupo-miembros-card">
+            <h2 id="grupo-miembros-titulo"></h2>
+            <div id="grupo-miembros-lista"></div>
+            <div id="grupo-invitar-panel" style="display: none;">
+                <div id="grupo-invitar-lista" class="compartir-lista"></div>
+                <div class="code-actions"><button class="btn-primary-sm" onclick="confirmarInvitarAGrupo()">Enviar invitaciones</button></div>
+            </div>
+            <p id="grupo-miembros-msg" class="code-msg" role="status"></p>
+            <div class="code-actions">
+                <button id="grupo-invitar-abrir" class="btn-primary-sm" onclick="abrirInvitarAGrupo()">Invitar amigos</button>
+                <button class="btn-secondary-sm" onclick="salirDelGrupo()">Salir del grupo</button>
+                <button class="btn-secondary-sm" onclick="cerrarMiembrosGrupo()">Cerrar</button>
             </div>
         </div>
     </div>

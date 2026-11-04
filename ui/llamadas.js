@@ -1,5 +1,5 @@
 // ============================================================================
-// LLAMADAS: voz, video y compartir pantalla, 1 a 1 o en grupo (hasta 6 personas, cada una conectada con todas)
+// LLAMADAS: voz, video y compartir pantalla, 1 a 1 o en grupo (hasta 10 personas, cada una conectada con todas)
 //
 //  - Python (gui_app.py) crea/responde/cierra la llamada en Supabase.
 //  - Este archivo escucha Realtime (timbre) y arma la conexión WebRTC entre equipos.
@@ -10,7 +10,7 @@
 // ============================================================================
 
 const LL_ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };  // solo STUN: gratis, pero algunas redes no pueden conectarse
-const LL_MAX_PERSONAS = 6;       // en una llamada grupal cada uno se conecta con todos: más de 6 se vuelve pesado
+const LL_MAX_PERSONAS = 10;      // cada uno se conecta con todos: más personas exigen demasiado (mismo valor en la base)
 const LL_VIDEO = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
 const LL_TIMBRE_MS = 45000;      // cuánto suena antes de darla por no atendida
 const LL_VIGENCIA_MS = 60000;    // invitaciones más viejas que esto se ignoran (mismo valor en invitar_a_llamada)
@@ -184,7 +184,13 @@ function llDetenerTimbre() { if (llTimbreTimer) clearInterval(llTimbreTimer); ll
 // Botones de llamada dentro del chat.
 async function llamarAmigoChat(conVideo = false) {
     if (!chatAmigo) return;
+    if (chatAmigo.es_grupo) return llamarGrupo(chatAmigo.user_id, chatAmigo.username, conVideo);
     await llIniciarLlamada([chatAmigo.user_id], conVideo, chatAmigo.username);
+}
+
+// Hace sonar a todos los miembros de un grupo.
+async function llamarGrupo(chatId, nombre, conVideo = false) {
+    await llIniciarLlamada([], conVideo, nombre, chatId);
 }
 
 // Llamada directa desde la lista de amigos (sin abrir el chat)
@@ -336,7 +342,7 @@ function llNuevaLlamada(id, soyCreador, medios) {
 }
 
 // Pide el micrófono, crea la llamada y espera a que atiendan.
-async function llIniciarLlamada(ids, conVideo, nombre) {
+async function llIniciarLlamada(ids, conVideo, nombre, grupoChat = null) {
     if (!llSb) { alert('Las llamadas no están disponibles ahora (revisá tu conexión y reiniciá sesión).'); return; }
     if (llActual || llEntrante || llIniciando) { llAviso('Ya estás en una llamada.'); return; }
     llIniciando = true;
@@ -345,18 +351,21 @@ async function llIniciarLlamada(ids, conVideo, nombre) {
         if (!await llLlavesListas(ids, nombre)) return;
         medios = await llObtenerMedios(conVideo);
         if (!medios) return;
-        res = await window.pywebview.api.crear_llamada(ids, conVideo);
+        res = await (grupoChat ? window.pywebview.api.llamar_a_grupo(grupoChat, conVideo)
+                               : window.pywebview.api.crear_llamada(ids, conVideo));
     } finally {
         llIniciando = false;
     }
     if (!res || !res.exito) {
         medios.stream.getTracks().forEach(t => t.stop());
         alert((res && res.error) || 'No se pudo iniciar la llamada.');
+        if (res && res.falta_mi_llave && typeof llavesIniciar === 'function') llavesIniciar();
         return;
     }
     llActual = llNuevaLlamada(res.llamada_id, true, medios);
-    ids.forEach(i => llActual.invitados.add(i));
-    llActual.nombres[ids[0]] = nombre || '';
+    (grupoChat ? res.invitados : ids).forEach(i => llActual.invitados.add(i));
+    if (grupoChat) llActual.grupo = nombre;
+    else llActual.nombres[ids[0]] = nombre || '';
     llActualizarBotonCamara();
     llRefrescarVideos();
     llEstadoBarra(nombre, conVideo ? 'Videollamada…' : 'Llamando…');
@@ -369,7 +378,7 @@ async function llIniciarLlamada(ids, conVideo, nombre) {
     const idLlamada = llActual.id;
     llActual.timerSonando = setTimeout(() => {
         if (llActual && llActual.id === idLlamada && llActual.estado === 'sonando') {
-            llColgar('No respondió.', true);
+            llColgar(llActual.grupo ? 'Nadie atendió.' : 'No respondió.', true);
         }
     }, LL_TIMBRE_MS);
 }
@@ -396,9 +405,10 @@ async function llAlInvitacion(fila) {
         || { username: 'Alguien', avatar_url: '' };
     const yaEnCurso = det.llamada.estado === 'en_curso';
     const conVideo = !!det.llamada.con_video;
-    llEntrante = { id: fila.llamada_id, de: quien, conVideo };
+    llEntrante = { id: fila.llamada_id, de: quien, conVideo, grupo: det.grupo || null };
     document.getElementById('llamada-timbre-nombre').textContent = quien.username || 'Alguien';
-    document.getElementById('llamada-timbre-sub').textContent = yaEnCurso ? 'te agregó a una llamada…' : (conVideo ? 'te está haciendo una videollamada…' : 'te está llamando…');
+    document.getElementById('llamada-timbre-sub').textContent = det.grupo ? `llama al grupo ${det.grupo}…`
+        : (yaEnCurso ? 'te agregó a una llamada…' : (conVideo ? 'te está haciendo una videollamada…' : 'te está llamando…'));
     document.getElementById('llamada-aceptar-video').style.display = conVideo ? '' : 'none';
     document.getElementById('llamada-timbre-avatar').src = avatarDe(quien);
     llMostrar('llamada-timbre');
@@ -420,7 +430,8 @@ async function llAceptar(conVideo = false) {
     const ent = llEntrante;
     if (!ent || ent.aceptando) return;
     ent.aceptando = true;
-    if (!await llLlavesListas([ent.de.user_id], ent.de.username)) { await llRechazar(); return; }
+    // En un grupo, una llave cambiada solo impide conectar con esa persona, no con las demás
+    if (!ent.grupo && !await llLlavesListas([ent.de.user_id], ent.de.username)) { await llRechazar(); return; }
     const medios = await llObtenerMedios(conVideo && ent.conVideo);
     if (!medios) { await llRechazar(); return; }
     if (llEntrante !== ent) {                           // dejó de sonar mientras se pedía el micrófono
@@ -437,9 +448,10 @@ async function llAceptar(conVideo = false) {
     llActual = llNuevaLlamada(ent.id, false, medios);
     llEsperarConexion(llActual);
     llActual.nombres[ent.de.user_id] = ent.de.username;
+    llActual.grupo = ent.grupo;
     llActualizarBotonCamara();
     llRefrescarVideos();
-    llEstadoBarra(ent.de.username, 'Conectando…');
+    llEstadoBarra(ent.grupo || ent.de.username, 'Conectando…');
     try {
         await llUnirseCanal();
     } catch (e) {
@@ -495,7 +507,7 @@ function llAlCambioParticipante(fila) {
     } else if (fila.estado === 'rechazado') {
         llActual.invitados.delete(fila.usuario_id);
         if (llActual.estado === 'sonando' && llActual.invitados.size === 0) {
-            llColgar('Rechazó la llamada.', true);
+            llColgar(llActual.grupo ? 'Nadie atendió.' : 'Rechazó la llamada.', true);
         } else if (llActual.estado !== 'sonando') {
             llAviso((llActual.nombres[fila.usuario_id] || 'Alguien') + ' rechazó la invitación.');
         }
@@ -972,6 +984,7 @@ async function llCargarNombres() {
 function llTextoNombres() {
     const a = llActual;
     if (!a) return '';
+    if (a.grupo) return a.grupo;
     const ids = a.peers.size ? Array.from(a.peers.keys()) : Object.keys(a.nombres);
     const n = ids.map(id => a.nombres[id]).filter(Boolean);
     if (n.length <= 2) return n.join(' y ');
@@ -984,7 +997,7 @@ async function llAbrirInvitar() {
     if (!a) return;
     const panel = document.getElementById('llamada-invitar');
     const lista = document.getElementById('llamada-invitar-lista');
-    lista.textContent = 'Cargando…';
+    lista.replaceChildren(mensajeCargando());
     panel.style.display = 'flex';
     let res;
     try { res = await window.pywebview.api.obtener_social(); } catch (e) { res = null; }

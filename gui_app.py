@@ -711,9 +711,35 @@ class API:
     def obtener_historial_llamadas(self, amigo_id):
         return self._llamadas.historial_con(amigo_id)
 
-    # Agrega amigos a una llamada en curso (máximo 6 personas).
+    # Agrega amigos a una llamada en curso (máximo 10 personas).
     def invitar_a_llamada(self, llamada_id, amigo_ids):
         return self._llamadas.invitar(llamada_id, amigo_ids)
+
+    # Hace sonar a todos los miembros de un grupo.
+    def llamar_a_grupo(self, chat_id, con_video=False):
+        return self._llamadas.crear_llamada_grupo(chat_id, con_video)
+
+    # Grupos: el creador invita y quita; cada persona acepta y puede salir.
+    def obtener_grupos(self):
+        return self.cloud.grupos.listar()
+
+    def crear_grupo(self, nombre, amigo_ids):
+        return self.cloud.grupos.crear(nombre, amigo_ids)
+
+    def obtener_miembros_grupo(self, chat_id):
+        return self.cloud.grupos.miembros_con_perfil(chat_id)
+
+    def invitar_a_grupo(self, chat_id, amigo_ids):
+        return self.cloud.grupos.invitar(chat_id, amigo_ids)
+
+    def responder_invitacion_grupo(self, grupo_id, aceptar):
+        return self.cloud.grupos.responder(grupo_id, aceptar)
+
+    def quitar_de_grupo(self, chat_id, usuario_id):
+        return self.cloud.grupos.quitar(chat_id, usuario_id)
+
+    def salir_de_grupo(self, chat_id):
+        return self.cloud.grupos.salir(chat_id)
 
 
 def _elegir_motor():

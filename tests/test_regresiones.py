@@ -559,6 +559,61 @@ class IdentidadDeAmigos(unittest.TestCase):
         self.assertFalse(abierto["alerta_llave"])
 
 
+class MensajesDeGrupo(unittest.TestCase):
+    def setUp(self):
+        self.ana, self.beto, self.intruso = (cifrado.privada_de(bytes([i]) * 16) for i in (1, 2, 3))
+        self.publicas = {"ana": self._pub(self.ana), "beto": self._pub(self.beto)}
+
+    @staticmethod
+    def _pub(privada):
+        return cifrado._b64(bytes(privada.public_key))
+
+    def _enviar(self, tipo="texto", contenido="hola", publicas=None, grupo="g1"):
+        return cifrado.cifrar_para_grupo(self.ana, publicas or self.publicas, "ana", grupo, tipo, contenido)
+
+    def test_lo_leen_los_miembros_y_el_servidor_no_ve_el_texto(self):
+        guardado, copias = self._enviar(contenido="secreto")
+        self.assertNotIn("secreto", guardado + str(copias))
+        for privada, yo in ((self.ana, "ana"), (self.beto, "beto")):
+            self.assertEqual(cifrado.descifrar_de_grupo(privada, yo, "ana", "g1", guardado, copias), ("texto", "secreto"))
+
+    def test_quien_no_estaba_al_enviarlo_no_puede_leerlo(self):
+        guardado, copias = self._enviar()
+        self.assertEqual(cifrado.descifrar_de_grupo(self.intruso, "intruso", "ana", "g1", guardado, copias)[1], cifrado.ILEGIBLE_DANADO)
+        # Ni copiando la llave de otro miembro: esa copia está sellada para esa persona
+        copias["intruso"] = copias["beto"]
+        self.assertIn(cifrado.descifrar_de_grupo(self.intruso, "intruso", "ana", "g1", guardado, copias)[1], cifrado.ILEGIBLES)
+
+    def test_no_se_puede_mover_a_otro_grupo_ni_cambiar_de_autor(self):
+        guardado, copias = self._enviar()
+        self.assertEqual(cifrado.descifrar_de_grupo(self.beto, "beto", "ana", "otro", guardado, copias)[1], cifrado.ILEGIBLE_DANADO)
+        self.assertEqual(cifrado.descifrar_de_grupo(self.beto, "beto", "intruso", "g1", guardado, copias)[1], cifrado.ILEGIBLE_DANADO)
+
+    def test_un_miembro_no_puede_imitar_a_otro(self):
+        # El intruso firma con su llave pero dice ser Ana, publicando la llave de Ana: no abre
+        guardado, copias = cifrado.cifrar_para_grupo(self.intruso, self.publicas, "ana", "g1", "texto", "falso")
+        partes = guardado.split(":")
+        falso = f"e2:{self.publicas['ana']}:{partes[2]}"
+        self.assertEqual(cifrado.descifrar_de_grupo(self.beto, "beto", "ana", "g1", falso, copias)[1], cifrado.ILEGIBLE_DANADO)
+
+    def test_otra_frase_lo_dice_y_un_adjunto_debe_coincidir(self):
+        guardado, copias = self._enviar()
+        nueva = cifrado.privada_de(b"n" * 16)
+        self.assertEqual(cifrado.descifrar_de_grupo(nueva, "beto", "ana", "g1", guardado, copias)[1], cifrado.ILEGIBLE_OTRA_FRASE)
+        ruta = "ana/cifrados/" + "0" * 32 + ".bin"
+        guardado, copias = cifrado.cifrar_para_grupo(self.ana, self.publicas, "ana", "g1", "imagen", ruta, b"k" * 32)
+        adjuntos = {}
+        self.assertEqual(cifrado.descifrar_de_grupo(self.beto, "beto", "ana", "g1", guardado, copias, ruta, adjuntos), ("imagen", ruta))
+        self.assertEqual(adjuntos[ruta], b"k" * 32)
+        self.assertEqual(cifrado.descifrar_de_grupo(self.beto, "beto", "ana", "g1", guardado, copias, "otra", {})[1], cifrado.ILEGIBLE_DANADO)
+
+    def test_el_mensaje_mas_largo_de_un_grupo_lleno_entra_en_los_limites_de_la_base(self):
+        publicas = {f"{i:036d}": self.publicas["beto"] for i in range(20)}
+        guardado, copias = self._enviar(contenido="ñ" * 1000, publicas=publicas)
+        self.assertLessEqual(len(guardado), 10000)
+        self.assertLessEqual(len(__import__("json").dumps(copias)), 20000)
+
+
 class SenalesDeLlamada(unittest.TestCase):
     def setUp(self):
         self.parches = {"ana": bytes(16), "beto": bytes(range(16)), "intruso": b"i" * 16}

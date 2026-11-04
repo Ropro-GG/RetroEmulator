@@ -132,18 +132,55 @@ def descifrar_de(privada, de, guardado, adjunto=None, adjuntos=None):
             return "texto", ILEGIBLE_OTRA_FRASE
         otra = receptor if mia == emisor else emisor
         interior = json.loads(Box(privada, PublicKey(otra, Base64Encoder)).decrypt(datos, encoder=Base64Encoder))
-        tipo, contenido = interior["tipo"], interior["contenido"]
-        if interior["de"] == de and _contenido_valido(de, tipo, contenido):
-            if tipo not in TIPOS_ADJUNTO:
-                return tipo, contenido
-            if contenido == adjunto:
-                llave = base64.b64decode(interior["llave"], validate=True)
-                if adjuntos is not None:
-                    adjuntos[contenido] = llave
-                return tipo, contenido
+        return _interior_valido(interior, de, adjunto, adjuntos)
     except (ValueError, KeyError, TypeError, CryptoError, AttributeError):
-        pass
+        return "texto", ILEGIBLE_DANADO
+
+
+def _interior_valido(interior, de, adjunto, adjuntos):
+    """(tipo, contenido) del mensaje ya abierto, si coincide con la fila y su contenido es válido."""
+    tipo, contenido = interior["tipo"], interior["contenido"]
+    if interior["de"] == de and _contenido_valido(de, tipo, contenido):
+        if tipo not in TIPOS_ADJUNTO:
+            return tipo, contenido
+        if contenido == adjunto:
+            llave = base64.b64decode(interior["llave"], validate=True)
+            if adjuntos is not None:
+                adjuntos[contenido] = llave
+            return tipo, contenido
     return "texto", ILEGIBLE_DANADO
+
+
+def cifrar_para_grupo(privada, publicas, de, grupo, tipo, contenido, llave=None):
+    """Cifra con una llave nueva y la guarda aparte para cada persona: quien entra después no lee lo anterior
+    y quien sale no lee lo nuevo. Cada copia va sellada por el emisor, así nadie del grupo puede imitarlo.
+    Devuelve ('e2:llave del emisor:datos', {usuario: 'su llave:copia sellada'})."""
+    campos = {"de": de, "grupo": grupo, "tipo": tipo, "contenido": contenido}
+    if llave:
+        campos["llave"] = _b64(llave)
+    secreta = secrets.token_bytes(SecretBox.KEY_SIZE)
+    datos = SecretBox(secreta).encrypt(json.dumps(campos, ensure_ascii=False).encode())
+    copias = {usuario: f"{publica}:{_b64(bytes(Box(privada, PublicKey(publica, Base64Encoder)).encrypt(secreta)))}"
+              for usuario, publica in publicas.items()}
+    return f"e2:{_b64(bytes(privada.public_key))}:{_b64(bytes(datos))}", copias
+
+
+def descifrar_de_grupo(privada, yo, de, grupo, guardado, copias, adjunto=None, adjuntos=None):
+    """Devuelve (tipo, contenido). 'grupo' adentro impide reenviar un mensaje a otro grupo."""
+    try:
+        version, emisor, datos = guardado.split(":")
+        mi_publica, copia = copias[yo].split(":")
+        if version != "e2":
+            return "texto", ILEGIBLE_DANADO
+        if mi_publica != _b64(bytes(privada.public_key)):
+            return "texto", ILEGIBLE_OTRA_FRASE
+        secreta = Box(privada, PublicKey(emisor, Base64Encoder)).decrypt(copia, encoder=Base64Encoder)
+        interior = json.loads(SecretBox(secreta).decrypt(datos, encoder=Base64Encoder))
+        if interior["grupo"] != grupo:
+            return "texto", ILEGIBLE_DANADO
+        return _interior_valido(interior, de, adjunto, adjuntos)
+    except (ValueError, KeyError, TypeError, CryptoError, AttributeError):
+        return "texto", ILEGIBLE_DANADO
 
 
 # Pasos para crear, recuperar y publicar las llaves de la cuenta activa.
@@ -417,6 +454,39 @@ class Llaves:
         legible = contenido not in ILEGIBLES
         return {**mensaje, "tipo": tipo, "contenido": contenido,
                 "alerta_llave": legible and self._llave_no_aceptada(mensaje, privada)}
+
+    def cifrar_grupo(self, grupo, miembros, tipo, contenido, llave=None):
+        """Solo cifra para llaves aceptadas: quien tiene una llave sin aceptar o sin activar no recibe este mensaje."""
+        privada = self._privada_actual()
+        if not privada:
+            raise SinLlave("Para enviar mensajes, primero activá tu frase de recuperación.", propia=True)
+        yo = self.cloud._yo()
+        filas = self.cloud.client.table("profiles").select("id, llave_publica").in_("id", miembros).execute().data or []
+        publicas = {f["id"]: f["llave_publica"] for f in filas if f["id"] != yo and f.get("llave_publica")
+                    and self._actual_o_primera(f["id"], f["llave_publica"]) == f["llave_publica"]}
+        if not publicas:
+            raise SinLlave("Nadie más del grupo puede recibir mensajes privados todavía.")
+        publicas[yo] = _b64(bytes(privada.public_key))
+        return cifrar_para_grupo(privada, publicas, yo, grupo, tipo, contenido, llave)
+
+    def abrir_grupo(self, mensaje):
+        """El mensaje de grupo listo para mostrar. Avisa si el emisor usó una llave que no se aceptó en este equipo."""
+        privada = self._privada_actual()
+        if not privada:
+            return {**mensaje, "tipo": "texto", "contenido": ILEGIBLE_SIN_FRASE, "alerta_llave": False}
+        yo, de = self.cloud._yo(), mensaje.get("de")
+        tipo, contenido = descifrar_de_grupo(privada, yo, de, mensaje["grupo_id"], mensaje["contenido"],
+                                             mensaje.get("llaves") or {}, mensaje.get("adjunto"), self.adjuntos)
+        alerta = False
+        if contenido not in ILEGIBLES and de != yo:
+            try:
+                publicada = None if db_local.llaves_de_amigo(yo, de) else self._publicada(de)
+                if publicada:
+                    self._actual_o_primera(de, publicada)
+                alerta = mensaje["contenido"].split(":")[1] not in db_local.llaves_de_amigo(yo, de)
+            except Exception as e:
+                print(f"[CIFRADO] No se pudo revisar la llave: {e}")   # sin conexión no hay con qué comparar
+        return {**mensaje, "tipo": tipo, "contenido": contenido, "alerta_llave": alerta}
 
     def ver_frase(self, password):
         """Las 12 palabras de este equipo. Pide la contraseña porque dan acceso a todos los chats."""

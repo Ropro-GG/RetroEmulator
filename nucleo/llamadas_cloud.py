@@ -6,7 +6,7 @@ El audio, el video y las señales de conexión (WebRTC) viajan por el JS (ui/lla
 """
 from datetime import datetime, timezone
 
-from . import cloud_client, db_local
+from . import cloud_client, db_local, grupos_cloud
 
 
 # Fecha y hora actual en UTC, en el formato de la base de datos.
@@ -30,8 +30,12 @@ class Llamadas:
             return "Faltan las tablas de Llamadas en Supabase."
         if "invitar_a_llamada" in bajo and ("could not find" in bajo or "does not exist" in bajo or "pgrst202" in bajo):
             return "Falta actualizar las llamadas en Supabase."
-        if "maximo 6" in bajo:
-            return "Una llamada admite hasta 6 personas."
+        if "maximo 10" in bajo:
+            return "Esa llamada ya está llena: admite hasta 10 personas."
+        if "no hay nadie mas" in bajo:
+            return "Todavía no hay nadie más en el grupo para llamar."
+        if "ya no estas invitado" in bajo:
+            return "Esa invitación ya no está disponible."
         if "la llamada ya termino" in bajo or "no estas en esa llamada" in bajo:
             return "Esa llamada ya no está disponible."
         if "42501" in bajo or "row-level security" in bajo or "permission denied" in bajo:
@@ -104,22 +108,45 @@ class Llamadas:
         except Exception as e:
             return {"exito": False, "error": self._error(e)}
 
+    def crear_llamada_grupo(self, chat_id, con_video=False):
+        """Hace sonar a los miembros del grupo. Pueden no ser amigos entre sí: lo valida la base."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        if not self.cloud.llaves._privada_actual():
+            return {"exito": False, "error": "Para hacer llamadas, primero activá tu frase de recuperación.", "falta_mi_llave": True}
+        try:
+            llamada_id = self.cloud.client.rpc("llamar_a_grupo", {
+                "p_grupo": grupos_cloud.id_de_chat(chat_id), "p_con_video": bool(con_video)}).execute().data
+            invitados = self._tabla("llamada_participantes").select("usuario_id") \
+                .eq("llamada_id", llamada_id).eq("estado", "invitado").execute().data or []
+            self.activa = llamada_id
+            self.actualizar_presencia()
+            return {"exito": True, "llamada_id": llamada_id, "invitados": [f["usuario_id"] for f in invitados]}
+        except Exception as e:
+            return {"exito": False, "error": self._error(e)}
+
     def obtener_llamada(self, llamada_id):
         """Datos de una llamada y de sus participantes (para mostrar quién llama)."""
         error = self.cloud._requiere_sesion()
         if error:
             return error
         try:
-            fila = self._tabla("llamadas").select("id, creador_id, estado, con_video, creada_en") \
+            fila = self._tabla("llamadas").select("id, creador_id, estado, con_video, creada_en, grupo_id") \
                 .eq("id", llamada_id).limit(1).execute().data
             if not fila:
                 return {"exito": False, "error": "La llamada ya no existe."}
             partes = self._tabla("llamada_participantes").select("usuario_id, estado") \
                 .eq("llamada_id", llamada_id).execute().data or []
             perfiles = self.cloud._perfiles_por_id([p["usuario_id"] for p in partes])
+            grupo = None
+            if fila[0].get("grupo_id"):
+                filas_grupo = self._tabla("grupos").select("nombre").eq("id", fila[0]["grupo_id"]).execute().data
+                grupo = filas_grupo[0]["nombre"] if filas_grupo else None
             return {
                 "exito": True,
                 "llamada": fila[0],
+                "grupo": grupo,
                 "participantes": [{
                     "user_id": p["usuario_id"],
                     "estado": p["estado"],
@@ -222,16 +249,19 @@ class Llamadas:
             return error
         yo = self.cloud._yo()
         try:
-            # Solo se ven las filas de llamadas en las que estoy, así que esto ya es "con vos"
-            filas = self._tabla("llamada_participantes").select("llamada_id") \
-                .eq("usuario_id", amigo_id).order("invitado_en", desc=True).limit(300).execute().data or []
-            ids = list(dict.fromkeys(f["llamada_id"] for f in filas))
-            if not ids:
-                return {"exito": True, "llamadas": []}
-            llamadas = self._tabla("llamadas") \
-                .select("id, creador_id, con_video, creada_en, inicio_en, terminada_en") \
-                .in_("id", ids).eq("estado", "terminada") \
-                .order("terminada_en", desc=True).limit(int(limite)).execute().data or []
+            consulta = self._tabla("llamadas") \
+                .select("id, creador_id, con_video, creada_en, inicio_en, terminada_en").eq("estado", "terminada")
+            if grupos_cloud.es_chat_de_grupo(amigo_id):
+                consulta = consulta.eq("grupo_id", grupos_cloud.id_de_chat(amigo_id))
+            else:
+                # Solo se ven las filas de llamadas en las que estoy, así que esto ya es "con vos"
+                filas = self._tabla("llamada_participantes").select("llamada_id") \
+                    .eq("usuario_id", amigo_id).order("invitado_en", desc=True).limit(300).execute().data or []
+                ids = list(dict.fromkeys(f["llamada_id"] for f in filas))
+                if not ids:
+                    return {"exito": True, "llamadas": []}
+                consulta = consulta.in_("id", ids).is_("grupo_id", "null")   # las de un grupo van en el chat del grupo
+            llamadas = consulta.order("terminada_en", desc=True).limit(int(limite)).execute().data or []
             if not llamadas:
                 return {"exito": True, "llamadas": []}
             partes = self._tabla("llamada_participantes").select("llamada_id, usuario_id, estado") \
@@ -270,7 +300,7 @@ class Llamadas:
             return {"exito": False, "error": self._error(e)}
 
     def invitar(self, llamada_id, amigo_ids):
-        """Agrega amigos a una llamada en la que ya estás (máx. 6 personas)."""
+        """Agrega amigos a una llamada en la que ya estás (máx. 10 personas)."""
         error = self.cloud._requiere_sesion()
         if error:
             return error

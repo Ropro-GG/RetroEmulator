@@ -69,15 +69,28 @@ async function registrar() {
     }
 }
 
+// Muestra u oculta la pantalla de carga de toda la app.
+function mostrarPantallaCarga(visible) {
+    document.getElementById('pantalla-carga').style.display = visible ? 'flex' : 'none';
+}
+
+// Por si Python no llega a responder: nunca dejar la app tapada para siempre.
+setTimeout(() => mostrarPantallaCarga(false), 30000);
+
 // Pasa del login a la app y carga los datos de la cuenta.
 async function cargarPantallaPrincipal() {
+    mostrarPantallaCarga(true);
     reiniciarEstadoUI();   // arranca siempre limpio: nada de la cuenta anterior
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'flex';
 
-    await cargarPerfilUsuario();
-    await cargarConsolas();
-    await filtrarCatalogo();
+    try {
+        await cargarPerfilUsuario();
+        await cargarConsolas();
+        await filtrarCatalogo();
+    } finally {
+        mostrarPantallaCarga(false);
+    }
     iniciarInsignias();
     llamadasIniciar();
     llavesIniciar();
@@ -423,6 +436,8 @@ async function intentarRestaurarSesion() {
         }
     } catch (e) {
         console.error("Error al restaurar sesión:", e);
+    } finally {
+        mostrarPantallaCarga(false);
     }
 }
 window.addEventListener('pywebviewready', intentarRestaurarSesion);
@@ -549,7 +564,7 @@ function filaRuta(etiqueta, valor) {
 // Sección Rutas: carpetas y una tarjeta por cada consola con juegos.
 async function cargarRutasConfig() {
     const cont = document.getElementById('paths-content');
-    cont.textContent = 'Cargando…';
+    cont.replaceChildren(mensajeCargando());
     try {
         const cfg = await window.pywebview.api.obtener_config_rutas();
         cont.innerHTML = '';
@@ -825,7 +840,7 @@ function mensajeLogros(cont, res) {
 // Trae y dibuja los logros con la barra de progreso.
 async function cargarLogros(id) {
     const cont = document.getElementById('achievements-content');
-    cont.textContent = 'Cargando logros…';
+    cont.replaceChildren(mensajeCargando('Cargando logros…'));
 
     let res;
     try {
@@ -1098,10 +1113,24 @@ function mensajeVacio(texto) {
     return p;
 }
 
+// Cubo animado para una lista que está cargando. Aparece con retraso (styles.css) para no parpadear si carga rápido.
+function mensajeCargando(texto = 'Cargando…') {
+    const cont = document.createElement('div');
+    cont.className = 'cargador-lista';
+    cont.setAttribute('role', 'status');
+    cont.innerHTML = '<div class="cube-loader cube-loader-chico" aria-hidden="true"><div class="cube-top"></div><div class="cube-wrapper">' +
+        '<span class="cube-span" style="--i:0"></span><span class="cube-span" style="--i:1"></span>' +
+        '<span class="cube-span" style="--i:2"></span><span class="cube-span" style="--i:3"></span></div></div>';
+    const p = document.createElement('p');
+    p.textContent = texto;
+    cont.appendChild(p);
+    return cont;
+}
+
 // Dibuja solicitudes, amigos y solicitudes enviadas.
 async function cargarSocial() {
     const cont = document.getElementById('friend-lists');
-    if (!cont.children.length) cont.appendChild(mensajeVacio('Cargando…'));
+    if (!cont.children.length) cont.appendChild(mensajeCargando());
     let res;
     try {
         res = await window.pywebview.api.obtener_social();
@@ -1117,8 +1146,11 @@ async function cargarSocial() {
         cont.appendChild(err);
         return;
     }
-    pintarInsignias(res.recibidas.length);
+    actualizarInsignias();   // también cuenta las invitaciones a grupos
+    let grupos;
+    try { grupos = await window.pywebview.api.obtener_grupos(); } catch (e) { grupos = null; }
     cont.innerHTML = '';
+    pintarGrupos(cont, grupos);
 
     // Solicitudes recibidas (solo si hay)
     if (res.recibidas.length > 0) {
@@ -1748,6 +1780,8 @@ function reiniciarEstadoUI() {
     cerrarPerfil();
     document.getElementById('code-modal').style.display = 'none';
     cerrarDenuncia();
+    cerrarCrearGrupo();
+    cerrarMiembrosGrupo();
     document.getElementById('game-detail').style.display = 'none';
     document.querySelector('.game-grid-container').style.display = '';
     document.getElementById('social-perfil').style.display = 'none';
@@ -1976,7 +2010,7 @@ async function quitarDeseado(clave) {
 // Dibuja tu lista de deseados.
 async function cargarDeseados() {
     const cont = document.getElementById('wish-list');
-    if (!cont.children.length) cont.appendChild(mensajeVacio('Cargando…'));
+    if (!cont.children.length) cont.appendChild(mensajeCargando());
 
     let res;
     try {
@@ -2138,8 +2172,8 @@ function crearMiniPortada(identificativo, titulo, chica) {
 async function cargarMiActividad() {
     const recientes = document.getElementById('mi-recientes');
     const deseados = document.getElementById('mi-deseados');
-    if (!recientes.children.length) recientes.appendChild(mensajeVacio('Cargando…'));
-    if (!deseados.children.length) deseados.appendChild(mensajeVacio('Cargando…'));
+    if (!recientes.children.length) recientes.appendChild(mensajeCargando());
+    if (!deseados.children.length) deseados.appendChild(mensajeCargando());
 
     let res;
     try {
@@ -2245,6 +2279,7 @@ function horaDe(iso) {
 // Dibuja la lista de chats y actualiza los contadores.
 async function cargarConversaciones() {
     const cont = document.getElementById('chat-list');
+    if (!cont.children.length) cont.appendChild(mensajeCargando());
     let res;
     try {
         res = await window.pywebview.api.obtener_conversaciones();
@@ -2252,8 +2287,8 @@ async function cargarConversaciones() {
         res = { exito: false, error: String(e) };
     }
     if (!res || !res.exito) {
-        if (!cont.children.length) {
-            cont.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar las conversaciones.'));
+        if (!chatConversaciones.length) {
+            cont.replaceChildren(mensajeVacio((res && res.error) || 'No se pudieron cargar las conversaciones.'));
         }
         return;
     }
@@ -2309,7 +2344,7 @@ function registrarMensaje(m) {
     chatMensajes.push(m);
     chatMensajes.sort((a, b) => a.id - b.id);
     if (m.id > chatUltimoId) chatUltimoId = m.id;
-    if (m.mio && !m.leido) chatPendientes.add(m.id);
+    if (m.mio && !m.leido && !m.en_grupo) chatPendientes.add(m.id);
     return true;
 }
 
@@ -2317,6 +2352,13 @@ function registrarMensaje(m) {
 function crearBurbuja(m) {
     const fila = document.createElement('div');
     fila.className = 'msg ' + (m.mio ? 'msg-mio' : 'msg-otro');
+
+    if (m.en_grupo && !m.mio) {
+        const autor = document.createElement('span');
+        autor.className = 'msg-autor';
+        autor.textContent = m.autor;
+        fila.appendChild(autor);
+    }
 
     const burbuja = document.createElement('div');
     burbuja.className = 'msg-burbuja';
@@ -2364,7 +2406,7 @@ function crearBurbuja(m) {
         alerta.title = 'Este mensaje usa una llave que no aceptaste en este equipo. Puede ser una llave anterior de tu amigo, o alguien haciéndose pasar por él.';
         meta.appendChild(alerta);
     }
-    if (m.mio) {
+    if (m.mio && !m.en_grupo) {
         const estado = document.createElement('span');
         estado.className = 'msg-estado' + (m.leido ? ' visto' : '');
         estado.textContent = m.leido ? '✓✓ Visto' : '✓';
@@ -2409,7 +2451,11 @@ function renderizarChat(modo, alturaAntes) {
 async function abrirConversacion(amigoId) {
     const conv = chatConversaciones.find(c => c.user_id === amigoId) || chatAmigo;
     if (!conv || conv.user_id !== amigoId) return;
+    const cambiaDeChat = !chatAmigo || chatAmigo.user_id !== amigoId;
     chatAmigo = conv;
+    document.getElementById('chat-seguridad').style.display = conv.es_grupo ? 'none' : '';
+    document.getElementById('chat-ver-perfil').textContent = conv.es_grupo ? 'Miembros' : 'Ver perfil';
+    if (cambiaDeChat) document.getElementById('chat-mensajes').replaceChildren(mensajeCargando());
     document.getElementById('chat-llave-aviso').style.display = 'none';
     chatRevisarLlave();
 
@@ -2431,6 +2477,7 @@ async function abrirConversacion(amigoId) {
     }
     if (!chatAmigo || chatAmigo.user_id !== amigoId) return;   // cambió de conversación mientras cargaba
     if (!res || !res.exito) {
+        document.getElementById('chat-mensajes').replaceChildren();
         document.getElementById('chat-error').textContent = (res && res.error) || 'No se pudieron cargar los mensajes.';
         return;
     }
@@ -2500,6 +2547,7 @@ let chatSeguridad = null;   // estado de la llave del amigo del chat abierto
 // Muestra el aviso si la llave del amigo cambió. Si no se puede consultar, deja lo que había.
 async function chatRevisarLlave() {
     if (!chatAmigo) return;
+    if (chatAmigo.es_grupo) return grupoRevisarLlaves();
     const id = chatAmigo.user_id;
     let res = null;
     try {
@@ -2533,7 +2581,7 @@ function pintarCodigoSeguridad() {
 // Abre la ventana con datos recién consultados.
 async function abrirCodigoSeguridad() {
     await chatRevisarLlave();
-    if (!chatSeguridad || !chatAmigo || chatSeguridad.id !== chatAmigo.user_id) return;
+    if (!chatSeguridad || !chatAmigo || (!chatAmigo.es_grupo && chatSeguridad.id !== chatAmigo.user_id)) return;
     document.getElementById('seguridad-msg').textContent = '';
     pintarCodigoSeguridad();
     document.getElementById('seguridad-modal').style.display = 'flex';
@@ -2553,7 +2601,8 @@ async function aceptarLlaveAmigo() {
         return;
     }
     cerrarCodigoSeguridad();
-    if (chatAmigo && chatAmigo.user_id === id) abrirConversacion(id);
+    if (chatAmigo && (chatAmigo.user_id === id || chatAmigo.es_grupo)) abrirConversacion(chatAmigo.user_id);
+    if (grupoMiembrosChat) cargarMiembrosGrupo();
 }
 
 // Marca o desmarca que ya comparaste el código.
@@ -2564,7 +2613,8 @@ async function alternarVerificacion() {
         document.getElementById('seguridad-msg').textContent = (res && res.error) || 'No se pudo guardar.';
         return;
     }
-    await chatRevisarLlave();
+    await consultarSeguridad(id, chatSeguridad.nombre);
+    if (chatAmigo && chatAmigo.user_id === id) chatRevisarLlave();
     document.getElementById('seguridad-msg').textContent = '';
     if (chatSeguridad && chatSeguridad.id === id) pintarCodigoSeguridad();
 }
@@ -2621,7 +2671,9 @@ function autoAjustarChat(caja) {
 
 // Abre el perfil de la persona del chat.
 function verPerfilDelChat() {
-    if (chatAmigo) irAPerfilAmigo(chatAmigo.user_id);
+    if (!chatAmigo) return;
+    if (chatAmigo.es_grupo) abrirMiembrosGrupo(chatAmigo.user_id);
+    else irAPerfilAmigo(chatAmigo.user_id);
 }
 
 // Va directamente al chat con un amigo.
@@ -2859,7 +2911,7 @@ async function guardarSticker(enviar) {
 // Dibuja tu colección de stickers.
 async function cargarStickers() {
     const grilla = document.getElementById('sticker-grid');
-    if (!grilla.children.length) grilla.appendChild(mensajeVacio('Cargando…'));
+    if (!grilla.children.length) grilla.appendChild(mensajeCargando());
 
     let res;
     try {
@@ -3325,7 +3377,7 @@ async function cargarPublicaciones(reiniciar) {
     if (reiniciar) {
         postsUltimoId = null;
         lista.innerHTML = '';
-        lista.appendChild(mensajeVacio('Cargando…'));
+        lista.appendChild(mensajeCargando());
     }
     mas.style.display = 'none';
     postsCargando = true;
@@ -3670,7 +3722,7 @@ async function abrirCompartir(p, tarjeta) {
     document.getElementById('compartir-msg').textContent = '';
     document.getElementById('compartir-enviar').disabled = true;
     lista.innerHTML = '';
-    lista.appendChild(mensajeVacio('Cargando tus amigos…'));
+    lista.appendChild(mensajeCargando('Cargando tus amigos…'));
     document.getElementById('compartir-modal').style.display = 'flex';
 
     let res;
@@ -3755,7 +3807,7 @@ async function alternarComentarios(p, tarjeta) {
     }
     cont = nodo('div', 'post-comentarios');
     const lista = nodo('div', 'post-comentarios-lista');
-    lista.appendChild(mensajeVacio('Cargando comentarios…'));
+    lista.appendChild(mensajeCargando('Cargando comentarios…'));
     const slot = nodo('div');
 
     const fila = nodo('div', 'post-comentar-fila');
@@ -3985,3 +4037,233 @@ document.addEventListener('click', cerrarMenuAmigo);
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cerrarMenuAmigo(); });
 window.addEventListener('blur', cerrarMenuAmigo);
 document.addEventListener('scroll', cerrarMenuAmigo, true);
+
+// ============================================================================
+// GRUPOS: el creador invita y quita; cada persona acepta y puede salir.
+// En el chat, un grupo es una conversación más con id 'grupo:<id>' (ver nucleo/grupos_cloud.py).
+// ============================================================================
+
+const GRUPO_MAX_PERSONAS = 20;   // mismo valor en invitar_a_grupo (supabase/cambios.sql)
+let grupoMiembrosChat = null;    // grupo abierto en la ventana de miembros
+let grupoExcluidos = new Set();  // quienes ya están en ese grupo: no se ofrecen para invitar
+
+// Lista de amigos con casillas, para crear un grupo o invitar. Muestra solo los que no están en 'excluir'.
+async function pintarAmigosElegibles(lista, excluir = new Set()) {
+    lista.replaceChildren(mensajeCargando('Cargando tus amigos…'));
+    let res;
+    try { res = await window.pywebview.api.obtener_social(); } catch (e) { res = null; }
+    lista.innerHTML = '';
+    if (!res || !res.exito) { lista.appendChild(mensajeVacio('No se pudieron cargar tus amigos.')); return; }
+    const amigos = res.amigos.filter(a => !excluir.has(a.user_id));
+    if (!amigos.length) { lista.appendChild(mensajeVacio('No tenés más amigos para invitar.')); return; }
+    amigos.forEach(a => {
+        const fila = nodo('label', 'compartir-fila');
+        const img = nodo('img');
+        img.src = avatarDe(a);
+        img.alt = '';
+        img.onerror = () => { img.style.visibility = 'hidden'; };
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.value = a.user_id;
+        fila.append(img, nodo('span', '', a.username), chk);
+        lista.appendChild(fila);
+    });
+}
+
+// Ids marcados en una de esas listas.
+function amigosMarcados(lista) {
+    return Array.from(lista.querySelectorAll('input:checked')).map(c => c.value);
+}
+
+// Dibuja las invitaciones y los grupos arriba de la lista de amigos.
+function pintarGrupos(cont, res) {
+    if (!res || !res.exito) {
+        cont.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar tus grupos.'));
+        return;
+    }
+    if (res.invitaciones.length) {
+        cont.appendChild(tituloBloque('Invitaciones a grupos', res.invitaciones.length));
+        res.invitaciones.forEach(g => {
+            cont.appendChild(filaUsuario({ username: g.nombre }, `${g.creador} te invitó`, false, [
+                boton('Unirme', 'btn-primary-sm', () => responderInvitacionGrupo(g.id, true)),
+                boton('Rechazar', 'btn-secondary-sm', () => responderInvitacionGrupo(g.id, false)),
+            ]));
+        });
+    }
+    const titulo = tituloBloque('Grupos', res.grupos.length);
+    titulo.appendChild(boton('＋ Crear grupo', 'btn-secondary-sm social-block-accion', abrirCrearGrupo));
+    cont.appendChild(titulo);
+    if (!res.grupos.length) cont.appendChild(mensajeVacio('Creá un grupo para chatear y llamar a varios amigos a la vez.'));
+    res.grupos.forEach(g => {
+        cont.appendChild(filaUsuario({ username: g.nombre }, g.soy_creador ? 'Lo administrás vos' : `Creado por ${g.creador}`, false, [
+            botonIcono('💬', 'Abrir el chat del grupo', () => irAlChat(g.chat_id)),
+            botonIcono('📞', 'Llamar al grupo', () => llamarGrupo(g.chat_id, g.nombre)),
+            botonIcono('🎥', 'Videollamada con el grupo', () => llamarGrupo(g.chat_id, g.nombre, true)),
+            botonIcono('👥', 'Ver miembros', () => abrirMiembrosGrupo(g.chat_id)),
+        ]));
+    });
+}
+
+// Acepta o rechaza una invitación.
+async function responderInvitacionGrupo(grupoId, aceptar) {
+    let res;
+    try { res = await window.pywebview.api.responder_invitacion_grupo(grupoId, aceptar); } catch (e) { res = null; }
+    if (!res || !res.exito) alert((res && res.error) || 'No se pudo responder la invitación.');
+    await cargarSocial();
+}
+
+// Abre la ventana para crear un grupo.
+function abrirCrearGrupo() {
+    document.getElementById('grupo-nombre').value = '';
+    document.getElementById('grupo-msg').textContent = '';
+    document.getElementById('grupo-crear-modal').style.display = 'flex';
+    document.getElementById('grupo-nombre').focus();
+    pintarAmigosElegibles(document.getElementById('grupo-amigos'));
+}
+
+// Cierra esa ventana.
+function cerrarCrearGrupo() {
+    document.getElementById('grupo-crear-modal').style.display = 'none';
+}
+
+// Crea el grupo: los amigos elegidos reciben una invitación.
+async function confirmarCrearGrupo() {
+    const nombre = document.getElementById('grupo-nombre').value.trim();
+    const msg = document.getElementById('grupo-msg');
+    const elegidos = amigosMarcados(document.getElementById('grupo-amigos'));
+    if (!nombre) { msg.textContent = 'Escribí un nombre para el grupo.'; return; }
+    if (elegidos.length + 1 > GRUPO_MAX_PERSONAS) { msg.textContent = `Un grupo admite hasta ${GRUPO_MAX_PERSONAS} personas.`; return; }
+    const btn = document.getElementById('grupo-crear');
+    btn.disabled = true;
+    let res;
+    try { res = await window.pywebview.api.crear_grupo(nombre, elegidos); } catch (e) { res = null; }
+    btn.disabled = false;
+    if (!res || !res.exito) { msg.textContent = (res && res.error) || 'No se pudo crear el grupo.'; return; }
+    cerrarCrearGrupo();
+    await cargarSocial();
+}
+
+// Abre la ventana de miembros de un grupo.
+function abrirMiembrosGrupo(chatId) {
+    grupoMiembrosChat = chatId;
+    document.getElementById('grupo-miembros-msg').textContent = '';
+    document.getElementById('grupo-invitar-panel').style.display = 'none';
+    document.getElementById('grupo-miembros-modal').style.display = 'flex';
+    return cargarMiembrosGrupo();
+}
+
+// Cierra esa ventana.
+function cerrarMiembrosGrupo() {
+    grupoMiembrosChat = null;
+    document.getElementById('grupo-miembros-modal').style.display = 'none';
+}
+
+// Dibuja los miembros; cada acción aparece solo para quien puede hacerla.
+async function cargarMiembrosGrupo() {
+    const chatId = grupoMiembrosChat;
+    const lista = document.getElementById('grupo-miembros-lista');
+    if (!lista.children.length) lista.appendChild(mensajeCargando());
+    let res;
+    try { res = await window.pywebview.api.obtener_miembros_grupo(chatId); } catch (e) { res = null; }
+    if (grupoMiembrosChat !== chatId) return;
+    lista.innerHTML = '';
+    if (!res || !res.exito) {
+        lista.appendChild(mensajeVacio((res && res.error) || 'No se pudieron cargar los miembros.'));
+        return;
+    }
+    document.getElementById('grupo-miembros-titulo').textContent = res.nombre;
+    document.getElementById('grupo-invitar-abrir').style.display = res.soy_creador ? '' : 'none';
+    res.miembros.forEach(m => {
+        const sub = [m.es_creador ? 'Administra el grupo' : '', m.estado === 'invitado' ? 'Invitación pendiente' : '',
+                     m.llave === 'cambio' ? '⚠️ Su llave cambió' : '', m.llave === 'sin_llave' ? 'Sin mensajes privados activos' : '']
+            .filter(Boolean).join(' · ');
+        const acciones = [];
+        if (!m.soy_yo) {
+            if (m.estado === 'miembro') acciones.push(botonIcono('🔒', 'Código de seguridad', () => abrirCodigoDe(m.user_id, m.username)));
+            if (res.soy_creador) acciones.push(boton('Quitar', 'btn-secondary-sm', () => quitarDeGrupo(chatId, m)));
+            acciones.push(boton('Bloquear', 'btn-secondary-sm', () => bloquearDesdeGrupo(m)));
+            acciones.push(boton('Denunciar', 'btn-secondary-sm', async () => abrirDenuncia(m.user_id, m.username)));
+        }
+        lista.appendChild(filaUsuario({ username: m.username + (m.soy_yo ? ' (vos)' : ''), avatar_url: m.avatar_url }, sub, false, acciones));
+    });
+    grupoExcluidos = new Set(res.miembros.map(m => m.user_id));
+}
+
+// Muestra los amigos que todavía no están en el grupo.
+function abrirInvitarAGrupo() {
+    document.getElementById('grupo-invitar-panel').style.display = '';
+    pintarAmigosElegibles(document.getElementById('grupo-invitar-lista'), grupoExcluidos);
+}
+
+// Envía las invitaciones.
+async function confirmarInvitarAGrupo() {
+    const msg = document.getElementById('grupo-miembros-msg');
+    const elegidos = amigosMarcados(document.getElementById('grupo-invitar-lista'));
+    if (!elegidos.length) { document.getElementById('grupo-invitar-panel').style.display = 'none'; return; }
+    let res;
+    try { res = await window.pywebview.api.invitar_a_grupo(grupoMiembrosChat, elegidos); } catch (e) { res = null; }
+    if (!res || !res.exito) { msg.textContent = (res && res.error) || 'No se pudo invitar.'; return; }
+    msg.textContent = elegidos.length === 1 ? 'Invitación enviada.' : 'Invitaciones enviadas.';
+    document.getElementById('grupo-invitar-panel').style.display = 'none';
+    await cargarMiembrosGrupo();
+}
+
+// El creador saca a alguien del grupo.
+async function quitarDeGrupo(chatId, m) {
+    if (!confirm(`¿Quitar a ${m.username} del grupo? Dejará de ver sus mensajes.`)) return;
+    let res;
+    try { res = await window.pywebview.api.quitar_de_grupo(chatId, m.user_id); } catch (e) { res = null; }
+    if (!res || !res.exito) { document.getElementById('grupo-miembros-msg').textContent = (res && res.error) || 'No se pudo quitar.'; return; }
+    await cargarMiembrosGrupo();
+}
+
+// Bloquea a un miembro y actualiza la lista.
+async function bloquearDesdeGrupo(m) {
+    if (await bloquearUsuario(m.user_id, m.username)) await cargarMiembrosGrupo();
+}
+
+// Sale del grupo. Si administrás, el mando pasa al miembro más antiguo.
+async function salirDelGrupo() {
+    const chatId = grupoMiembrosChat;
+    if (!chatId || !confirm('¿Salir de este grupo? Ya no vas a ver sus mensajes.')) return;
+    let res;
+    try { res = await window.pywebview.api.salir_de_grupo(chatId); } catch (e) { res = null; }
+    if (!res || !res.exito) { document.getElementById('grupo-miembros-msg').textContent = (res && res.error) || 'No se pudo salir del grupo.'; return; }
+    cerrarMiembrosGrupo();
+    if (chatAmigo && chatAmigo.user_id === chatId) {
+        chatAmigo = null;
+        document.getElementById('chat-activo').style.display = 'none';
+        document.getElementById('chat-vacio').style.display = '';
+    }
+    if (socialSeccion === 'chat') cargarConversaciones(); else await cargarSocial();
+}
+
+// Pide el estado de la llave de una persona.
+async function consultarSeguridad(id, nombre) {
+    let res = null;
+    try { res = await window.pywebview.api.llaves_amigo_estado(id); } catch (e) { /* se queda con lo que había */ }
+    if (res && res.exito) chatSeguridad = { ...res, id, nombre };
+    return res && res.exito;
+}
+
+// Abre el código de seguridad de cualquier miembro, aunque no tenga un chat 1 a 1.
+async function abrirCodigoDe(id, nombre) {
+    if (!await consultarSeguridad(id, nombre)) return;
+    document.getElementById('seguridad-msg').textContent = '';
+    pintarCodigoSeguridad();
+    document.getElementById('seguridad-modal').style.display = 'flex';
+}
+
+// Avisa en el chat si la llave de alguien cambió: no recibe mensajes hasta aceptarla.
+async function grupoRevisarLlaves() {
+    const chatId = chatAmigo.user_id;
+    let res = null;
+    try { res = await window.pywebview.api.obtener_miembros_grupo(chatId); } catch (e) { /* se reintenta al abrir el chat */ }
+    if (!chatAmigo || chatAmigo.user_id !== chatId || !res || !res.exito) return;
+    const cambio = res.miembros.find(m => m.llave === 'cambio');
+    document.getElementById('chat-llave-aviso').style.display = cambio ? 'flex' : 'none';
+    if (!cambio) return;
+    await consultarSeguridad(cambio.user_id, cambio.username);
+    document.getElementById('chat-llave-texto').textContent =
+        `La llave de ${cambio.username} cambió. Puede ser porque cambió su frase, o alguien podría estar haciéndose pasar por esa persona. No recibe tus mensajes hasta que la aceptes.`;
+}
