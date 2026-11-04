@@ -197,6 +197,15 @@ class CompartirPantalla(unittest.TestCase):
         self.assertEqual(recibido, ["--otra"])
 
 
+def setUpModule():
+    # Las pruebas de llaves no deben tocar la base real del equipo
+    carpeta = tempfile.mkdtemp()
+    parche = mock.patch.object(db_local, "DB_NAME", os.path.join(carpeta, "pruebas.db"))
+    parche.start()
+    unittest.addModuleCleanup(parche.stop)
+    db_local.inicializar_db_local()
+
+
 class _TablaFalsa:
     def __init__(self, cuenta):
         self.cuenta, self.datos, self.solo_vacia = cuenta, None, False
@@ -429,12 +438,93 @@ class MensajesCifrados(unittest.TestCase):
         viejo = {"tipo": "texto", "contenido": "hola", "de": "ana"}
         self.assertIs(llaves.abrir(viejo), viejo)
         with mock.patch.object(cifrado.session_store, "cargar", return_value={"entropia": bytes(range(16)).hex()}):
-            abierto = llaves.abrir({"tipo": "cifrado", "contenido": self._de_ana("hola"), "de": "ana"})
+            abierto = llaves.abrir({"tipo": "cifrado", "contenido": self._de_ana("hola"), "de": "ana", "para": "u1"})
         self.assertEqual((abierto["tipo"], abierto["contenido"]), ("texto", "hola"))
         with mock.patch.object(cifrado.session_store, "cargar", return_value=None):
             llaves._privada = None
-            abierto = llaves.abrir({"tipo": "cifrado", "contenido": self._de_ana(), "de": "ana"})
+            abierto = llaves.abrir({"tipo": "cifrado", "contenido": self._de_ana(), "de": "ana", "para": "u1"})
         self.assertEqual(abierto["contenido"], cifrado.ILEGIBLE_SIN_FRASE)
+
+
+class IdentidadDeAmigos(unittest.TestCase):
+    def setUp(self):
+        self.mia = bytes(range(16))
+        guardada = {"entropia": self.mia.hex()}
+        parche = mock.patch.object(cifrado.session_store, "cargar", return_value=guardada)
+        parche.start()
+        self.addCleanup(parche.stop)
+        self.cuenta = _CuentaFalsa()
+        self.cuenta._yo = lambda: f"yo-{self.id()}"     # cada prueba con su propia cuenta en la base local
+        self.yo = self.cuenta._yo()
+        self.llaves = cifrado.Llaves(self.cuenta)
+        self.amigo = cifrado.privada_de(bytes(16))
+        self.publica_amigo = cifrado._b64(bytes(self.amigo.public_key))
+        self.cuenta.publica = self.publica_amigo
+        self.intruso = cifrado.privada_de(b"i" * 16)
+        self.publica_intruso = cifrado._b64(bytes(self.intruso.public_key))
+
+    def _mensaje_de(self, privada, texto="hola"):
+        mia = cifrado._b64(bytes(cifrado.privada_de(self.mia).public_key))
+        return {"tipo": "cifrado", "de": "amigo", "para": self.yo, "contenido": cifrado.cifrar_para(privada, mia, "amigo", "texto", texto)}
+
+    def test_el_codigo_es_igual_para_ambos_y_cambia_con_la_llave(self):
+        a = cifrado.codigo_seguridad("u1", "A", "u2", "B")
+        self.assertEqual(a, cifrado.codigo_seguridad("u2", "B", "u1", "A"))
+        self.assertNotEqual(a, cifrado.codigo_seguridad("u1", "A", "u2", "C"))
+        self.assertRegex(a, r"^(\d{5} ){5}\d{5}$")
+
+    def test_la_primera_llave_se_acepta_sola_y_un_cambio_frena_el_envio(self):
+        self.assertTrue(self.llaves.cifrar("amigo", "texto", "hola").startswith("e1:"))
+        self.assertEqual(self.llaves.estado_amigo("amigo")["estado"], "confirmada")
+        self.cuenta.publica = self.publica_intruso
+        with self.assertRaises(cifrado.LlaveCambiada):
+            self.llaves.cifrar("amigo", "texto", "secreto")
+        self.assertEqual(self.llaves.estado_amigo("amigo")["estado"], "cambio")
+
+    def test_volver_a_una_llave_vieja_tambien_avisa(self):
+        self.llaves.estado_amigo("amigo")
+        self.cuenta.publica = self.publica_intruso
+        self.llaves.aceptar_amigo("amigo", self.llaves.estado_amigo("amigo")["codigo"])
+        self.cuenta.publica = self.publica_amigo
+        self.assertEqual(self.llaves.estado_amigo("amigo")["estado"], "cambio")
+
+    def test_aceptar_exige_el_codigo_vigente_y_quita_la_verificacion(self):
+        codigo = self.llaves.estado_amigo("amigo")["codigo"]
+        self.assertTrue(self.llaves.verificar_amigo("amigo", codigo, True)["exito"])
+        self.assertTrue(self.llaves.estado_amigo("amigo")["verificada"])
+        self.cuenta.publica = self.publica_intruso
+        self.assertFalse(self.llaves.estado_amigo("amigo")["verificada"])
+        self.assertFalse(self.llaves.aceptar_amigo("amigo", codigo)["exito"])
+        nuevo = self.llaves.estado_amigo("amigo")["codigo"]
+        self.assertFalse(self.llaves.verificar_amigo("amigo", nuevo, True)["exito"])   # sin aceptar antes
+        self.assertTrue(self.llaves.aceptar_amigo("amigo", nuevo)["exito"])
+        estado = self.llaves.estado_amigo("amigo")
+        self.assertEqual((estado["estado"], estado["verificada"]), ("confirmada", False))
+
+    def test_un_mensaje_con_llave_ajena_avisa_y_los_aceptados_no(self):
+        self.llaves.estado_amigo("amigo")
+        self.assertFalse(self.llaves.abrir(self._mensaje_de(self.amigo))["alerta_llave"])
+        self.assertTrue(self.llaves.abrir(self._mensaje_de(self.intruso))["alerta_llave"])
+
+    def test_un_mensaje_falso_como_si_fuera_mio_tambien_avisa(self):
+        self.llaves.estado_amigo("amigo")
+        mia = cifrado._b64(bytes(cifrado.privada_de(self.mia).public_key))
+        falso = cifrado.cifrar_para(self.intruso, mia, self.yo, "texto", "yo no escribí esto")
+        abierto = self.llaves.abrir({"tipo": "cifrado", "de": self.yo, "para": "amigo", "contenido": falso})
+        self.assertEqual(abierto["contenido"], "yo no escribí esto")
+        self.assertTrue(abierto["alerta_llave"])
+
+    def test_los_mensajes_con_una_llave_ya_aceptada_siguen_sin_avisar(self):
+        self.llaves.estado_amigo("amigo")
+        self.cuenta.publica = self.publica_intruso
+        self.llaves.aceptar_amigo("amigo", self.llaves.estado_amigo("amigo")["codigo"])
+        self.assertFalse(self.llaves.abrir(self._mensaje_de(self.amigo))["alerta_llave"])
+
+    def test_sin_conexion_no_rompe_la_lectura(self):
+        self.cuenta.sin_red = True
+        abierto = self.llaves.abrir(self._mensaje_de(self.amigo, "hola"))
+        self.assertEqual(abierto["contenido"], "hola")
+        self.assertFalse(abierto["alerta_llave"])
 
 
 if __name__ == "__main__":

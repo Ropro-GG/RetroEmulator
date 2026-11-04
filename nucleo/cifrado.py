@@ -19,7 +19,7 @@ from nacl.hash import blake2b
 from nacl.public import Box, PrivateKey, PublicKey
 from nacl.secret import SecretBox
 
-from . import gifs, session_store
+from . import db_local, gifs, session_store
 
 _BIP39 = Mnemonic("spanish")
 
@@ -67,6 +67,10 @@ class SinLlave(Exception):
         self.propia = propia
 
 
+class LlaveCambiada(SinLlave):
+    """La llave publicada de un amigo no es la aceptada: podría ser un cambio legítimo o alguien haciéndose pasar por él."""
+
+
 TIPOS_ADJUNTO = ("imagen", "sticker")
 ILEGIBLE_OTRA_FRASE = "🔒 No se puede leer este mensaje: se cifró con otra frase de recuperación."
 ILEGIBLE_SIN_FRASE = "🔒 Escribí tu frase de recuperación para leer este mensaje."
@@ -75,6 +79,14 @@ ILEGIBLE_DANADO = "🔒 No se puede leer este mensaje: llegó dañado o alterado
 
 def _b64(datos):
     return Base64Encoder.encode(datos).decode()
+
+
+def codigo_seguridad(id_a, publica_a, id_b, publica_b):
+    """30 dígitos, iguales para ambas personas. Si coinciden por otra vía, nadie reemplazó las llaves."""
+    partes = sorted((f"{id_a}:{publica_a}", f"{id_b}:{publica_b}"))
+    resumen = blake2b("|".join(partes).encode(), digest_size=32, person=b"retroemu-codigo", encoder=RawEncoder)
+    digitos = str(int.from_bytes(resumen, "big") % 10 ** 30).zfill(30)
+    return " ".join(digitos[i:i + 5] for i in range(0, 30, 5))
 
 
 def _contenido_valido(de, tipo, contenido):
@@ -227,6 +239,89 @@ class Llaves:
             self._privada = (self.cloud._yo(), privada_de(local) if local else None)
         return self._privada[1]
 
+    def _publicada(self, amigo):
+        res = self.cloud.client.table("profiles").select("llave_publica").eq("id", amigo).execute()
+        return res.data[0]["llave_publica"] if res.data else None
+
+    def _actual_o_primera(self, amigo, publicada):
+        """La llave aceptada de ese amigo. La primera que se ve se acepta sola: no hay con qué compararla."""
+        conocidas = db_local.llaves_de_amigo(self.cloud._yo(), amigo)
+        if not conocidas:
+            db_local.aceptar_llave_amigo(self.cloud._yo(), amigo, publicada)
+            return publicada
+        return next((llave for llave, (actual, _) in conocidas.items() if actual), None)
+
+    def _llave_no_aceptada(self, mensaje, privada):
+        """True si el mensaje usa otra llave que las aceptadas. Con ella se podría falsificar en ambos sentidos."""
+        try:
+            yo = self.cloud._yo()
+            amigo = mensaje["para"] if mensaje["de"] == yo else mensaje["de"]
+            _, emisor, receptor, _ = mensaje["contenido"].split(":")
+            otra = receptor if _b64(bytes(privada.public_key)) == emisor else emisor
+            publicada = None if db_local.llaves_de_amigo(yo, amigo) else self._publicada(amigo)
+            if publicada:
+                self._actual_o_primera(amigo, publicada)
+            return otra not in db_local.llaves_de_amigo(yo, amigo)
+        except Exception as e:
+            print(f"[CIFRADO] No se pudo revisar la llave: {e}")   # sin conexión no hay con qué comparar
+            return False
+
+    def estado_amigo(self, amigo):
+        """'confirmada', 'cambio' o 'sin_llave', con el código de seguridad de la llave publicada."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        try:
+            publicada = self._publicada(amigo)
+            if not publicada:
+                return {"exito": True, "estado": "sin_llave", "verificada": False, "codigo": None}
+            actual = self._actual_o_primera(amigo, publicada)
+            conocida = db_local.llaves_de_amigo(self.cloud._yo(), amigo).get(publicada, (False, False))
+            return {"exito": True, "estado": "confirmada" if actual == publicada else "cambio",
+                    "verificada": actual == publicada and conocida[1], "codigo": self._codigo(amigo, publicada)}
+        except Exception as e:
+            return {"exito": False, "error": self.cloud._error_social(e)}
+
+    def _codigo(self, amigo, publica):
+        privada = self._privada_actual()
+        return codigo_seguridad(self.cloud._yo(), _b64(bytes(privada.public_key)), amigo, publica) if privada else None
+
+    def _publicada_con_codigo(self, amigo, codigo):
+        """La llave publicada, solo si sigue siendo la del código que vio el usuario."""
+        publicada = self._publicada(amigo)
+        if not publicada or not codigo or self._codigo(amigo, publicada) != codigo:
+            raise SinLlave("La llave volvió a cambiar. Revisá el código de nuevo.")
+        return publicada
+
+    def aceptar_amigo(self, amigo, codigo):
+        """Acepta la llave nueva de un amigo. Solo lo hace el usuario, y queda sin verificar."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        try:
+            db_local.aceptar_llave_amigo(self.cloud._yo(), amigo, self._publicada_con_codigo(amigo, codigo))
+            return {"exito": True}
+        except SinLlave as e:
+            return {"exito": False, "error": str(e)}
+        except Exception as e:
+            return {"exito": False, "error": self.cloud._error_social(e)}
+
+    def verificar_amigo(self, amigo, codigo, verificada):
+        """Recuerda si el usuario comparó el código. Solo sirve para la llave ya aceptada."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        try:
+            publicada = self._publicada_con_codigo(amigo, codigo)
+            if self._actual_o_primera(amigo, publicada) != publicada:
+                return {"exito": False, "error": "Primero aceptá la llave nueva."}
+            db_local.marcar_llave_verificada(self.cloud._yo(), amigo, publicada, verificada)
+            return {"exito": True}
+        except SinLlave as e:
+            return {"exito": False, "error": str(e)}
+        except Exception as e:
+            return {"exito": False, "error": self.cloud._error_social(e)}
+
     def _llave_propia(self):
         """Llave de lo que solo ve su dueño (la colección de stickers). Cambia junto con la frase."""
         privada = self._privada_actual()
@@ -252,10 +347,11 @@ class Llaves:
         privada = self._privada_actual()
         if not privada:
             raise SinLlave("Para enviar mensajes, primero activá tu frase de recuperación.", propia=True)
-        res = self.cloud.client.table("profiles").select("llave_publica").eq("id", amigo).execute()
-        su_publica = res.data[0]["llave_publica"] if res.data else None
+        su_publica = self._publicada(amigo)
         if not su_publica:
             raise SinLlave("Esta persona todavía no activó sus mensajes privados. Pedile que actualice la app.")
+        if self._actual_o_primera(amigo, su_publica) != su_publica:
+            raise LlaveCambiada("La llave de esta persona cambió. Revisá el aviso del chat antes de enviar.")
         return cifrar_para(privada, su_publica, self.cloud._yo(), tipo, contenido, llave)
 
     def abrir(self, mensaje):
@@ -265,7 +361,9 @@ class Llaves:
         privada = self._privada_actual()
         tipo, contenido = descifrar_de(privada, mensaje["de"], mensaje["contenido"], mensaje.get("adjunto"), self.adjuntos) \
             if privada else ("texto", ILEGIBLE_SIN_FRASE)
-        return {**mensaje, "tipo": tipo, "contenido": contenido}
+        legible = contenido not in (ILEGIBLE_OTRA_FRASE, ILEGIBLE_SIN_FRASE, ILEGIBLE_DANADO)
+        return {**mensaje, "tipo": tipo, "contenido": contenido,
+                "alerta_llave": legible and self._llave_no_aceptada(mensaje, privada)}
 
     def ver_frase(self, password):
         """Las 12 palabras de este equipo. Pide la contraseña porque dan acceso a todos los chats."""

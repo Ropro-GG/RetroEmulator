@@ -571,7 +571,8 @@ class CloudClient:
 
     def _abierto_para_ui(self, m):
         abierto = self.llaves.abrir(m)
-        return {"tipo": abierto.get("tipo", "texto"), "contenido": abierto.get("contenido", "")}
+        return {"tipo": abierto.get("tipo", "texto"), "contenido": abierto.get("contenido", ""),
+                "alerta_llave": abierto.get("alerta_llave", False)}
 
     # Filtro de PostgREST: mensajes entre tú y ese amigo, en cualquier dirección.
     def _filtro_par(self, amigo):
@@ -715,7 +716,8 @@ class CloudClient:
                 return {"exito": False, "error": "No se pudo enviar el mensaje."}
             return {"exito": True, "mensaje": self._mensaje_para_ui(fila)}
         except cifrado.SinLlave as e:
-            return {"exito": False, "error": str(e), "falta_mi_llave": e.propia}
+            return {"exito": False, "error": str(e), "falta_mi_llave": e.propia,
+                    "llave_cambiada": isinstance(e, cifrado.LlaveCambiada)}
         except Exception as e:
             bajo = str(e).lower()
             if "row-level security" in bajo or "42501" in bajo:

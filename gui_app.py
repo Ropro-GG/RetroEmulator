@@ -108,6 +108,18 @@ class API:
     def llaves_recuperar(self, texto):
         return self._llaves.recuperar(texto)
 
+    # Si la llave de un amigo sigue siendo la aceptada, y su código de seguridad.
+    def llaves_amigo_estado(self, amigo_id):
+        return self._llaves.estado_amigo(amigo_id)
+
+    # Acepta la llave nueva de un amigo, si sigue siendo la del código mostrado.
+    def llaves_amigo_aceptar(self, amigo_id, codigo):
+        return self._llaves.aceptar_amigo(amigo_id, codigo)
+
+    # Recuerda si comparaste el código de seguridad con ese amigo.
+    def llaves_amigo_verificar(self, amigo_id, codigo, verificada):
+        return self._llaves.verificar_amigo(amigo_id, codigo, bool(verificada))
+
     # Muestra la frase de este equipo, después de comprobar la contraseña.
     def llaves_ver_frase(self, password):
         return self._llaves.ver_frase(password)

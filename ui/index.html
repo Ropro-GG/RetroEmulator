@@ -174,10 +174,15 @@
                                         <strong id="chat-nombre"></strong>
                                         <small id="chat-estado"></small>
                                     </div>
+                                    <button id="chat-seguridad" class="chat-icono" title="Código de seguridad" onclick="abrirCodigoSeguridad()">🔒</button>
                                     <button class="chat-icono" title="Llamada de voz" onclick="llamarAmigoChat()">📞</button>
                                     <button class="chat-icono" title="Videollamada" onclick="llamarAmigoChat(true)">🎥</button>
                                     <button class="btn-secondary-sm" onclick="verPerfilDelChat()">Ver perfil</button>
                                 </header>
+                                <div id="chat-llave-aviso" class="chat-llave-aviso" role="alert" style="display: none;">
+                                    <span id="chat-llave-texto"></span>
+                                    <button class="btn-secondary-sm" onclick="abrirCodigoSeguridad()">Ver código</button>
+                                </div>
                                 <div id="chat-mensajes" class="chat-mensajes" onscroll="alScrollChat()"></div>
                                 <p id="chat-error" class="chat-error"></p>
                                 <div id="picker" class="picker" style="display: none;">
@@ -476,6 +481,21 @@
             <div class="code-actions">
                 <button id="compartir-enviar" class="btn-primary-sm" onclick="confirmarCompartir()">Enviar</button>
                 <button class="btn-secondary-sm" onclick="cerrarCompartir()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CÓDIGO DE SEGURIDAD DE UN CHAT -->
+    <div id="seguridad-modal" class="modal" style="display: none;">
+        <div class="dialog-card denuncia-card">
+            <h2 id="seguridad-titulo"></h2>
+            <p id="seguridad-ayuda" class="settings-help"></p>
+            <p id="seguridad-codigo" class="seguridad-codigo"></p>
+            <p id="seguridad-msg" class="code-msg" role="status"></p>
+            <div class="code-actions">
+                <button id="seguridad-aceptar" class="btn-primary-sm" onclick="aceptarLlaveAmigo()">Aceptar la llave nueva</button>
+                <button id="seguridad-verificar" class="btn-primary-sm" onclick="alternarVerificacion()"></button>
+                <button class="btn-secondary-sm" onclick="cerrarCodigoSeguridad()">Cerrar</button>
             </div>
         </div>
     </div>

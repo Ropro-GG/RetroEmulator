@@ -483,6 +483,7 @@ async function cerrarSesion() {
     perfilActual = null;
     consolaSeleccionada = 'todas';
     llavesCerrar();
+    cerrarCodigoSeguridad();
     cerrarConfiguracion();
     volverABiblioteca();
     detenerInsignias();
@@ -2322,6 +2323,13 @@ function crearBurbuja(m) {
     const hora = document.createElement('span');
     hora.textContent = horaDe(m.creado_en);
     meta.appendChild(hora);
+    if (m.alerta_llave) {
+        const alerta = document.createElement('span');
+        alerta.className = 'msg-alerta';
+        alerta.textContent = '⚠️ Llave no confirmada';
+        alerta.title = 'Este mensaje usa una llave que no aceptaste en este equipo. Puede ser una llave anterior de tu amigo, o alguien haciéndose pasar por él.';
+        meta.appendChild(alerta);
+    }
     if (m.mio) {
         const estado = document.createElement('span');
         estado.className = 'msg-estado' + (m.leido ? ' visto' : '');
@@ -2368,6 +2376,8 @@ async function abrirConversacion(amigoId) {
     const conv = chatConversaciones.find(c => c.user_id === amigoId) || chatAmigo;
     if (!conv || conv.user_id !== amigoId) return;
     chatAmigo = conv;
+    document.getElementById('chat-llave-aviso').style.display = 'none';
+    chatRevisarLlave();
 
     document.getElementById('chat-vacio').style.display = 'none';
     document.getElementById('chat-activo').style.display = 'flex';
@@ -2435,6 +2445,7 @@ async function sincronizarChat() {
         let cambio = false, llegaron = false;
         (res.nuevos || []).forEach(m => {
             if (registrarMensaje(m)) { cambio = true; if (!m.mio) llegaron = true; }
+            if (m.alerta_llave) chatRevisarLlave();
         });
         (res.vistos || []).forEach(vid => {
             chatPendientes.delete(vid);
@@ -2448,6 +2459,80 @@ async function sincronizarChat() {
     } finally {
         chatOcupado = false;
     }
+}
+
+let chatSeguridad = null;   // estado de la llave del amigo del chat abierto
+
+// Muestra el aviso si la llave del amigo cambió. Si no se puede consultar, deja lo que había.
+async function chatRevisarLlave() {
+    if (!chatAmigo) return;
+    const id = chatAmigo.user_id;
+    let res = null;
+    try {
+        res = await window.pywebview.api.llaves_amigo_estado(id);
+    } catch (e) { /* se reintenta al volver a abrir el chat */ }
+    if (!chatAmigo || chatAmigo.user_id !== id || !res || !res.exito) return;
+    chatSeguridad = { ...res, id, nombre: chatAmigo.username };
+    document.getElementById('chat-llave-texto').textContent =
+        `La llave de ${chatAmigo.username} cambió. Puede ser porque cambió su frase, o alguien podría estar haciéndose pasar por esa persona. No se envía nada hasta que la aceptes.`;
+    document.getElementById('chat-llave-aviso').style.display = res.estado === 'cambio' ? 'flex' : 'none';
+    document.getElementById('chat-seguridad').textContent = res.verificada ? '✅' : '🔒';
+}
+
+// Pinta la ventana según el estado actual de la llave.
+function pintarCodigoSeguridad() {
+    const s = chatSeguridad;
+    const cambio = s.estado === 'cambio';
+    const conCodigo = Boolean(s.codigo);
+    document.getElementById('seguridad-titulo').textContent = cambio ? `La llave de ${s.nombre} cambió` : `Código de seguridad con ${s.nombre}`;
+    document.getElementById('seguridad-ayuda').textContent = !conCodigo
+        ? (s.estado === 'sin_llave' ? 'Esta persona todavía no activó sus mensajes privados.' : 'Activá tu frase de recuperación para ver este código.')
+        : (cambio ? 'Comparen este código por otra vía, como una llamada o en persona. Aceptá la llave solo si coincide con el que ve esa persona.'
+                  : (s.verificada ? 'Ya comparaste este código. Si cambia, te vamos a avisar.' : 'Comparen este código por otra vía, como una llamada o en persona. Si coincide, nadie reemplazó sus llaves.'));
+    document.getElementById('seguridad-codigo').textContent = s.codigo || '';
+    document.getElementById('seguridad-aceptar').style.display = cambio && conCodigo ? '' : 'none';
+    const verificar = document.getElementById('seguridad-verificar');
+    verificar.style.display = !cambio && conCodigo ? '' : 'none';
+    verificar.textContent = s.verificada ? 'Quitar verificación' : 'Coincide: marcar como verificado';
+}
+
+// Abre la ventana con datos recién consultados.
+async function abrirCodigoSeguridad() {
+    await chatRevisarLlave();
+    if (!chatSeguridad || !chatAmigo || chatSeguridad.id !== chatAmigo.user_id) return;
+    document.getElementById('seguridad-msg').textContent = '';
+    pintarCodigoSeguridad();
+    document.getElementById('seguridad-modal').style.display = 'flex';
+}
+
+function cerrarCodigoSeguridad() {
+    document.getElementById('seguridad-modal').style.display = 'none';
+}
+
+// Acepta la llave nueva y recarga el chat, porque cambian las alertas de sus mensajes.
+async function aceptarLlaveAmigo() {
+    const { id, codigo } = chatSeguridad;
+    const res = await window.pywebview.api.llaves_amigo_aceptar(id, codigo);
+    if (!res || !res.exito) {
+        document.getElementById('seguridad-msg').textContent = (res && res.error) || 'No se pudo aceptar la llave.';
+        await chatRevisarLlave();
+        return;
+    }
+    cerrarCodigoSeguridad();
+    if (chatAmigo && chatAmigo.user_id === id) abrirConversacion(id);
+}
+
+// Marca o desmarca que ya comparaste el código.
+async function alternarVerificacion() {
+    const { id, codigo, verificada } = chatSeguridad;
+    const res = await window.pywebview.api.llaves_amigo_verificar(id, codigo, !verificada);
+    if (!res || !res.exito) {
+        document.getElementById('seguridad-msg').textContent = (res && res.error) || 'No se pudo guardar.';
+        return;
+    }
+    await chatRevisarLlave();
+    document.getElementById('seguridad-msg').textContent = '';
+    if (chatSeguridad && chatSeguridad.id === id) pintarCodigoSeguridad();
 }
 
 // Envía el texto escrito.
@@ -2481,6 +2566,7 @@ async function enviarMensaje() {
     } else {
         error.textContent = (res && res.error) || 'No se pudo enviar el mensaje.';
         if (res && res.falta_mi_llave) llavesIniciar();
+        if (res && res.llave_cambiada) chatRevisarLlave();
     }
     caja.focus();
 }
@@ -2581,6 +2667,7 @@ function mostrarErrorChat(res) {
     if (res && res.error && res.error !== 'cancelado') {
         document.getElementById('chat-error').textContent = res.error;
         if (res.falta_mi_llave) llavesIniciar();
+        if (res.llave_cambiada) chatRevisarLlave();
     }
 }
 

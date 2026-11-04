@@ -99,6 +99,19 @@ def inicializar_db_local():
         if "publica" not in columnas:
             cursor.execute("ALTER TABLE opiniones_cuenta ADD COLUMN publica INTEGER DEFAULT 1;")
 
+        # Llaves públicas de amigos aceptadas en este equipo. Va aquí y no en Supabase:
+        # quien controle el servidor no debe poder ocultar el aviso de que una llave cambió.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS llaves_amigos (
+                cuenta TEXT NOT NULL,
+                amigo TEXT NOT NULL,
+                llave TEXT NOT NULL,
+                actual INTEGER NOT NULL DEFAULT 0,
+                verificada INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (cuenta, amigo, llave)
+            );
+        """)
+
         # Coincidencias entre juegos locales y juegos de RetroAchievements
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS ra_juegos (
@@ -192,6 +205,32 @@ def inicializar_db_local():
             """, consolas_base)
             
         conn.commit()
+
+# --- LLAVES DE AMIGOS ---
+
+def llaves_de_amigo(cuenta, amigo):
+    """Llaves aceptadas de ese amigo: {llave: (es la actual, está verificada)}."""
+    with obtener_conexion() as conn:
+        filas = conn.execute("SELECT llave, actual, verificada FROM llaves_amigos WHERE cuenta = ? AND amigo = ?;",
+                             (cuenta, amigo)).fetchall()
+    return {f[0]: (bool(f[1]), bool(f[2])) for f in filas}
+
+
+def aceptar_llave_amigo(cuenta, amigo, llave):
+    """La deja como actual, sin verificar. Las anteriores se conservan: sus mensajes siguen siendo válidos."""
+    with obtener_conexion() as conn:
+        conn.execute("UPDATE llaves_amigos SET actual = 0 WHERE cuenta = ? AND amigo = ?;", (cuenta, amigo))
+        conn.execute("""
+            INSERT INTO llaves_amigos (cuenta, amigo, llave, actual, verificada) VALUES (?, ?, ?, 1, 0)
+            ON CONFLICT (cuenta, amigo, llave) DO UPDATE SET actual = 1, verificada = 0;
+        """, (cuenta, amigo, llave))
+
+
+def marcar_llave_verificada(cuenta, amigo, llave, verificada):
+    with obtener_conexion() as conn:
+        conn.execute("UPDATE llaves_amigos SET verificada = ? WHERE cuenta = ? AND amigo = ? AND llave = ?;",
+                     (1 if verificada else 0, cuenta, amigo, llave))
+
 
 # --- FUNCIONES DE GESTIÓN DE CONSOLAS ---
 
