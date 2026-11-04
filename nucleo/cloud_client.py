@@ -557,7 +557,7 @@ class CloudClient:
     # --- CHAT (mensajes entre amigos aceptados) ---
 
     LIMITE_MENSAJE = 1000
-    _COLUMNAS_MENSAJE = "id, de, para, tipo, contenido, creado_en, leido_en"
+    _COLUMNAS_MENSAJE = "id, de, para, tipo, contenido, adjunto, creado_en, leido_en"
 
     # Da a un mensaje el formato que espera la interfaz.
     def _mensaje_para_ui(self, m):
@@ -703,22 +703,23 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
-    # Inserción común a todos los tipos de mensaje.
-    def _insertar_mensaje(self, amigo_id, tipo, contenido):
+    # Inserción común: todo mensaje se cifra aquí. La base solo ve el tipo "cifrado", no si es texto, imagen o GIF.
+    def _insertar_mensaje(self, amigo_id, tipo, contenido, adjunto=None, llave=None):
         try:
             res = self.client.table("mensajes").insert({
-                "de": self._yo(), "para": amigo_id, "tipo": tipo, "contenido": contenido,
+                "de": self._yo(), "para": amigo_id, "tipo": "cifrado", "adjunto": adjunto,
+                "contenido": self.llaves.cifrar(amigo_id, tipo, contenido, llave),
             }).execute()
             fila = (res.data or [None])[0]
             if not fila:
                 return {"exito": False, "error": "No se pudo enviar el mensaje."}
             return {"exito": True, "mensaje": self._mensaje_para_ui(fila)}
+        except cifrado.SinLlave as e:
+            return {"exito": False, "error": str(e), "falta_mi_llave": e.propia}
         except Exception as e:
             bajo = str(e).lower()
             if "row-level security" in bajo or "42501" in bajo:
                 return {"exito": False, "error": "No podés escribirle a esta persona (¿siguen siendo amigos?)."}
-            if tipo == "publicacion" and ("check constraint" in bajo or "23514" in bajo):
-                return {"exito": False, "error": "Falta actualizar el chat en Supabase."}
             return {"exito": False, "error": self._error_social(e)}
 
     # Valida el texto y lo envía.
@@ -731,13 +732,7 @@ class CloudClient:
             return {"exito": False, "error": "Escribí un mensaje."}
         if len(texto) > self.LIMITE_MENSAJE:
             return {"exito": False, "error": f"El mensaje es demasiado largo (máximo {self.LIMITE_MENSAJE} caracteres)."}
-        try:
-            guardado = self.llaves.cifrar(amigo_id, "texto", texto)
-        except cifrado.SinLlave as e:
-            return {"exito": False, "error": str(e), "falta_mi_llave": e.propia}
-        except Exception as e:
-            return {"exito": False, "error": self._error_social(e)}
-        return self._insertar_mensaje(amigo_id, "cifrado", guardado)
+        return self._insertar_mensaje(amigo_id, "texto", texto)
 
     def enviar_gif(self, amigo_id, url):
         """Un GIF viaja como su dirección de internet (solo servidores de KLIPY)."""
@@ -751,6 +746,7 @@ class CloudClient:
     # --- IMÁGENES Y STICKERS (espacio privado "chat" de Supabase Storage) ---
 
     BUCKET_CHAT = "chat"
+    MIME_CIFRADO = "application/octet-stream"   # el espacio del chat solo acepta archivos cifrados
     MAX_STICKERS = 60
 
     # Traduce los errores de subida de imágenes.
@@ -769,17 +765,15 @@ class CloudClient:
         self.client.storage.from_(self.BUCKET_CHAT).upload(
             path=ruta, file=datos, file_options={"content-type": mime, "upsert": "false"})
 
-    # Sube la imagen y crea el mensaje; si el mensaje falla, borra el archivo.
-    def enviar_imagen(self, amigo_id, datos, mime, extension):
-        error = self._requiere_sesion()
-        if error:
-            return error
-        ruta = f"{self._yo()}/imagenes/{uuid.uuid4().hex}.{extension}"
+    # Sube el archivo cifrado y crea el mensaje con su llave; si el mensaje falla, borra el archivo.
+    def _enviar_adjunto(self, amigo_id, tipo, datos):
+        ruta = f"{self._yo()}/cifrados/{uuid.uuid4().hex}.bin"
+        llave, cifrados = cifrado.cifrar_archivo(datos)
         try:
-            self._subir_a_chat(ruta, datos, mime)
+            self._subir_a_chat(ruta, cifrados, self.MIME_CIFRADO)
         except Exception as e:
             return {"exito": False, "error": self._error_subida(e)}
-        resultado = self._insertar_mensaje(amigo_id, "imagen", ruta)
+        resultado = self._insertar_mensaje(amigo_id, tipo, ruta, adjunto=ruta, llave=llave)
         if not resultado.get("exito"):
             try:   # no dejar el archivo huérfano si el mensaje no se pudo enviar
                 self.client.storage.from_(self.BUCKET_CHAT).remove([ruta])
@@ -787,7 +781,13 @@ class CloudClient:
                 pass
         return resultado
 
-    def guardar_sticker(self, datos, mime, extension):
+    def enviar_imagen(self, amigo_id, datos):
+        error = self._requiere_sesion()
+        if error:
+            return error
+        return self._enviar_adjunto(amigo_id, "imagen", datos)
+
+    def guardar_sticker(self, datos):
         """Sube el sticker a tu carpeta y lo suma a tu colección."""
         error = self._requiere_sesion()
         if error:
@@ -799,12 +799,14 @@ class CloudClient:
         if len(existentes.data or []) >= self.MAX_STICKERS:
             return {"exito": False, "error": f"Llegaste al máximo de {self.MAX_STICKERS} stickers: quitá alguno para crear otro."}
 
-        ruta = f"{self._yo()}/stickers/{uuid.uuid4().hex}.{extension}"
+        ruta = f"{self._yo()}/stickers/{uuid.uuid4().hex}.bin"
         try:
-            self._subir_a_chat(ruta, datos, mime)
+            self._subir_a_chat(ruta, self.llaves.cifrar_propio(datos), self.MIME_CIFRADO)
             res = self.client.table("stickers_usuario").insert({"user_id": self._yo(), "ruta": ruta}).execute()
             fila = (res.data or [None])[0]
             return {"exito": True, "sticker": {"id": fila["id"] if fila else None, "ruta": ruta}}
+        except cifrado.SinLlave as e:
+            return {"exito": False, "error": str(e), "falta_mi_llave": True}
         except Exception as e:
             return {"exito": False, "error": self._error_subida(e)}
 
@@ -821,12 +823,15 @@ class CloudClient:
             return {"exito": False, "error": self._error_social(e)}
 
     def eliminar_sticker(self, sticker_id):
-        """Lo saca de tu colección. El archivo queda, así los que ya enviaste se siguen viendo."""
+        """Lo saca de tu colección y borra su archivo: cada envío ya tiene su propia copia."""
         error = self._requiere_sesion()
         if error:
             return error
         try:
-            self.client.table("stickers_usuario").delete().eq("id", sticker_id).eq("user_id", self._yo()).execute()
+            res = self.client.table("stickers_usuario").delete().eq("id", sticker_id).eq("user_id", self._yo()).execute()
+            rutas = [r["ruta"] for r in res.data or []]
+            if rutas:
+                self.client.storage.from_(self.BUCKET_CHAT).remove(rutas)
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
@@ -838,10 +843,19 @@ class CloudClient:
             return error
         if not (ruta or "").startswith(f"{self._yo()}/stickers/"):
             return {"exito": False, "error": "Ese sticker no es tuyo."}
-        return self._insertar_mensaje(amigo_id, "sticker", ruta)
+        # shortcut: cada envío sube una copia cifrada; si el espacio se vuelve un problema, reutilizarla por amigo
+        datos = self.descargar_imagen_chat(ruta)
+        if not datos:
+            return {"exito": False, "error": "No se pudo abrir ese sticker."}
+        return self._enviar_adjunto(amigo_id, "sticker", datos)
 
     def descargar_imagen_chat(self, ruta):
-        """Bytes de una imagen o sticker del chat. Se guarda una copia en cache/chat/<usuario>/."""
+        """Imagen o sticker del chat ya descifrado, o None."""
+        datos = self._bajar_archivo_chat(ruta)
+        return self.llaves.descifrar_archivo(ruta, datos) if datos else None
+
+    def _bajar_archivo_chat(self, ruta):
+        """Bytes tal como están guardados. La copia en cache/chat/<usuario>/ sigue cifrada."""
         if not self.client or not self.usuario_actual or not ruta:
             return None
         carpeta = os.path.join("cache", "chat", self._yo())

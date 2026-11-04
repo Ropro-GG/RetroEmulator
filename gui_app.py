@@ -89,6 +89,7 @@ class API:
         self._imagen_elegida = ""
         self._imagen_publicacion = ""
         self._llaves.olvidar_en_pantalla()     # una frase en pantalla no debe pasar a otra cuenta
+        self._llaves.adjuntos.clear()
         return resultado
 
     # Si esta cuenta ya tiene sus llaves en este equipo o falta crearlas o recuperarlas.
@@ -276,10 +277,10 @@ class API:
         if not self._imagen_elegida:
             return {"exito": False, "error": "Primero elegí una imagen."}
         try:
-            datos, mime, extension = imagenes.preparar_para_chat(self._imagen_elegida)
+            datos, *_ = imagenes.preparar_para_chat(self._imagen_elegida)
         except imagenes.ErrorImagen as e:
             return {"exito": False, "error": str(e)}
-        resultado = self.cloud.enviar_imagen(amigo_id, datos, mime, extension)
+        resultado = self.cloud.enviar_imagen(amigo_id, datos)
         if resultado.get("exito"):
             self._imagen_elegida = ""
         return resultado
@@ -298,10 +299,10 @@ class API:
         if not self._imagen_elegida:
             return {"exito": False, "error": "Primero elegí una imagen."}
         try:
-            datos, mime, extension = imagenes.crear_sticker(self._imagen_elegida, forma, ajuste, contorno)
+            datos, *_ = imagenes.crear_sticker(self._imagen_elegida, forma, ajuste, contorno)
         except imagenes.ErrorImagen as e:
             return {"exito": False, "error": str(e)}
-        return self.cloud.guardar_sticker(datos, mime, extension)
+        return self.cloud.guardar_sticker(datos)
 
     # Stickers de tu colección.
     def obtener_stickers(self):

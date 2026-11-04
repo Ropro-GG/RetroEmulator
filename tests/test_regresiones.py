@@ -366,6 +366,51 @@ class MensajesCifrados(unittest.TestCase):
         peor = "🎮" * 1000
         self.assertLess(len(self._de_ana(peor)), 10000)
 
+    def _adjunto(self, tipo="imagen", ruta=None, llave=b"k" * 32):
+        ruta = ruta or "ana/cifrados/" + "a" * 32 + ".bin"
+        return ruta, cifrado.cifrar_para(self.ana, self.publica_beto, "ana", tipo, ruta, llave)
+
+    def test_gif_y_publicacion_se_revisan_al_abrirlos(self):
+        for tipo, bueno, malo in (("gif", "https://static.klipy.com/a.gif", "https://malo.example/a.gif"),
+                                  ("publicacion", "42", "42; drop table")):
+            g = cifrado.cifrar_para(self.ana, self.publica_beto, "ana", tipo, bueno)
+            self.assertEqual(cifrado.descifrar_de(self.beto, "ana", g), (tipo, bueno))
+            g = cifrado.cifrar_para(self.ana, self.publica_beto, "ana", tipo, malo)
+            self.assertEqual(cifrado.descifrar_de(self.beto, "ana", g)[1], cifrado.ILEGIBLE_DANADO)
+
+    def test_un_adjunto_solo_vale_si_es_del_emisor_y_coincide_con_la_fila(self):
+        ruta, g = self._adjunto()
+        adjuntos = {}
+        self.assertEqual(cifrado.descifrar_de(self.beto, "ana", g, ruta, adjuntos), ("imagen", ruta))
+        self.assertEqual(adjuntos, {ruta: b"k" * 32})
+        self.assertEqual(cifrado.descifrar_de(self.beto, "ana", g, "ana/cifrados/otro.bin")[1], cifrado.ILEGIBLE_DANADO)
+        ajena = "beto/cifrados/" + "a" * 32 + ".bin"
+        _, g = self._adjunto(ruta=ajena)
+        self.assertEqual(cifrado.descifrar_de(self.beto, "ana", g, ajena)[1], cifrado.ILEGIBLE_DANADO)
+
+    def test_un_archivo_se_abre_solo_con_su_llave_y_el_viejo_queda_igual(self):
+        llaves = cifrado.Llaves(_CuentaFalsa())
+        llave, sobre = cifrado.cifrar_archivo(b"imagen secreta")
+        self.assertNotIn(b"imagen secreta", sobre)
+        ruta = "ana/cifrados/x.bin"
+        self.assertIsNone(llaves.descifrar_archivo(ruta, sobre))
+        llaves.adjuntos[ruta] = llave
+        self.assertEqual(llaves.descifrar_archivo(ruta, sobre), b"imagen secreta")
+        llaves.adjuntos[ruta] = b"z" * 32
+        self.assertIsNone(llaves.descifrar_archivo(ruta, sobre))
+        self.assertEqual(llaves.descifrar_archivo("ana/stickers/viejo.png", b"png"), b"png")
+
+    def test_los_stickers_guardados_dependen_de_la_frase(self):
+        llaves = cifrado.Llaves(_CuentaFalsa())
+        ruta = "u1/stickers/x.bin"
+        with mock.patch.object(cifrado.session_store, "cargar", return_value={"entropia": bytes(16).hex()}):
+            sobre = llaves.cifrar_propio(b"sticker")
+            self.assertNotIn(b"sticker", sobre)
+            self.assertEqual(llaves.descifrar_archivo(ruta, sobre), b"sticker")
+        llaves._privada = None
+        with mock.patch.object(cifrado.session_store, "cargar", return_value={"entropia": bytes(range(16)).hex()}):
+            self.assertIsNone(llaves.descifrar_archivo(ruta, sobre))
+
     def test_sin_llave_no_se_envia_y_nunca_cae_a_texto_sin_cifrar(self):
         cuenta = _CuentaFalsa()
         llaves = cifrado.Llaves(cuenta)

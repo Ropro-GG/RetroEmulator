@@ -1503,7 +1503,7 @@ let llavesAccion = 'ver';   // qué hace la contraseña pedida: 'ver' o 'cambiar
 
 // Pide la contraseña antes de ver o cambiar la frase.
 function llavesPedirContrasena(accion) {
-    if (accion === 'cambiar' && !confirm('¿Cambiar tu frase? Los mensajes cifrados que recibiste y enviaste hasta ahora dejarán de poder leerse en tus equipos, y los demás equipos te pedirán la frase nueva. Se te avisará por correo.')) return;
+    if (accion === 'cambiar' && !confirm('¿Cambiar tu frase? Los mensajes que recibiste y enviaste hasta ahora y tus stickers guardados dejarán de poder abrirse en tus equipos, y los demás equipos te pedirán la frase nueva. Se te avisará por correo.')) return;
     llavesAccion = accion;
     document.getElementById('llaves-contrasena-titulo').textContent = accion === 'ver' ? 'Ver mi frase' : 'Cambiar mi frase';
     document.getElementById('llaves-contrasena-ayuda').textContent = accion === 'ver'
@@ -2579,6 +2579,7 @@ function cargarImagenEn(img, ruta) {
 function mostrarErrorChat(res) {
     if (res && res.error && res.error !== 'cancelado') {
         document.getElementById('chat-error').textContent = res.error;
+        if (res.falta_mi_llave) llavesIniciar();
     }
 }
 

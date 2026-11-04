@@ -305,3 +305,24 @@ create extension pg_net schema extensions;
 
 -- Columna que ninguna parte de la app ni de la base usaba, y que solo tenía texto vacío.
 alter table public.profiles drop column if exists juego_actual;
+
+-- Etapa 3 del cifrado: imágenes, stickers, GIF y publicaciones. La base ya no acepta mensajes sin cifrar.
+alter table public.mensajes add column if not exists adjunto text;
+grant select (adjunto), insert (adjunto) on public.mensajes to authenticated;
+-- La ruta del archivo va cifrada en el mensaje; esta columna solo permite que el otro participante lo descargue.
+drop policy if exists chat_leer on storage.objects;
+create policy chat_leer on storage.objects for select to authenticated using (
+    bucket_id = 'chat' and ((storage.foldername(name))[1] = auth.uid()::text
+        or exists (select 1 from public.mensajes m
+            where m.adjunto = objects.name and (auth.uid() = m.de or auth.uid() = m.para))));
+drop index if exists public.mensajes_contenido_idx;
+create index if not exists mensajes_adjunto_idx on public.mensajes (adjunto) where adjunto is not null;
+update storage.buckets set allowed_mime_types = array['application/octet-stream'] where id = 'chat';
+drop policy if exists mensajes_insert on public.mensajes;
+create policy mensajes_insert on public.mensajes for insert with check (
+    auth.uid() = de and leido_en is null and tipo = 'cifrado'
+    and contenido ~ '^e1:[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]+={0,2}$'
+    and (adjunto is null or adjunto ~ ('^' || de::text || '/cifrados/[0-9a-f]{32}\.bin$'))
+    and exists (select 1 from public.friendships f where f.status = 'accepted'
+        and ((f.requester_id = mensajes.de and f.addressee_id = mensajes.para)
+          or (f.addressee_id = mensajes.de and f.requester_id = mensajes.para))));

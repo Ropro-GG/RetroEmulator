@@ -6,7 +6,9 @@ Cada cuenta tiene un par de llaves que sale de una frase de 12 palabras:
   - la privada no sale nunca de este equipo; se recupera en otro escribiendo la frase.
 Si alguien pierde la frase y todos sus equipos, nadie puede recuperar sus chats: no hay copia en el servidor.
 """
+import base64
 import json
+import re
 import secrets
 import unicodedata
 
@@ -15,8 +17,9 @@ from nacl.encoding import Base64Encoder, RawEncoder
 from nacl.exceptions import CryptoError
 from nacl.hash import blake2b
 from nacl.public import Box, PrivateKey, PublicKey
+from nacl.secret import SecretBox
 
-from . import session_store
+from . import gifs, session_store
 
 _BIP39 = Mnemonic("spanish")
 
@@ -64,7 +67,7 @@ class SinLlave(Exception):
         self.propia = propia
 
 
-TIPOS_CIFRADOS = ("texto",)   # lo que trae un mensaje viene de otra persona: solo se aceptan estos tipos
+TIPOS_ADJUNTO = ("imagen", "sticker")
 ILEGIBLE_OTRA_FRASE = "🔒 No se puede leer este mensaje: se cifró con otra frase de recuperación."
 ILEGIBLE_SIN_FRASE = "🔒 Escribí tu frase de recuperación para leer este mensaje."
 ILEGIBLE_DANADO = "🔒 No se puede leer este mensaje: llegó dañado o alterado."
@@ -74,17 +77,41 @@ def _b64(datos):
     return Base64Encoder.encode(datos).decode()
 
 
-def cifrar_para(privada, su_publica, de, tipo, contenido):
+def _contenido_valido(de, tipo, contenido):
+    """Lo que trae un mensaje viene de otra persona, y el servidor ya no puede revisarlo: se revisa aquí."""
+    if not isinstance(contenido, str):
+        return False
+    if tipo == "texto":
+        return True
+    if tipo == "gif":
+        return gifs.url_permitida(contenido)
+    if tipo == "publicacion":
+        return re.fullmatch(r"[0-9]{1,18}", contenido) is not None
+    if tipo in TIPOS_ADJUNTO:
+        return re.fullmatch(re.escape(str(de)) + r"/cifrados/[0-9a-f]{32}\.bin", contenido) is not None
+    return False
+
+
+def cifrar_archivo(datos):
+    """Cifra un archivo con una llave nueva, que viaja dentro del mensaje. Devuelve (llave, datos cifrados)."""
+    llave = secrets.token_bytes(SecretBox.KEY_SIZE)
+    return llave, bytes(SecretBox(llave).encrypt(datos))
+
+
+def cifrar_para(privada, su_publica, de, tipo, contenido, llave=None):
     """Arma el texto que se guarda: 'e1:llave del emisor:llave del receptor:datos cifrados'.
     Lleva ambas llaves para seguir legible aunque alguien cambie su frase más adelante."""
-    interior = json.dumps({"de": de, "tipo": tipo, "contenido": contenido}, ensure_ascii=False).encode()
+    campos = {"de": de, "tipo": tipo, "contenido": contenido}
+    if llave:
+        campos["llave"] = _b64(llave)
+    interior = json.dumps(campos, ensure_ascii=False).encode()
     datos = Box(privada, PublicKey(su_publica, Base64Encoder)).encrypt(interior)
     return f"e1:{_b64(bytes(privada.public_key))}:{su_publica}:{_b64(bytes(datos))}"
 
 
-def descifrar_de(privada, de, guardado):
+def descifrar_de(privada, de, guardado, adjunto=None, adjuntos=None):
     """Devuelve (tipo, contenido). Ambos sentidos comparten clave: 'de' adentro impide presentar
-    un mensaje mío como si lo hubiera escrito la otra persona."""
+    un mensaje mío como si lo hubiera escrito la otra persona. La llave de un archivo se anota en 'adjuntos'."""
     try:
         version, emisor, receptor, datos = guardado.split(":")
         mia = _b64(bytes(privada.public_key))
@@ -92,8 +119,15 @@ def descifrar_de(privada, de, guardado):
             return "texto", ILEGIBLE_OTRA_FRASE
         otra = receptor if mia == emisor else emisor
         interior = json.loads(Box(privada, PublicKey(otra, Base64Encoder)).decrypt(datos, encoder=Base64Encoder))
-        if interior["de"] == de and interior["tipo"] in TIPOS_CIFRADOS and isinstance(interior["contenido"], str):
-            return interior["tipo"], interior["contenido"]
+        tipo, contenido = interior["tipo"], interior["contenido"]
+        if interior["de"] == de and _contenido_valido(de, tipo, contenido):
+            if tipo not in TIPOS_ADJUNTO:
+                return tipo, contenido
+            if contenido == adjunto:
+                llave = base64.b64decode(interior["llave"], validate=True)
+                if adjuntos is not None:
+                    adjuntos[contenido] = llave
+                return tipo, contenido
     except (ValueError, KeyError, TypeError, CryptoError, AttributeError):
         pass
     return "texto", ILEGIBLE_DANADO
@@ -107,6 +141,7 @@ class Llaves:
         self.pendiente = None   # (entropía, reemplazar): frase mostrada que aún no se confirmó
         self.visible = None     # entropía de "Ver mi frase", ya verificada con la contraseña
         self._privada = None    # (cuenta, llave): evita ir al llavero por cada mensaje
+        self.adjuntos = {}      # ruta -> llave de los archivos de los mensajes ya abiertos; nunca llega al JS
 
     # Se separa por cuenta. Cerrar sesión no la borra: sin ella, quien perdió la frase perdería sus chats.
     def _nombre(self):
@@ -192,7 +227,27 @@ class Llaves:
             self._privada = (self.cloud._yo(), privada_de(local) if local else None)
         return self._privada[1]
 
-    def cifrar(self, amigo, tipo, contenido):
+    def _llave_propia(self):
+        """Llave de lo que solo ve su dueño (la colección de stickers). Cambia junto con la frase."""
+        privada = self._privada_actual()
+        if not privada:
+            raise SinLlave("Para guardar stickers, primero activá tu frase de recuperación.", propia=True)
+        return blake2b(bytes(privada), digest_size=SecretBox.KEY_SIZE, person=b"retroemu-sticker", encoder=RawEncoder)
+
+    def cifrar_propio(self, datos):
+        return bytes(SecretBox(self._llave_propia()).encrypt(datos))
+
+    def descifrar_archivo(self, ruta, datos):
+        """Los archivos viejos (sin .bin) se devuelven como están. None si no se puede abrir."""
+        if not ruta.endswith(".bin"):
+            return datos
+        try:
+            llave = self._llave_propia() if "/stickers/" in ruta else self.adjuntos[ruta]
+            return SecretBox(llave).decrypt(datos)
+        except (KeyError, SinLlave, CryptoError, ValueError, TypeError):
+            return None
+
+    def cifrar(self, amigo, tipo, contenido, llave=None):
         """Cifra para ese amigo con su llave publicada. Sin llaves no se envía: nunca cae a texto sin cifrar."""
         privada = self._privada_actual()
         if not privada:
@@ -201,14 +256,15 @@ class Llaves:
         su_publica = res.data[0]["llave_publica"] if res.data else None
         if not su_publica:
             raise SinLlave("Esta persona todavía no activó sus mensajes privados. Pedile que actualice la app.")
-        return cifrar_para(privada, su_publica, self.cloud._yo(), tipo, contenido)
+        return cifrar_para(privada, su_publica, self.cloud._yo(), tipo, contenido, llave)
 
     def abrir(self, mensaje):
         """El mensaje listo para mostrar: si está cifrado, reemplaza su tipo y contenido por los reales."""
         if mensaje.get("tipo") != "cifrado":
             return mensaje
         privada = self._privada_actual()
-        tipo, contenido = descifrar_de(privada, mensaje["de"], mensaje["contenido"]) if privada else ("texto", ILEGIBLE_SIN_FRASE)
+        tipo, contenido = descifrar_de(privada, mensaje["de"], mensaje["contenido"], mensaje.get("adjunto"), self.adjuntos) \
+            if privada else ("texto", ILEGIBLE_SIN_FRASE)
         return {**mensaje, "tipo": tipo, "contenido": contenido}
 
     def ver_frase(self, password):
