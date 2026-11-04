@@ -291,3 +291,17 @@ revoke execute on function public.avisar_cambio_de_llave() from public, anon, au
 create trigger aviso_cambio_de_llave after update of llave_publica on public.profiles
     for each row when (old.llave_publica is not null and new.llave_publica is distinct from old.llave_publica)
     execute function public.avisar_cambio_de_llave();
+
+-- Orden de la base: una regla de lectura de profiles, solo con sesión iniciada; pg_net fuera de public.
+-- Cada tabla tiene una descripción ("[Chat] ...", "[Llamadas] ...") visible en el Table Editor de Supabase.
+drop policy if exists "profiles_lectura_autenticados" on public.profiles;
+drop policy if exists "Permitir lectura publica de perfiles" on public.profiles;
+drop policy if exists "Perfiles visibles para todos" on public.profiles;
+drop policy if exists "Permitir actualizar propio perfil" on public.profiles;
+drop policy if exists "Perfiles visibles con sesion iniciada" on public.profiles;
+create policy "Perfiles visibles con sesion iniciada" on public.profiles for select to authenticated using (true);
+drop extension if exists pg_net;
+create extension pg_net schema extensions;
+
+-- Columna que ninguna parte de la app ni de la base usaba, y que solo tenía texto vacío.
+alter table public.profiles drop column if exists juego_actual;

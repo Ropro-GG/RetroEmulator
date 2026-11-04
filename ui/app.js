@@ -1499,17 +1499,33 @@ function llavesCerrar() {
     window.pywebview.api.llaves_cerrar().catch(() => {});
 }
 
-// Comprueba la contraseña y muestra la frase, sin pedir confirmarla porque ya está activa.
-async function llavesVerFrase() {
+let llavesAccion = 'ver';   // qué hace la contraseña pedida: 'ver' o 'cambiar' la frase
+
+// Pide la contraseña antes de ver o cambiar la frase.
+function llavesPedirContrasena(accion) {
+    if (accion === 'cambiar' && !confirm('¿Cambiar tu frase? Los mensajes cifrados que recibiste y enviaste hasta ahora dejarán de poder leerse en tus equipos, y los demás equipos te pedirán la frase nueva. Se te avisará por correo.')) return;
+    llavesAccion = accion;
+    document.getElementById('llaves-contrasena-titulo').textContent = accion === 'ver' ? 'Ver mi frase' : 'Cambiar mi frase';
+    document.getElementById('llaves-contrasena-ayuda').textContent = accion === 'ver'
+        ? 'Quien tenga tu frase puede leer tus chats. Escribí tu contraseña para verla.'
+        : 'Escribí tu contraseña para crear una frase nueva. Nada cambia hasta que la confirmes.';
+    llavesPaso('contrasena');
+}
+
+// Comprueba la contraseña. Al ver la frase no hay nada que confirmar; al cambiarla, sí.
+async function llavesContinuar() {
     const msg = document.getElementById('llaves-contrasena-msg');
+    const ver = llavesAccion === 'ver';
+    const clave = document.getElementById('llaves-contrasena-texto').value;
     msg.textContent = 'Comprobando…';
-    const res = await window.pywebview.api.llaves_ver_frase(document.getElementById('llaves-contrasena-texto').value);
+    const res = ver ? await window.pywebview.api.llaves_ver_frase(clave)
+                    : await window.pywebview.api.llaves_cambiar_frase(clave);
     if (!res || !res.exito) {
         msg.textContent = (res && res.error) || 'No se pudo comprobar la contraseña.';
         return;
     }
     document.getElementById('llaves-contrasena-texto').value = '';
-    llavesPintarFrase(res.palabras, true);
+    llavesPintarFrase(res.palabras, ver);
 }
 
 // Guarda la frase en pantalla en el archivo que se elija.

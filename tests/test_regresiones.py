@@ -312,6 +312,18 @@ class LlavesDeCifrado(unittest.TestCase):
         self.guardado.update(vieja)
         self.assertEqual(self.llaves.estado(), {"exito": True, "estado": "recuperar", "cambio": True})
 
+    def test_cambiar_la_frase_exige_contrasena_y_confirmarla(self):
+        self._crear()
+        anterior = self.cuenta.publica
+        self.cuenta.verificar_contrasena = lambda clave: None if clave == "buena" else "La contraseña no es correcta."
+        self.assertFalse(self.llaves.cambiar_frase("mala")["exito"])
+        self.assertIsNone(self.llaves.pendiente)
+        palabras = self.llaves.cambiar_frase("buena")["palabras"]
+        self.assertEqual(self.cuenta.publica, anterior)     # sin confirmar no cambió nada
+        self.assertTrue(self.llaves.confirmar(" ".join(palabras))["exito"])
+        self.assertNotEqual(self.cuenta.publica, anterior)
+        self.assertEqual(self.llaves.estado()["estado"], "lista")
+
     def test_una_llave_local_sin_publicar_se_publica_y_no_se_reemplaza(self):
         frase = self._crear()
         self.cuenta.publica = None

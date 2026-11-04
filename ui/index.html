@@ -384,12 +384,12 @@
                 </div>
             </div>
             <div id="llaves-paso-contrasena" style="display: none;">
-                <h2>Ver mi frase</h2>
-                <p class="settings-help">Quien tenga tu frase puede leer tus chats. Escribí tu contraseña para verla.</p>
-                <input type="password" id="llaves-contrasena-texto" class="settings-input" autocomplete="off" aria-label="Contraseña" onkeydown="if (event.key === 'Enter') llavesVerFrase()">
+                <h2 id="llaves-contrasena-titulo"></h2>
+                <p id="llaves-contrasena-ayuda" class="settings-help"></p>
+                <input type="password" id="llaves-contrasena-texto" class="settings-input" autocomplete="off" aria-label="Contraseña" onkeydown="if (event.key === 'Enter') llavesContinuar()">
                 <p id="llaves-contrasena-msg" class="code-msg" role="status"></p>
                 <div class="code-actions">
-                    <button class="btn-primary-sm" onclick="llavesVerFrase()">Ver frase</button>
+                    <button class="btn-primary-sm" onclick="llavesContinuar()">Continuar</button>
                     <button class="btn-secondary-sm" onclick="llavesCerrar()">Cancelar</button>
                 </div>
             </div>
@@ -592,7 +592,8 @@
 
                     <h3 class="settings-subtitle">Frase de recuperación</h3>
                     <p class="settings-help">Te permite leer tus chats privados en otro equipo.</p>
-                    <button class="btn-secondary-sm" onclick="llavesPaso('contrasena')">Ver mi frase</button>
+                    <button class="btn-secondary-sm" onclick="llavesPedirContrasena('ver')">Ver mi frase</button>
+                    <button class="btn-secondary-sm" onclick="llavesPedirContrasena('cambiar')">Cambiar mi frase</button>
 
                     <h3 class="settings-subtitle">Usuarios bloqueados</h3>
                     <p class="settings-help">No pueden escribirte, llamarte ni encontrarte, y no ves sus publicaciones. Al desbloquear no vuelven a ser amigos: hace falta otra solicitud.</p>

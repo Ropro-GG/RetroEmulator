@@ -111,6 +111,10 @@ class API:
     def llaves_ver_frase(self, password):
         return self._llaves.ver_frase(password)
 
+    # Crea una frase nueva que reemplaza a la actual, después de comprobar la contraseña.
+    def llaves_cambiar_frase(self, password):
+        return self._llaves.cambiar_frase(password)
+
     # Olvida la frase al cerrar la ventana que la muestra.
     def llaves_cerrar(self):
         self._llaves.olvidar_en_pantalla()

@@ -225,6 +225,16 @@ class Llaves:
         self.visible = local
         return {"exito": True, "palabras": frase_de(local)}
 
+    def cambiar_frase(self, password):
+        """Empieza a cambiar la frase. Pide la contraseña porque los mensajes anteriores dejarán de poder leerse."""
+        error = self.cloud._requiere_sesion()
+        if error:
+            return error
+        error = self.cloud.verificar_contrasena(password)
+        if error:
+            return {"exito": False, "error": error}
+        return self.generar(reemplazar=True)
+
     def texto_para_archivo(self):
         """Contenido del archivo con la frase en pantalla, o None si no hay ninguna."""
         entropia = self.pendiente[0] if self.pendiente else self.visible
