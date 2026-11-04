@@ -206,6 +206,38 @@ def setUpModule():
     db_local.inicializar_db_local()
 
 
+class ConexionConSupabase(unittest.TestCase):
+    def test_usa_http1_y_cada_peticion_lleva_la_sesion_actual(self):
+        import httpx
+        from nucleo import cloud_client
+        recibidas = []
+
+        def responder(peticion):
+            recibidas.append(peticion)
+            return httpx.Response(200, json=[])
+
+        with mock.patch.object(cloud_client, "SUPABASE_URL", "https://x.supabase.co"), \
+                mock.patch.object(cloud_client, "SUPABASE_KEY", "publica"):
+            cloud = cloud_client.CloudClient()
+        http = cloud.client.options.httpx_client
+        self.assertEqual(type(http._transport).__name__, "HTTPTransport")
+        self.assertFalse(http._transport._pool._http2)
+        http._transport = httpx.MockTransport(responder)
+
+        cloud.client.table("profiles").select("id").execute()
+        sesion = mock.Mock(access_token="token-de-sesion")
+        cloud.client._listen_to_auth_events("SIGNED_IN", sesion)
+        cloud.client.table("mensajes").select("id").execute()
+        cloud.client.storage.from_("chat").list("carpeta")
+
+        self.assertEqual(str(recibidas[0].url).split("?")[0], "https://x.supabase.co/rest/v1/profiles")
+        self.assertEqual(recibidas[0].headers["apikey"], "publica")
+        self.assertEqual(str(recibidas[1].url).split("?")[0], "https://x.supabase.co/rest/v1/mensajes")
+        self.assertEqual(recibidas[1].headers["authorization"], "Bearer token-de-sesion")
+        self.assertTrue(str(recibidas[2].url).startswith("https://x.supabase.co/storage/v1/"))
+        self.assertEqual(recibidas[2].headers["authorization"], "Bearer token-de-sesion")
+
+
 class _TablaFalsa:
     def __init__(self, cuenta):
         self.cuenta, self.datos, self.solo_vacia = cuenta, None, False

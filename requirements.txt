@@ -1,5 +1,6 @@
 pywebview==6.2.1
 supabase==2.31.0
+httpx==0.28.1
 python-dotenv==1.2.3
 pillow==12.3.0
 keyring==25.7.0

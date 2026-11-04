@@ -141,13 +141,13 @@ function llOcultar(id) { const e = document.getElementById(id); if (e) e.style.d
 
 let llAvisoTimer = null;
 // Aviso flotante que desaparece a los 4 s.
-function llAviso(texto) {
+function llAviso(texto, duracion = 4000) {
     const e = document.getElementById('llamada-aviso');
     if (!e) return;
     e.textContent = texto;
     e.style.display = 'block';
     clearTimeout(llAvisoTimer);
-    llAvisoTimer = setTimeout(() => { e.style.display = 'none'; }, 4000);
+    llAvisoTimer = setTimeout(() => { e.style.display = 'none'; }, duracion);
 }
 
 // Actualiza el nombre y el estado en la barra de llamada.
@@ -342,6 +342,7 @@ async function llIniciarLlamada(ids, conVideo, nombre) {
     llIniciando = true;
     let medios, res;
     try {
+        if (!await llLlavesListas(ids, nombre)) return;
         medios = await llObtenerMedios(conVideo);
         if (!medios) return;
         res = await window.pywebview.api.crear_llamada(ids, conVideo);
@@ -419,6 +420,7 @@ async function llAceptar(conVideo = false) {
     const ent = llEntrante;
     if (!ent || ent.aceptando) return;
     ent.aceptando = true;
+    if (!await llLlavesListas([ent.de.user_id], ent.de.username)) { await llRechazar(); return; }
     const medios = await llObtenerMedios(conVideo && ent.conVideo);
     if (!medios) { await llRechazar(); return; }
     if (llEntrante !== ent) {                           // dejó de sonar mientras se pedía el micrófono
@@ -556,9 +558,40 @@ async function llEnviarSellada(a, msg, para) {
     }
 }
 
-// Explica por qué una señal no se pudo enviar o abrir.
+const LL_AVISO_LLAVE_MS = 8000;   // hay que leerlo y saber qué hacer, no es solo informativo
+
+// Comprueba las llaves antes de que suene: sin esto, la llamada sonaría y después nunca conectaría.
+// Si no se pueden consultar se sigue: las señales selladas igual frenan una llave distinta.
+async function llLlavesListas(ids, nombre) {
+    for (const id of ids) {
+        let res = null;
+        try { res = await window.pywebview.api.llaves_amigo_estado(id); } catch (e) { /* se sigue */ }
+        if (!res || !res.exito) continue;
+        const quien = nombre || 'una persona de la llamada';
+        if (res.estado === 'cambio') {
+            llAviso(`La llave de ${quien} cambió. Abrí su chat y aceptala para poder hablar.`, LL_AVISO_LLAVE_MS);
+            return false;
+        }
+        if (res.estado === 'sin_llave') {
+            llAviso(`${quien} todavía no activó sus mensajes privados, y sin eso no se puede conectar la llamada.`, LL_AVISO_LLAVE_MS);
+            return false;
+        }
+        if (!res.codigo) {
+            llAviso('Para hablar por llamada, primero activá tu frase de recuperación.', LL_AVISO_LLAVE_MS);
+            if (typeof llavesIniciar === 'function') llavesIniciar();
+            return false;
+        }
+    }
+    return true;
+}
+
+// Explica por qué una señal no se pudo enviar o abrir. Una sola vez por llamada: fallan todas seguidas.
 function llAvisarSenal(res) {
-    llAviso((res && res.error) || 'No se pudo proteger la conexión de la llamada.');
+    if (llActual) {
+        if (llActual.avisoSenal) return;
+        llActual.avisoSenal = true;
+    }
+    llAviso((res && res.error) || 'No se pudo proteger la conexión de la llamada.', LL_AVISO_LLAVE_MS);
     if (res && res.falta_mi_llave && typeof llavesIniciar === 'function') llavesIniciar();
 }
 

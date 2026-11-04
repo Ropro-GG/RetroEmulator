@@ -8,6 +8,7 @@ import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
+import httpx
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from supabase.lib.client_options import SyncClientOptions
@@ -47,7 +48,10 @@ class CloudClient:
         """Inicializa la conexión con el proyecto de Supabase."""
         try:
             if SUPABASE_URL and SUPABASE_KEY:
-                self.client = create_client(SUPABASE_URL, SUPABASE_KEY)
+                # La app consulta desde varios hilos, y con el HTTP/2 por defecto se dañan peticiones al cruzarse
+                # (ConnectionTerminated, "Invalid API key"). Una podía perderse y con ella el timbre de una llamada.
+                self.client = create_client(SUPABASE_URL, SUPABASE_KEY, options=SyncClientOptions(
+                    httpx_client=httpx.Client(http2=False, timeout=60, follow_redirects=True)))
                 print("[CLOUD] Conexión exitosa con Supabase.")
             else:
                 faltan = [n for n, v in (("SUPABASE_URL", SUPABASE_URL), ("SUPABASE_KEY", SUPABASE_KEY)) if not v]
