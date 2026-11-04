@@ -326,10 +326,15 @@
             </section>
         </div>
 
-        <!-- NOTICIAS (vacía por ahora) -->
-        <div id="view-noticias" class="view empty-view" style="display: none;">
-            <h2>NOTICIAS</h2>
-            <p>Próximamente</p>
+        <!-- NOTICIAS -->
+        <div id="view-noticias" class="view noticias-view" style="display: none;">
+            <div class="posts-wrap">
+                <div class="posts-head">
+                    <h2>Noticias</h2>
+                    <button class="btn-secondary-sm" title="Actualizar" onclick="cargarNoticias(true)">↻ Actualizar</button>
+                </div>
+                <div id="noticias-lista"></div>
+            </div>
         </div>
 
         <!-- CATÁLOGO (vacío por ahora) -->

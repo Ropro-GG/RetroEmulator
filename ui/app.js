@@ -985,6 +985,7 @@ function mostrarVista(nombre) {
         b.classList.toggle('active', b.dataset.view === nombre);
     });
 
+    if (nombre === 'noticias') cargarNoticias();
     if (nombre === 'social') {
         abrirSocial();
     } else {
@@ -1766,7 +1767,7 @@ function reiniciarEstadoUI() {
     // Textos y listas que dependen de la cuenta
     ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
      'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun', 'pa-deseados',
-     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista'].forEach(id => {
+     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista', 'noticias-lista'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });
@@ -4266,3 +4267,51 @@ async function grupoRevisarLlaves() {
     document.getElementById('chat-llave-texto').textContent =
         `La llave de ${cambio.username} cambió. Puede ser porque cambió su frase, o alguien podría estar haciéndose pasar por esa persona. No recibe tus mensajes hasta que la aceptes.`;
 }
+
+// ============================================================================
+// NOTICIAS: avisos oficiales y titulares de sitios de gaming retro
+// ============================================================================
+
+let noticiasToken = 0;
+
+// Tarjeta de un aviso oficial o de una nota de otro sitio.
+function tarjetaNoticia(titulo, texto, meta, enlace, imagen) {
+    const tarjeta = nodo('article', 'noticia' + (enlace ? '' : ' noticia-aviso'));
+    if (imagen) {
+        const img = nodo('img', 'noticia-imagen');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
+        img.onerror = () => img.remove();
+        img.src = imagen;
+        tarjeta.appendChild(img);
+    }
+    tarjeta.append(nodo('h3', '', (enlace ? '📰 ' : '📌 ') + titulo));
+    if (texto) tarjeta.appendChild(nodo('p', 'noticia-texto', texto));
+    const pie = nodo('div', 'noticia-pie');
+    pie.appendChild(nodo('small', '', meta));
+    if (enlace) pie.appendChild(boton('Leer más ↗', 'btn-secondary-sm', async () => abrirEnlace(enlace)));
+    tarjeta.appendChild(pie);
+    return tarjeta;
+}
+
+// Trae y dibuja las noticias; "forzar" pide titulares nuevos a los sitios.
+async function cargarNoticias(forzar = false) {
+    const lista = document.getElementById('noticias-lista');
+    const token = ++noticiasToken;
+    if (forzar || !lista.children.length) lista.replaceChildren(mensajeCargando());
+    let res;
+    try { res = await window.pywebview.api.obtener_noticias(forzar); } catch (e) { res = null; }
+    if (token !== noticiasToken) return;   // llegó una respuesta más nueva o se cambió de cuenta
+    lista.innerHTML = '';
+    if (!res || !res.exito || (!res.avisos.length && !res.noticias.length)) {
+        lista.appendChild(mensajeVacio('No se pudieron cargar las noticias. Revisá tu conexión y probá de nuevo.'));
+        return;
+    }
+    res.avisos.forEach(a => lista.appendChild(tarjetaNoticia(a.titulo, a.texto, `Aviso oficial · ${formatearFecha(a.creado_en)}`, null, a.imagen)));
+    res.noticias.forEach(n => {
+        const meta = [n.fuente, formatearFecha(n.fecha)].filter(Boolean).join(' · ');
+        lista.appendChild(tarjetaNoticia(n.titulo, n.resumen, meta, n.enlace, n.imagen));
+    });
+}
+

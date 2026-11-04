@@ -8,7 +8,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nucleo import cifrado, db_local, launcher, scanner
+from nucleo import cifrado, db_local, launcher, noticias, scanner
 
 
 class PistasDeAudio(unittest.TestCase):
@@ -557,6 +557,53 @@ class IdentidadDeAmigos(unittest.TestCase):
         abierto = self.llaves.abrir(self._mensaje_de(self.amigo, "hola"))
         self.assertEqual(abierto["contenido"], "hola")
         self.assertFalse(abierto["alerta_llave"])
+
+
+class FeedsDeNoticias(unittest.TestCase):
+    def test_rss_quita_html_y_solo_acepta_enlaces_https_del_sitio(self):
+        xml = b"""<?xml version="1.0"?><rss><channel>
+            <item><title>Uno &amp;amp; dos</title><link>https://a.com/1</link>
+              <description><![CDATA[<p>Hola <script>alert(1)</script><b>mundo</b></p>]]></description>
+              <pubDate>Wed, 04 Nov 2026 17:32:31 +0000</pubDate></item>
+            <item><title>Malo</title><link>javascript:alert(1)</link></item>
+            <item><title>Otro sitio</title><link>https://b.com/1</link></item>
+            <item><title>Http</title><link>http://a.com/1</link></item>
+        </channel></rss>"""
+        notas = noticias.leer_feed(xml, "A", "a.com")
+        self.assertEqual(len(notas), 1)
+        self.assertEqual((notas[0]["titulo"], notas[0]["resumen"], notas[0]["enlace"]), ("Uno & dos", "Hola mundo", "https://a.com/1"))
+        self.assertEqual(notas[0]["fecha"], "2026-11-04T17:32:31+00:00")
+
+    def test_acepta_el_mismo_sitio_con_o_sin_www_y_se_puede_abrir(self):
+        xml = b"<rss><channel><item><title>T</title><link>https://retrorgb.com/1</link></item></channel></rss>"
+        self.assertEqual(len(noticias.leer_feed(xml, "R", "www.retrorgb.com")), 1)
+        self.assertLessEqual({"retrorgb.com", "www.retrorgb.com"}, noticias.HOSTS)
+
+    def test_elige_una_sola_imagen_https_y_evita_avatares(self):
+        xml = b"""<rss xmlns:media="http://search.yahoo.com/mrss/"><channel>
+            <item><title>Declarada</title><link>https://a.com/1</link>
+              <media:content url="https://secure.gravatar.com/a.jpg" medium="image"/>
+              <media:content url="https://a.com/foto.jpg" medium="image"/>
+              <description><![CDATA[<img src="https://a.com/otra.jpg">]]></description></item>
+            <item><title>Texto</title><link>https://a.com/2</link>
+              <description>&lt;img class="x" src="https://a.com/up/f-150x150.png"&gt;&lt;img src="https://a.com/2.png"&gt;</description></item>
+            <item><title>Insegura</title><link>https://a.com/3</link>
+              <description><![CDATA[<img src="http://a.com/m.png"><img src="javascript:alert(1)">]]></description></item>
+        </channel></rss>"""
+        notas = noticias.leer_feed(xml, "A", "a.com")
+        self.assertEqual([n["imagen"] for n in notas], ["https://a.com/foto.jpg", "https://a.com/up/f.png", ""])
+
+    def test_atom_y_fecha_invalida(self):
+        xml = b"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>T</title>
+            <link rel="self" href="https://a.com/yo"/><link href="https://a.com/2"/>
+            <summary>S</summary><published>no es fecha</published></entry></feed>"""
+        self.assertEqual(noticias.leer_feed(xml, "A", "a.com"),
+                         [{"titulo": "T", "resumen": "S", "enlace": "https://a.com/2", "fuente": "A", "fecha": None, "imagen": ""}])
+
+    def test_rechaza_entidades_y_recorta_el_resumen(self):
+        with self.assertRaises(ValueError):
+            noticias.leer_feed(b'<!DOCTYPE r [<!ENTITY a "b">]><rss></rss>', "A", "a.com")
+        self.assertLessEqual(len(noticias._texto_plano("palabra " * 100, 220)), 221)
 
 
 class MensajesDeGrupo(unittest.TestCase):

@@ -688,3 +688,23 @@ grant execute on function public.es_miembro_grupo(uuid), public.esta_en_grupo(uu
     public.responder_invitacion_grupo(uuid, boolean), public.quitar_de_grupo(uuid, uuid),
     public.salir_de_grupo(uuid), public.marcar_grupo_leido(uuid, bigint),
     public.llamar_a_grupo(uuid, boolean) to authenticated;
+
+-- Noticias: avisos oficiales. Todos los leen; se publican con dev/noticias.py, nunca desde la app.
+create table if not exists public.avisos (
+    id bigint generated always as identity primary key,
+    titulo text not null check (char_length(btrim(titulo)) between 1 and 120),
+    texto text not null default '' check (char_length(texto) <= 2000),
+    creado_en timestamptz not null default now()
+);
+alter table public.avisos enable row level security;
+revoke all on public.avisos from anon, authenticated;
+grant select on public.avisos to authenticated;
+drop policy if exists avisos_leer on public.avisos;
+create policy avisos_leer on public.avisos for select to authenticated using (true);
+comment on table public.avisos is '[Noticias] Avisos oficiales. Se publican con dev/noticias.py; nadie puede escribirlos desde la app.';
+
+-- Una imagen opcional por aviso. El espacio es público para leer y sin reglas de escritura: solo sube dev/noticias.py.
+alter table public.avisos add column if not exists imagen text check (imagen is null or imagen like 'https://%');
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('avisos', 'avisos', true, 5242880, array['image/png','image/jpeg'])
+    on conflict (id) do nothing;

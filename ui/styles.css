@@ -1631,3 +1631,14 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .grupo-miembros-card { width: 620px; text-align: left; }
 .grupo-miembros-card h2 { text-align: center; }
 
+/* NOTICIAS */
+.noticias-view { overflow-y: auto; padding: 24px; }
+.noticias-view .posts-wrap { margin: 0 auto; }
+.noticia { background: #1F2833; border: 1px solid #2a3544; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+.noticia-aviso { border-color: #45A29E; }
+.noticia-imagen { display: block; width: 100%; max-height: 260px; object-fit: cover; border-radius: 6px; margin-bottom: 10px; background: #141722; }
+.noticia h3 { color: #FFFFFF; font-size: 1em; line-height: 1.35; margin-bottom: 6px; }
+.noticia-texto { color: #C5C6C7; font-size: 0.88em; line-height: 1.5; margin-bottom: 8px; white-space: pre-wrap; word-break: break-word; }
+.noticia-pie { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.noticia-pie small { color: #7d8590; font-size: 0.78em; }
+

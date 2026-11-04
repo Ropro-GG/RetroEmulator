@@ -612,6 +612,19 @@ class CloudClient:
                 return {"exito": False, "error": "Enviaste demasiadas denuncias hoy. Probá de nuevo mañana."}
             return {"exito": False, "error": self._error_social(e)}
 
+    # --- NOTICIAS ---
+
+    def obtener_avisos(self, limite=5):
+        """Últimos avisos oficiales. Sin conexión devuelve la lista vacía: el resto de Noticias sigue funcionando."""
+        if not self.client or not self.usuario_actual:
+            return []
+        try:
+            return self.client.table("avisos").select("id, titulo, texto, imagen, creado_en") \
+                .order("id", desc=True).limit(limite).execute().data or []
+        except Exception as e:
+            print(f"[NOTICIAS] Sin avisos: {self._error_social(e)}")
+            return []
+
     # --- CHAT (mensajes entre amigos aceptados) ---
 
     LIMITE_MENSAJE = 1000

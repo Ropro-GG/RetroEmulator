@@ -12,7 +12,7 @@ import sys
 import webbrowser
 from urllib.parse import urlparse
 
-from nucleo import boxart, db_local, gifs, imagenes, launcher, ra_client, scanner
+from nucleo import boxart, db_local, gifs, imagenes, launcher, noticias, ra_client, scanner
 from nucleo.cloud_client import CloudClient
 from nucleo.db_local import LocalDB
 from nucleo.llamadas_cloud import Llamadas
@@ -20,7 +20,7 @@ from nucleo.llamadas_cloud import Llamadas
 VERSION = "BETA v1"
 DESARROLLADOR = "Rocco Flores"
 URL_GITHUB = "https://github.com/Ropro-GG/RetroEmulator"
-HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"}
+HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"} | noticias.HOSTS
 
 # Métodos que la interfaz puede llamar. Los que empiezan con "_" no se exponen a JavaScript.
 class API:
@@ -601,6 +601,13 @@ class API:
         except ValueError:
             pass
         return {"exito": False, "error": "Enlace no permitido."}
+
+    # --- NOTICIAS ---
+
+    # Avisos oficiales y titulares de los sitios de gaming retro.
+    def obtener_noticias(self, forzar=False):
+        avisos = self.cloud.obtener_avisos()
+        return {"exito": True, "avisos": avisos, "noticias": noticias.obtener(bool(forzar))}
 
     # --- DETALLE DE JUEGO ---
 
