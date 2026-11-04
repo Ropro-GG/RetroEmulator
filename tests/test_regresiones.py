@@ -319,5 +319,66 @@ class LlavesDeCifrado(unittest.TestCase):
         self.assertEqual(self.cuenta.publica, cifrado.publica_de(cifrado.entropia_de(frase)))
 
 
+class MensajesCifrados(unittest.TestCase):
+    def setUp(self):
+        self.ana, self.beto = cifrado.privada_de(bytes(16)), cifrado.privada_de(bytes(range(16)))
+        self.publica_beto = cifrado._b64(bytes(self.beto.public_key))
+
+    def _de_ana(self, contenido="¡Hola! 🎮\ncon \"comillas\""):
+        return cifrado.cifrar_para(self.ana, self.publica_beto, "ana", "texto", contenido)
+
+    def test_lo_leen_emisor_y_receptor_y_el_servidor_no_ve_el_texto(self):
+        guardado = self._de_ana("secreto")
+        self.assertNotIn("secreto", guardado)
+        self.assertEqual(cifrado.descifrar_de(self.beto, "ana", guardado), ("texto", "secreto"))
+        self.assertEqual(cifrado.descifrar_de(self.ana, "ana", guardado), ("texto", "secreto"))
+
+    def test_un_tercero_o_una_frase_vieja_no_pueden_leerlo(self):
+        otro = cifrado.privada_de(b"x" * 16)
+        self.assertEqual(cifrado.descifrar_de(otro, "ana", self._de_ana()), ("texto", cifrado.ILEGIBLE_OTRA_FRASE))
+
+    def test_alterarlo_o_atribuirlo_a_otro_lo_rechaza(self):
+        g = self._de_ana()
+        alterado = g[:-6] + ("AAAA" if g[-6:-2] != "AAAA" else "BBBB") + g[-2:]
+        self.assertEqual(cifrado.descifrar_de(self.beto, "ana", alterado)[1], cifrado.ILEGIBLE_DANADO)
+        self.assertEqual(cifrado.descifrar_de(self.ana, "beto", g)[1], cifrado.ILEGIBLE_DANADO)
+        self.assertEqual(cifrado.descifrar_de(self.beto, "ana", "basura")[1], cifrado.ILEGIBLE_DANADO)
+
+    def test_no_acepta_un_tipo_desconocido_escondido_adentro(self):
+        g = cifrado.cifrar_para(self.ana, self.publica_beto, "ana", "imagen", "ruta-ajena")
+        self.assertEqual(cifrado.descifrar_de(self.beto, "ana", g)[1], cifrado.ILEGIBLE_DANADO)
+
+    def test_el_mensaje_mas_largo_entra_en_el_limite_de_la_base(self):
+        peor = '"' * 1000                                 # cada comilla se duplica en el JSON
+        self.assertLess(len(self._de_ana(peor)), 10000)
+        peor = "🎮" * 1000
+        self.assertLess(len(self._de_ana(peor)), 10000)
+
+    def test_sin_llave_no_se_envia_y_nunca_cae_a_texto_sin_cifrar(self):
+        cuenta = _CuentaFalsa()
+        llaves = cifrado.Llaves(cuenta)
+        with mock.patch.object(cifrado.session_store, "cargar", return_value=None):
+            with self.assertRaises(cifrado.SinLlave) as propia:
+                llaves.cifrar("beto", "texto", "hola")
+        self.assertTrue(propia.exception.propia)
+        with mock.patch.object(cifrado.session_store, "cargar", return_value={"entropia": bytes(16).hex()}):
+            llaves._privada = None
+            with self.assertRaises(cifrado.SinLlave) as ajena:      # el amigo no tiene llave publicada
+                llaves.cifrar("beto", "texto", "hola")
+        self.assertFalse(ajena.exception.propia)
+
+    def test_abrir_no_toca_los_mensajes_viejos_y_descifra_los_nuevos(self):
+        llaves = cifrado.Llaves(_CuentaFalsa())
+        viejo = {"tipo": "texto", "contenido": "hola", "de": "ana"}
+        self.assertIs(llaves.abrir(viejo), viejo)
+        with mock.patch.object(cifrado.session_store, "cargar", return_value={"entropia": bytes(range(16)).hex()}):
+            abierto = llaves.abrir({"tipo": "cifrado", "contenido": self._de_ana("hola"), "de": "ana"})
+        self.assertEqual((abierto["tipo"], abierto["contenido"]), ("texto", "hola"))
+        with mock.patch.object(cifrado.session_store, "cargar", return_value=None):
+            llaves._privada = None
+            abierto = llaves.abrir({"tipo": "cifrado", "contenido": self._de_ana(), "de": "ana"})
+        self.assertEqual(abierto["contenido"], cifrado.ILEGIBLE_SIN_FRASE)
+
+
 if __name__ == "__main__":
     unittest.main()

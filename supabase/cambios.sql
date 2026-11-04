@@ -248,3 +248,46 @@ grant execute on function public.denunciar_usuario(uuid, text, text) to authenti
 -- Etapa 1 del cifrado: llave pública de cada cuenta. La privada nunca llega a la base.
 alter table public.profiles add column if not exists llave_publica text
     check (llave_publica is null or llave_publica ~ '^[A-Za-z0-9+/]{43}=$');
+
+-- Etapa 2 del cifrado: mensajes de texto cifrados. La base solo guarda 'e1:llave:llave:datos'.
+alter table public.mensajes drop constraint mensajes_tipo_check;
+alter table public.mensajes add constraint mensajes_tipo_check check (tipo = any (array['texto','imagen','sticker','gif','publicacion','cifrado']));
+alter table public.mensajes drop constraint mensajes_contenido_check;
+alter table public.mensajes add constraint mensajes_contenido_check
+    check (char_length(contenido) >= 1 and char_length(contenido) <= case when tipo = 'cifrado' then 10000 else 2000 end);
+drop policy mensajes_insert on public.mensajes;
+create policy mensajes_insert on public.mensajes for insert with check (
+    auth.uid() = de and leido_en is null
+    and (tipo = 'texto'
+        or (tipo = 'cifrado' and contenido ~ '^e1:[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]+={0,2}$')
+        or (tipo = any (array['imagen','sticker']) and contenido like de::text || '/%')
+        or (tipo = 'gif' and contenido ~* '^https://([a-z0-9-]+\.)*klipy\.(com|co)/[^[:space:]<>"'']*$')
+        or (tipo = 'publicacion' and contenido ~ '^[0-9]{1,18}$'))
+    and exists (select 1 from public.friendships f where f.status = 'accepted'
+        and ((f.requester_id = mensajes.de and f.addressee_id = mensajes.para)
+          or (f.addressee_id = mensajes.de and f.requester_id = mensajes.para))));
+
+-- Aviso por correo cuando cambia la frase de una cuenta. La fila no contiene la frase ni la llave.
+create extension if not exists pg_net;
+create table public.avisos_llave (
+    id bigint generated always as identity primary key,
+    usuario uuid not null references auth.users(id) on delete cascade,
+    creado_en timestamptz not null default now(),
+    enviado_en timestamptz
+);
+alter table public.avisos_llave enable row level security;   -- sin políticas: solo la Edge Function la lee
+create function public.avisar_cambio_de_llave() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+    insert into public.avisos_llave (usuario) values (new.id);
+    begin
+        perform net.http_post(url := 'https://uuuuwlmopgapjwivzmux.supabase.co/functions/v1/aviso-llave', body := '{}'::jsonb);
+    exception when others then null;   -- un fallo del aviso no debe impedir cambiar la llave
+    end;
+    return new;
+end;
+$$;
+revoke execute on function public.avisar_cambio_de_llave() from public, anon, authenticated;
+create trigger aviso_cambio_de_llave after update of llave_publica on public.profiles
+    for each row when (old.llave_publica is not null and new.llave_publica is distinct from old.llave_publica)
+    execute function public.avisar_cambio_de_llave();

@@ -1544,4 +1544,5 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .denuncia-bloquear { margin-top: 12px; }
 .llaves-palabras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 24px; margin: 14px 0; padding-left: 24px; color: #66FCF1; font-weight: 600; }
 .llaves-palabras li { user-select: text; }
+#llaves-modal input[type=password] { width: 100%; box-sizing: border-box; }
 #llaves-modal textarea { width: 100%; box-sizing: border-box; resize: vertical; }

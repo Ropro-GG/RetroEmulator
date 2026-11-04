@@ -1477,9 +1477,9 @@ async function cargarPerfilAjeno() {
 // LLAVES DEL CIFRADO: la frase de recuperación (la lógica está en nucleo/cifrado.py)
 // ============================================================================
 
-// Muestra un solo paso de la ventana: 'frase', 'confirmar' o 'recuperar'.
+// Muestra un solo paso de la ventana: 'frase', 'confirmar', 'contrasena' o 'recuperar'.
 function llavesPaso(paso) {
-    ['frase', 'confirmar', 'recuperar'].forEach(p => {
+    ['frase', 'confirmar', 'contrasena', 'recuperar'].forEach(p => {
         document.getElementById(`llaves-paso-${p}`).style.display = p === paso ? 'block' : 'none';
         const msg = document.getElementById(`llaves-${p}-msg`);
         if (msg) msg.textContent = '';
@@ -1495,6 +1495,44 @@ function llavesCerrar() {
     document.getElementById('llaves-palabras').replaceChildren();
     document.getElementById('llaves-confirmar-texto').value = '';
     document.getElementById('llaves-recuperar-texto').value = '';
+    document.getElementById('llaves-contrasena-texto').value = '';
+    window.pywebview.api.llaves_cerrar().catch(() => {});
+}
+
+// Comprueba la contraseña y muestra la frase, sin pedir confirmarla porque ya está activa.
+async function llavesVerFrase() {
+    const msg = document.getElementById('llaves-contrasena-msg');
+    msg.textContent = 'Comprobando…';
+    const res = await window.pywebview.api.llaves_ver_frase(document.getElementById('llaves-contrasena-texto').value);
+    if (!res || !res.exito) {
+        msg.textContent = (res && res.error) || 'No se pudo comprobar la contraseña.';
+        return;
+    }
+    document.getElementById('llaves-contrasena-texto').value = '';
+    llavesPintarFrase(res.palabras, true);
+}
+
+// Guarda la frase en pantalla en el archivo que se elija.
+async function llavesGuardarArchivo() {
+    const msg = document.getElementById('llaves-frase-msg');
+    const res = await window.pywebview.api.llaves_guardar_archivo();
+    if (res && res.exito) {
+        msg.textContent = 'Archivo guardado. Guardalo en un lugar seguro: quien lo tenga puede leer tus chats.';
+    } else if (!res || res.error !== 'cancelado') {
+        msg.textContent = (res && res.error) || 'No se pudo guardar el archivo.';
+    }
+}
+
+// Pinta las palabras; 'yaActiva' es para "Ver mi frase", donde no hay nada que confirmar.
+function llavesPintarFrase(palabras, yaActiva) {
+    document.getElementById('llaves-palabras').replaceChildren(...palabras.map(palabra => {
+        const li = document.createElement('li');
+        li.textContent = palabra;
+        return li;
+    }));
+    document.getElementById('llaves-anote').style.display = yaActiva ? 'none' : '';
+    document.getElementById('llaves-frase-cerrar').textContent = yaActiva ? 'Cerrar' : 'Ahora no';
+    llavesPaso('frase');
 }
 
 // Al entrar, abre la ventana si falta algo. Si el servidor no responde no se muestra nada.
@@ -1524,12 +1562,7 @@ async function llavesMostrarFrase(reemplazar) {
         console.warn('Llaves:', res && res.error);
         return false;
     }
-    document.getElementById('llaves-palabras').replaceChildren(...res.palabras.map(palabra => {
-        const li = document.createElement('li');
-        li.textContent = palabra;
-        return li;
-    }));
-    llavesPaso('frase');
+    llavesPintarFrase(res.palabras, false);
     return true;
 }
 
@@ -2430,6 +2463,7 @@ async function enviarMensaje() {
         cargarConversaciones();
     } else {
         error.textContent = (res && res.error) || 'No se pudo enviar el mensaje.';
+        if (res && res.falta_mi_llave) llavesIniciar();
     }
     caja.focus();
 }

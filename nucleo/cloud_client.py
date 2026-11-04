@@ -10,10 +10,11 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from supabase.lib.client_options import SyncClientOptions
 
 from pathlib import Path
 
-from . import gifs, session_store
+from . import cifrado, gifs, session_store
 from .boxart import analizar_titulo
 
 # El .env se busca junto a este archivo, sin importar desde dónde se ejecute la app
@@ -39,6 +40,7 @@ class CloudClient:
         self.client: Client = None
         self.usuario_actual = None
         self._email_recordar = None   # correo con confirmación de "Recuérdame" pendiente
+        self.llaves = cifrado.Llaves(self)
         self.conectar()
 
     def conectar(self):
@@ -113,6 +115,18 @@ class CloudClient:
             return resultado
         except Exception as e:
             return {"exito": False, "error": str(e)}
+
+    def verificar_contrasena(self, password):
+        """Devuelve None si es correcta o el error a mostrar. Usa un cliente aparte para no tocar la sesión abierta."""
+        try:
+            aparte = create_client(SUPABASE_URL, SUPABASE_KEY, options=SyncClientOptions(
+                auto_refresh_token=False, persist_session=False))
+            aparte.auth.sign_in_with_password({"email": self.usuario_actual.email, "password": password or ""})
+            return None
+        except Exception as e:
+            if "invalid login" in str(e).lower():
+                return "La contraseña no es correcta."
+            return self._error_social(e)
 
     # --- SESIÓN RECORDADA ("Recuérdame") ---
 
@@ -548,13 +562,16 @@ class CloudClient:
     # Da a un mensaje el formato que espera la interfaz.
     def _mensaje_para_ui(self, m):
         return {
+            **self._abierto_para_ui(m),
             "id": m["id"],
             "mio": m["de"] == self._yo(),
-            "tipo": m.get("tipo", "texto"),
-            "contenido": m.get("contenido", ""),
             "creado_en": m.get("creado_en"),
             "leido": bool(m.get("leido_en")),
         }
+
+    def _abierto_para_ui(self, m):
+        abierto = self.llaves.abrir(m)
+        return {"tipo": abierto.get("tipo", "texto"), "contenido": abierto.get("contenido", "")}
 
     # Filtro de PostgREST: mensajes entre tú y ese amigo, en cualquier dirección.
     def _filtro_par(self, amigo):
@@ -627,7 +644,7 @@ class CloudClient:
                     "jugando": presencias.get(amigo),
                     "en_llamada": amigo in en_llamada,
                     "no_leidos": sin_leer.get(amigo, 0),
-                    "ultimo": {"id": u["id"], "mio": u["de"] == yo, "texto": self._resumen_mensaje(u),
+                    "ultimo": {"id": u["id"], "mio": u["de"] == yo, "texto": self._resumen_mensaje(self.llaves.abrir(u)),
                                "creado_en": u.get("creado_en")} if u else None,
                 })
             conversaciones.sort(key=lambda c: (c["ultimo"] is None, -(c["ultimo"]["id"] if c["ultimo"] else 0),
@@ -714,7 +731,13 @@ class CloudClient:
             return {"exito": False, "error": "Escribí un mensaje."}
         if len(texto) > self.LIMITE_MENSAJE:
             return {"exito": False, "error": f"El mensaje es demasiado largo (máximo {self.LIMITE_MENSAJE} caracteres)."}
-        return self._insertar_mensaje(amigo_id, "texto", texto)
+        try:
+            guardado = self.llaves.cifrar(amigo_id, "texto", texto)
+        except cifrado.SinLlave as e:
+            return {"exito": False, "error": str(e), "falta_mi_llave": e.propia}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+        return self._insertar_mensaje(amigo_id, "cifrado", guardado)
 
     def enviar_gif(self, amigo_id, url):
         """Un GIF viaja como su dirección de internet (solo servidores de KLIPY)."""

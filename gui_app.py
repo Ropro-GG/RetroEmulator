@@ -13,7 +13,6 @@ import webbrowser
 from urllib.parse import urlparse
 
 from nucleo import boxart, db_local, gifs, imagenes, launcher, ra_client, scanner
-from nucleo.cifrado import Llaves
 from nucleo.cloud_client import CloudClient
 from nucleo.db_local import LocalDB
 from nucleo.llamadas_cloud import Llamadas
@@ -30,7 +29,7 @@ class API:
         self.db = LocalDB()
         self.cloud = CloudClient()
         self._llamadas = Llamadas(self.cloud)   # '_' = no se expone al JS
-        self._llaves = Llaves(self.cloud)
+        self._llaves = self.cloud.llaves
         self.window = None
         self._juegos_activos = 0          # emuladores abiertos desde el launcher
         self._imagen_elegida = ""         # archivo que elegiste para enviar o convertir en sticker
@@ -89,7 +88,7 @@ class API:
         db_local.establecer_usuario("")   # nada de la cuenta anterior queda activo
         self._imagen_elegida = ""
         self._imagen_publicacion = ""
-        self._llaves.pendiente = None     # una frase sin confirmar no debe pasar a otra cuenta
+        self._llaves.olvidar_en_pantalla()     # una frase en pantalla no debe pasar a otra cuenta
         return resultado
 
     # Si esta cuenta ya tiene sus llaves en este equipo o falta crearlas o recuperarlas.
@@ -107,6 +106,32 @@ class API:
     # Trae las llaves a este equipo con una frase ya existente.
     def llaves_recuperar(self, texto):
         return self._llaves.recuperar(texto)
+
+    # Muestra la frase de este equipo, después de comprobar la contraseña.
+    def llaves_ver_frase(self, password):
+        return self._llaves.ver_frase(password)
+
+    # Olvida la frase al cerrar la ventana que la muestra.
+    def llaves_cerrar(self):
+        self._llaves.olvidar_en_pantalla()
+
+    # Guarda la frase en pantalla en el archivo que elija el usuario. Solo el usuario decide la ruta.
+    def llaves_guardar_archivo(self):
+        texto = self._llaves.texto_para_archivo()
+        if not texto or not self.window:
+            return {"exito": False, "error": "No hay ninguna frase para guardar."}
+        ruta = self.window.create_file_dialog(FileDialog.SAVE, save_filename="frase-retroemulator.txt")
+        if isinstance(ruta, (list, tuple)):
+            ruta = ruta[0] if ruta else ""
+        if not ruta:
+            return {"exito": False, "error": "cancelado"}
+        try:
+            fd = os.open(ruta, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(texto)
+        except OSError as e:
+            return {"exito": False, "error": f"No se pudo guardar el archivo: {e}"}
+        return {"exito": True}
 
     # Perfil propio, o el de otro usuario si se indica su id.
     def obtener_perfil(self, user_id=None):

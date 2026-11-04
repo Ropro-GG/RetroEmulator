@@ -363,12 +363,14 @@
         <div class="dialog-card denuncia-card">
             <div id="llaves-paso-frase" style="display: none;">
                 <h2>Tu frase de recuperación</h2>
-                <p class="settings-help">Protege tus chats. Anotá estas 12 palabras en orden y guardalas en un lugar seguro: las vas a necesitar si cambiás de equipo.</p>
+                <p id="llaves-frase-ayuda" class="settings-help">Protege tus chats. Anotá estas 12 palabras en orden y guardalas en un lugar seguro: las vas a necesitar si cambiás de equipo.</p>
                 <p class="settings-help"><strong>Si las perdés junto con tu equipo, nadie podrá recuperar tus chats, ni siquiera nosotros.</strong> No se las des a nadie.</p>
                 <ol id="llaves-palabras" class="llaves-palabras"></ol>
+                <p id="llaves-frase-msg" class="code-msg" role="status"></p>
                 <div class="code-actions">
-                    <button class="btn-primary-sm" onclick="llavesPaso('confirmar')">Ya las anoté</button>
-                    <button class="btn-secondary-sm" onclick="llavesCerrar()">Ahora no</button>
+                    <button id="llaves-anote" class="btn-primary-sm" onclick="llavesPaso('confirmar')">Ya las anoté</button>
+                    <button class="btn-secondary-sm" onclick="llavesGuardarArchivo()">Guardar en un archivo</button>
+                    <button id="llaves-frase-cerrar" class="btn-secondary-sm" onclick="llavesCerrar()">Ahora no</button>
                 </div>
             </div>
             <div id="llaves-paso-confirmar" style="display: none;">
@@ -379,6 +381,16 @@
                 <div class="code-actions">
                     <button class="btn-primary-sm" onclick="llavesConfirmar()">Confirmar</button>
                     <button class="btn-secondary-sm" onclick="llavesPaso('frase')">Volver a ver la frase</button>
+                </div>
+            </div>
+            <div id="llaves-paso-contrasena" style="display: none;">
+                <h2>Ver mi frase</h2>
+                <p class="settings-help">Quien tenga tu frase puede leer tus chats. Escribí tu contraseña para verla.</p>
+                <input type="password" id="llaves-contrasena-texto" class="settings-input" autocomplete="off" aria-label="Contraseña" onkeydown="if (event.key === 'Enter') llavesVerFrase()">
+                <p id="llaves-contrasena-msg" class="code-msg" role="status"></p>
+                <div class="code-actions">
+                    <button class="btn-primary-sm" onclick="llavesVerFrase()">Ver frase</button>
+                    <button class="btn-secondary-sm" onclick="llavesCerrar()">Cancelar</button>
                 </div>
             </div>
             <div id="llaves-paso-recuperar" style="display: none;">
@@ -577,6 +589,10 @@
                         Mostrar mi lista de deseados a mis amigos
                     </label>
                     <p class="settings-help">Si lo desactivás, tus amigos dejan de ver tu lista (ni en tu perfil ni en el detalle de los juegos). La lista sigue siendo tuya. Las opiniones se controlan una por una con "Visible para mis amigos".</p>
+
+                    <h3 class="settings-subtitle">Frase de recuperación</h3>
+                    <p class="settings-help">Te permite leer tus chats privados en otro equipo.</p>
+                    <button class="btn-secondary-sm" onclick="llavesPaso('contrasena')">Ver mi frase</button>
 
                     <h3 class="settings-subtitle">Usuarios bloqueados</h3>
                     <p class="settings-help">No pueden escribirte, llamarte ni encontrarte, y no ves sus publicaciones. Al desbloquear no vuelven a ser amigos: hace falta otra solicitud.</p>
