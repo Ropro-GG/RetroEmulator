@@ -358,6 +358,43 @@
 
 
     <!-- MODAL: CONFIRMAR "RECUÉRDAME" CON CÓDIGO DEL CORREO -->
+    <!-- MODAL: LLAVES DEL CIFRADO. Va antes del de código, para que ese quede encima si aparecen juntos. -->
+    <div id="llaves-modal" class="modal" style="display: none;">
+        <div class="dialog-card denuncia-card">
+            <div id="llaves-paso-frase" style="display: none;">
+                <h2>Tu frase de recuperación</h2>
+                <p class="settings-help">Protege tus chats. Anotá estas 12 palabras en orden y guardalas en un lugar seguro: las vas a necesitar si cambiás de equipo.</p>
+                <p class="settings-help"><strong>Si las perdés junto con tu equipo, nadie podrá recuperar tus chats, ni siquiera nosotros.</strong> No se las des a nadie.</p>
+                <ol id="llaves-palabras" class="llaves-palabras"></ol>
+                <div class="code-actions">
+                    <button class="btn-primary-sm" onclick="llavesPaso('confirmar')">Ya las anoté</button>
+                    <button class="btn-secondary-sm" onclick="llavesCerrar()">Ahora no</button>
+                </div>
+            </div>
+            <div id="llaves-paso-confirmar" style="display: none;">
+                <h2>Confirmá tu frase</h2>
+                <p class="settings-help">Escribí las 12 palabras en orden, separadas por espacios.</p>
+                <textarea id="llaves-confirmar-texto" class="settings-input" rows="3" autocomplete="off" spellcheck="false" aria-label="Frase de recuperación"></textarea>
+                <p id="llaves-confirmar-msg" class="code-msg" role="status"></p>
+                <div class="code-actions">
+                    <button class="btn-primary-sm" onclick="llavesConfirmar()">Confirmar</button>
+                    <button class="btn-secondary-sm" onclick="llavesPaso('frase')">Volver a ver la frase</button>
+                </div>
+            </div>
+            <div id="llaves-paso-recuperar" style="display: none;">
+                <h2>Recuperá tus chats</h2>
+                <p id="llaves-recuperar-ayuda" class="settings-help"></p>
+                <textarea id="llaves-recuperar-texto" class="settings-input" rows="3" autocomplete="off" spellcheck="false" aria-label="Frase de recuperación"></textarea>
+                <p id="llaves-recuperar-msg" class="code-msg" role="status"></p>
+                <div class="code-actions">
+                    <button class="btn-primary-sm" onclick="llavesRecuperar()">Recuperar</button>
+                    <button class="btn-secondary-sm" onclick="llavesCerrar()">Ahora no</button>
+                    <button class="btn-secondary-sm" onclick="llavesPerdi()">Perdí mi frase</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="code-modal" class="modal" style="display: none;">
         <div class="code-card">
             <h2>Confirmá tu correo</h2>

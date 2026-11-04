@@ -80,6 +80,7 @@ async function cargarPantallaPrincipal() {
     await filtrarCatalogo();
     iniciarInsignias();
     llamadasIniciar();
+    llavesIniciar();
 }
 
 // Pinta nombre y foto; si no hay perfil usa los datos del registro.
@@ -481,6 +482,7 @@ async function cerrarSesion() {
     usuarioActual = null;
     perfilActual = null;
     consolaSeleccionada = 'todas';
+    llavesCerrar();
     cerrarConfiguracion();
     volverABiblioteca();
     detenerInsignias();
@@ -1468,6 +1470,100 @@ async function cargarPerfilAjeno() {
     if (res.relacion !== 'yo') {
         acciones.appendChild(boton('Bloquear', 'btn-secondary-sm', () => bloquearUsuario(p.user_id, p.username)));
         acciones.appendChild(boton('Denunciar', 'btn-secondary-sm', () => abrirDenuncia(p.user_id, p.username)));
+    }
+}
+
+// ============================================================================
+// LLAVES DEL CIFRADO: la frase de recuperación (la lógica está en nucleo/cifrado.py)
+// ============================================================================
+
+// Muestra un solo paso de la ventana: 'frase', 'confirmar' o 'recuperar'.
+function llavesPaso(paso) {
+    ['frase', 'confirmar', 'recuperar'].forEach(p => {
+        document.getElementById(`llaves-paso-${p}`).style.display = p === paso ? 'block' : 'none';
+        const msg = document.getElementById(`llaves-${p}-msg`);
+        if (msg) msg.textContent = '';
+    });
+    document.getElementById('llaves-confirmar-texto').value = '';
+    document.getElementById('llaves-modal').style.display = 'flex';
+    if (paso !== 'frase') document.getElementById(`llaves-${paso}-texto`).focus();
+}
+
+// Cierra la ventana y borra de la pantalla las palabras y lo escrito.
+function llavesCerrar() {
+    document.getElementById('llaves-modal').style.display = 'none';
+    document.getElementById('llaves-palabras').replaceChildren();
+    document.getElementById('llaves-confirmar-texto').value = '';
+    document.getElementById('llaves-recuperar-texto').value = '';
+}
+
+// Al entrar, abre la ventana si falta algo. Si el servidor no responde no se muestra nada.
+async function llavesIniciar() {
+    let res;
+    try {
+        res = await window.pywebview.api.llaves_estado();
+    } catch (e) {
+        res = { exito: false, error: String(e) };
+    }
+    if (!res || !res.exito) {
+        console.warn('Llaves:', res && res.error);
+    } else if (res.estado === 'crear') {
+        await llavesMostrarFrase(false);
+    } else if (res.estado === 'recuperar') {
+        document.getElementById('llaves-recuperar-ayuda').textContent = res.cambio
+            ? 'Tu frase se cambió desde otro equipo. Escribí la frase nueva para seguir leyendo tus chats aquí.'
+            : 'Esta cuenta ya tiene una frase de recuperación. Escribí las 12 palabras para usar tus chats en este equipo.';
+        llavesPaso('recuperar');
+    }
+}
+
+// Pide una frase nueva y la muestra.
+async function llavesMostrarFrase(reemplazar) {
+    const res = await window.pywebview.api.llaves_generar(reemplazar);
+    if (!res || !res.exito) {
+        console.warn('Llaves:', res && res.error);
+        return false;
+    }
+    document.getElementById('llaves-palabras').replaceChildren(...res.palabras.map(palabra => {
+        const li = document.createElement('li');
+        li.textContent = palabra;
+        return li;
+    }));
+    llavesPaso('frase');
+    return true;
+}
+
+// Comprueba que la frase quedó anotada y la activa.
+async function llavesConfirmar() {
+    const msg = document.getElementById('llaves-confirmar-msg');
+    msg.textContent = 'Guardando…';
+    const res = await window.pywebview.api.llaves_confirmar(document.getElementById('llaves-confirmar-texto').value);
+    if (res && res.exito) {
+        llavesCerrar();
+        avisoPost('Tu frase de recuperación quedó activada.');
+    } else {
+        msg.textContent = (res && res.error) || 'No se pudo activar la frase.';
+    }
+}
+
+// Trae las llaves a este equipo con una frase existente.
+async function llavesRecuperar() {
+    const msg = document.getElementById('llaves-recuperar-msg');
+    msg.textContent = 'Comprobando…';
+    const res = await window.pywebview.api.llaves_recuperar(document.getElementById('llaves-recuperar-texto').value);
+    if (res && res.exito) {
+        llavesCerrar();
+        avisoPost('Tus chats ya se pueden usar en este equipo.');
+    } else {
+        msg.textContent = (res && res.error) || 'No se pudo comprobar la frase.';
+    }
+}
+
+// Sin la frase vieja solo queda crear otra, y los mensajes cifrados anteriores se pierden.
+async function llavesPerdi() {
+    if (!confirm('¿Crear una frase nueva? Los mensajes cifrados anteriores quedarán ilegibles para siempre, en todos tus equipos. Hacelo solo si perdiste tu frase.')) return;
+    if (!await llavesMostrarFrase(true)) {
+        document.getElementById('llaves-recuperar-msg').textContent = 'No se pudo crear la frase.';
     }
 }
 

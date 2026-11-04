@@ -4,10 +4,11 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nucleo import db_local, launcher, scanner
+from nucleo import cifrado, db_local, launcher, scanner
 
 
 class PistasDeAudio(unittest.TestCase):
@@ -194,6 +195,128 @@ class CompartirPantalla(unittest.TestCase):
         self.pq.activar()
         wq.environ_append("X", "--use-fake-ui-for-media-stream", "--otra")
         self.assertEqual(recibido, ["--otra"])
+
+
+class _TablaFalsa:
+    def __init__(self, cuenta):
+        self.cuenta, self.datos, self.solo_vacia = cuenta, None, False
+
+    def select(self, *_):
+        return self
+
+    def update(self, datos):
+        self.datos = datos
+        return self
+
+    def eq(self, *_):
+        return self
+
+    def is_(self, *_):
+        self.solo_vacia = True
+        return self
+
+    def execute(self):
+        c = self.cuenta
+        if c.sin_red:
+            raise ConnectionError("connection")
+        if self.datos is None:
+            return mock.Mock(data=[{"llave_publica": c.publica}])
+        if self.solo_vacia and c.publica:
+            return mock.Mock(data=[])
+        c.publica = self.datos["llave_publica"]
+        return mock.Mock(data=[self.datos])
+
+
+class _CuentaFalsa:
+    def __init__(self):
+        self.publica, self.sin_red = None, False
+        self.client = mock.Mock()
+        self.client.table = lambda _: _TablaFalsa(self)
+
+    def _yo(self):
+        return "u1"
+
+    def _requiere_sesion(self):
+        return None
+
+    def _error_social(self, e):
+        return str(e)
+
+
+class LlavesDeCifrado(unittest.TestCase):
+    def setUp(self):
+        self.guardado = {}
+        for nombre, falso in (("cargar", self.guardado.get),
+                              ("guardar", lambda n, d: self.guardado.__setitem__(n, d) or True)):
+            parche = mock.patch.object(cifrado.session_store, nombre, falso)
+            parche.start()
+            self.addCleanup(parche.stop)
+        self.cuenta = _CuentaFalsa()
+        self.llaves = cifrado.Llaves(self.cuenta)
+
+    def _crear(self):
+        palabras = self.llaves.generar()["palabras"]
+        self.assertTrue(self.llaves.confirmar(" ".join(palabras))["exito"])
+        return " ".join(palabras)
+
+    def test_la_misma_frase_da_la_misma_llave_y_acepta_escribirla_sin_acentos(self):
+        entropia = bytes(range(16))
+        frase = " ".join(cifrado.frase_de(entropia))
+        self.assertEqual(cifrado.entropia_de(cifrado._sin_acentos(frase).upper()), entropia)
+        self.assertEqual(cifrado.publica_de(cifrado.entropia_de(frase)), cifrado.publica_de(entropia))
+        self.assertNotEqual(cifrado.publica_de(entropia), cifrado.publica_de(bytes(16)))
+
+    def test_detecta_palabras_de_mas_cambiadas_o_en_otro_orden(self):
+        palabras = cifrado.frase_de(bytes(range(16)))
+        for mala in (palabras[:11], ["xyz"] + palabras[1:], palabras[::-1]):
+            with self.assertRaises(ValueError):
+                cifrado.entropia_de(" ".join(mala))
+
+    def test_crear_exige_confirmar_antes_de_publicar_o_guardar(self):
+        self.assertEqual(self.llaves.estado()["estado"], "crear")
+        palabras = self.llaves.generar()["palabras"]
+        self.assertFalse(self.llaves.confirmar(" ".join(palabras[::-1]))["exito"])
+        self.assertIsNone(self.cuenta.publica)
+        self.assertEqual(self.guardado, {})
+        self.assertTrue(self.llaves.confirmar(" ".join(palabras))["exito"])
+        self.assertEqual(self.llaves.estado()["estado"], "lista")
+        self.assertNotIn(" ".join(palabras), str(self.cuenta.publica))
+
+    def test_otro_equipo_pide_la_frase_y_rechaza_una_ajena(self):
+        frase = self._crear()
+        self.guardado.clear()
+        self.assertEqual(self.llaves.estado(), {"exito": True, "estado": "recuperar", "cambio": False})
+        ajena = " ".join(cifrado.frase_de(bytes(16)))
+        self.assertFalse(self.llaves.recuperar(ajena)["exito"])
+        self.assertEqual(self.guardado, {})
+        self.assertTrue(self.llaves.recuperar(frase)["exito"])
+        self.assertEqual(self.llaves.estado()["estado"], "lista")
+
+    def test_sin_conexion_no_ofrece_crear_llaves(self):
+        self.cuenta.sin_red = True
+        self.assertFalse(self.llaves.estado()["exito"])
+
+    def test_dos_equipos_a_la_vez_no_se_pisan_la_llave(self):
+        palabras = self.llaves.generar()["palabras"]
+        self.cuenta.publica = "llave-de-otro-equipo"
+        self.assertFalse(self.llaves.confirmar(" ".join(palabras))["exito"])
+        self.assertEqual(self.cuenta.publica, "llave-de-otro-equipo")
+        self.assertEqual(self.guardado, {})
+
+    def test_perdi_mi_frase_reemplaza_y_el_equipo_viejo_lo_detecta(self):
+        self._crear()
+        vieja = dict(self.guardado)
+        palabras = self.llaves.generar(reemplazar=True)["palabras"]
+        self.assertTrue(self.llaves.confirmar(" ".join(palabras))["exito"])
+        self.assertEqual(self.llaves.estado()["estado"], "lista")
+        self.guardado.update(vieja)
+        self.assertEqual(self.llaves.estado(), {"exito": True, "estado": "recuperar", "cambio": True})
+
+    def test_una_llave_local_sin_publicar_se_publica_y_no_se_reemplaza(self):
+        frase = self._crear()
+        self.cuenta.publica = None
+        self.assertEqual(self.llaves.estado()["estado"], "lista")
+        self.assertEqual(self.cuenta.publica, cifrado.publica_de(cifrado.entropia_de(frase)))
 
 
 if __name__ == "__main__":

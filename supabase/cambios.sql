@@ -244,3 +244,7 @@ grant execute on function public.hay_bloqueo(uuid, uuid) to authenticated;
 grant execute on function public.bloquear_usuario(uuid) to authenticated;
 grant execute on function public.ids_con_bloqueo() to authenticated;
 grant execute on function public.denunciar_usuario(uuid, text, text) to authenticated;
+
+-- Etapa 1 del cifrado: llave pública de cada cuenta. La privada nunca llega a la base.
+alter table public.profiles add column if not exists llave_publica text
+    check (llave_publica is null or llave_publica ~ '^[A-Za-z0-9+/]{43}=$');
