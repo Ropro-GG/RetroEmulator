@@ -278,7 +278,15 @@ async function lanzarJuego(gameId) {
     }
 }
 
-// Crea la carátula con plan B: file://, luego base64, luego el emoji.
+// Pide cada carátula al acercarse a la pantalla: con muchos juegos, pedirlas todas juntas trabaría la app.
+const observadorPortadas = new IntersectionObserver(entradas => {
+    entradas.filter(e => e.isIntersecting).forEach(e => {
+        observadorPortadas.unobserve(e.target);
+        e.target.cargarPortada();
+    });
+}, { rootMargin: '300px' });
+
+// Crea la carátula; si no hay imagen, queda el emoji.
 function crearPortada(juego, nombre) {
     const wrapper = document.createElement('div');
     wrapper.className = 'game-cover-wrapper';
@@ -287,40 +295,33 @@ function crearPortada(juego, nombre) {
     fallback.className = 'game-cover-fallback';
     fallback.textContent = '🎮';
 
-    if (!juego.portada_url) {
+    if (!juego.portada_path) {
         wrapper.appendChild(fallback);
         return wrapper;
     }
 
-    const img = document.createElement('img');
-    img.alt = nombre;
-    img.loading = 'lazy';
-
-    let reintentado = false;
-    img.onerror = async () => {
-        // Plan B: pedirle la imagen en base64 a Python; si tampoco, queda el emoji
-        if (!reintentado && juego.portada_path) {
-            reintentado = true;
-            try {
-                const dataUri = await window.pywebview.api.obtener_portada_data_uri(juego.portada_path);
-                if (dataUri) {
-                    img.src = dataUri;
-                    return;
-                }
-            } catch (e) { /* se muestra el emoji */ }
+    wrapper.cargarPortada = async () => {
+        let dataUri = '';
+        try {
+            dataUri = await window.pywebview.api.obtener_portada_data_uri(juego.portada_path);
+        } catch (e) { /* se muestra el emoji */ }
+        if (!dataUri) {
+            wrapper.appendChild(fallback);
+            return;
         }
-        img.remove();
-        wrapper.appendChild(fallback);
+        const img = document.createElement('img');
+        img.alt = nombre;
+        img.src = dataUri;
+        wrapper.appendChild(img);
     };
-
-    img.src = juego.portada_url;
-    wrapper.appendChild(img);
+    observadorPortadas.observe(wrapper);
     return wrapper;
 }
 
 // Dibuja la grilla de juegos.
 function renderizarJuegos(juegos) {
     const grid = document.getElementById('game-grid');
+    observadorPortadas.disconnect();   // las tarjetas anteriores ya no se muestran
     grid.innerHTML = '';
 
     if (!juegos || juegos.length === 0) {
@@ -761,8 +762,14 @@ function pintarDetalle(j) {
     cover.innerHTML = '';
     cover.appendChild(crearPortada(j, j.titulo));
 
-    document.getElementById('detail-hero-bg').style.backgroundImage =
-        j.portada_url ? `url("${j.portada_url}")` : 'none';
+    const fondo = document.getElementById('detail-hero-bg');
+    fondo.style.backgroundImage = 'none';
+    fondo.dataset.juego = j.titulo;
+    if (j.portada_path) {
+        window.pywebview.api.obtener_portada_data_uri(j.portada_path).then(uri => {
+            if (uri && fondo.dataset.juego === j.titulo) fondo.style.backgroundImage = `url("${uri}")`;   // pudo cambiar de juego
+        }).catch(() => { /* queda sin fondo */ });
+    }
 
     opinionPuntuacion = (j.opinion && j.opinion.puntuacion) || 0;
     document.getElementById('opinion-publica').checked = j.opinion ? !!j.opinion.publica : true;
@@ -2145,15 +2152,7 @@ function crearMiniPortada(identificativo, titulo, chica) {
         if (!info) return;
         const img = document.createElement('img');
         img.alt = '';
-        let reintentado = false;
-        img.onerror = async () => {
-            if (!reintentado && info.path) {
-                reintentado = true;
-                try {
-                    const dataUri = await window.pywebview.api.obtener_portada_data_uri(info.path);
-                    if (dataUri) { img.src = dataUri; return; }
-                } catch (e) { /* queda el emoji */ }
-            }
+        img.onerror = () => {
             img.remove();
             caja.textContent = '🎮';
         };

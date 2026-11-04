@@ -15,7 +15,6 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import get_close_matches
-from pathlib import Path
 
 CARPETA_ROMS_BASE = "roms"
 CARPETA_BOXARTS = os.path.join(CARPETA_ROMS_BASE, "boxarts")
@@ -421,16 +420,8 @@ def descargar_lote(trabajos, al_terminar=None, al_avanzar=None):
 # Puente con la interfaz
 # ----------------------------------------------------------------------------
 
-def ruta_a_uri(ruta):
-    """file:// absoluto de una carátula local ('' si no existe)."""
-    if not ruta:
-        return ""
-    ruta_abs = os.path.abspath(ruta)
-    return Path(ruta_abs).as_uri() if os.path.isfile(ruta_abs) else ""
-
-
 def leer_como_data_uri(ruta):
-    """Plan B para la UI: la imagen embebida en base64 (solo archivos dentro de roms/boxarts)."""
+    """La imagen embebida en base64 para la UI (solo archivos dentro de roms/boxarts)."""
     try:
         ruta_abs = os.path.abspath(ruta)
         base = os.path.abspath(CARPETA_BOXARTS)

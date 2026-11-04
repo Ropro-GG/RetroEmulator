@@ -52,6 +52,7 @@ async function llamadasIniciar() {
     });
     llSb.realtime.setAuth(cfg.token);
 
+    let reintentando = false;
     llCanalGlobal = llSb.channel('llamadas-usuario-' + llYo)
         .on('postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'llamada_participantes', filter: `usuario_id=eq.${llYo}` },
@@ -61,8 +62,13 @@ async function llamadasIniciar() {
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'llamada_participantes' },
             p => llAlCambioParticipante(p.new))
         .subscribe(estado => {
+            // supabase-js reintenta solo: hasta que conecte no llegan los timbres
             if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT') {
-                console.warn('[LLAMADAS] Realtime no conectó:', estado);
+                reintentando = true;
+                console.warn('[LLAMADAS] Realtime todavía no conecta, se reintenta:', estado);
+            } else if (estado === 'SUBSCRIBED' && reintentando) {
+                reintentando = false;
+                console.warn('[LLAMADAS] Realtime volvió a conectar.');   // console.log no llega a la terminal
             }
         });
 

@@ -185,15 +185,12 @@ class API:
         return scanner.estado_escaneo()
 
     def obtener_portada_data_uri(self, ruta_portada):
-        """Plan B si el webview no puede abrir la imagen por file://."""
+        """La página se sirve por http y el navegador no le deja abrir file://: la imagen viaja en base64."""
         return boxart.leer_como_data_uri(ruta_portada)
 
     def obtener_juegos_filtrados(self, texto_busqueda="", consola_id=None):
         """Retorna juegos filtrados por búsqueda y/o consola para pywebview."""
-        juegos = self.db.obtener_juegos_filtrados(texto_busqueda, consola_id)
-        for juego in juegos:
-            juego["portada_url"] = boxart.ruta_a_uri(juego.get("portada_path"))
-        return juegos
+        return self.db.obtener_juegos_filtrados(texto_busqueda, consola_id)
 
     def obtener_consolas(self):
         """Retorna las consolas registradas para llenar el selector/filtro de la UI."""
@@ -509,8 +506,8 @@ class API:
         """Carátula de un juego por título (también para juegos que no tenés)."""
         nombre = db_local.obtener_nombre_consola(identificativo)
         ruta = boxart.portada_de_juego(identificativo, nombre, titulo)
-        url = boxart.ruta_a_uri(ruta) if ruta else ""
-        return {"url": url, "path": ruta} if url else None
+        url = boxart.leer_como_data_uri(ruta) if ruta else ""
+        return {"url": url} if url else None
 
     # Juegos recientes y deseados para tu perfil.
     def obtener_mi_actividad(self):
@@ -612,7 +609,6 @@ class API:
         juego = db_local.obtener_juego_detalle(game_id)
         if not juego:
             return {"exito": False, "error": "No se encontró el juego."}
-        juego["portada_url"] = boxart.ruta_a_uri(juego.get("portada_path"))
         juego["opinion"] = db_local.obtener_opinion(juego["consola_id"], juego["titulo"])
         return {"exito": True, "juego": juego}
 
