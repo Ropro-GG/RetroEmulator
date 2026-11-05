@@ -708,3 +708,17 @@ alter table public.avisos add column if not exists imagen text check (imagen is 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
     values ('avisos', 'avisos', true, 5242880, array['image/png','image/jpeg'])
     on conflict (id) do nothing;
+
+-- Opiniones para todo el mundo: nueva opción. Las anteriores quedan solo para amigos. Los bloqueos ocultan en ambos sentidos.
+alter table public.opiniones_juegos add column if not exists para_todos boolean not null default false;
+drop policy if exists opiniones_select on public.opiniones_juegos;
+create policy opiniones_select on public.opiniones_juegos for select to authenticated using (
+    auth.uid() = user_id
+    or (publica
+        and user_id <> all (array(select public.ids_con_bloqueo()))
+        and (para_todos or exists (
+            select 1 from public.friendships f
+            where f.status = 'accepted'
+              and ((f.requester_id = auth.uid() and f.addressee_id = opiniones_juegos.user_id)
+                or (f.addressee_id = auth.uid() and f.requester_id = opiniones_juegos.user_id)))))
+);

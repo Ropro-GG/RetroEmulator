@@ -8,7 +8,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nucleo import cifrado, db_local, launcher, noticias, scanner
+from nucleo import boxart, catalogo, cifrado, db_local, launcher, noticias, scanner
 
 
 class PistasDeAudio(unittest.TestCase):
@@ -557,6 +557,58 @@ class IdentidadDeAmigos(unittest.TestCase):
         abierto = self.llaves.abrir(self._mensaje_de(self.amigo, "hola"))
         self.assertEqual(abierto["contenido"], "hola")
         self.assertFalse(abierto["alerta_llave"])
+
+
+class TiendaDelCatalogo(unittest.TestCase):
+    def test_lee_los_datos_de_libretro_sin_importar_la_region(self):
+        dat = """game (\n\tcomment "Super Metroid (Japan, USA) (En,Ja)"\n\treleaseyear "1994"\n\trom ( crc 1 )\n)
+game (\n\tcomment "Legend of Zelda, The (USA)"\n\treleaseyear "1992"\n\trom ( crc 2 )\n)"""
+        self.assertEqual(catalogo.leer_dat(dat, "releaseyear"), {"super metroid": "1994", "the legend of zelda": "1992"})
+
+    def test_la_lista_oculta_hacks_y_betas_y_elige_una_version(self):
+        indice = boxart._Indice("X", ["Juego (USA).png", "Juego (Beta).png", "Otro (Proto).png", "Abc (Japan).png"])
+        juegos = catalogo._armar_lista(indice, {"genero": {"juego": "Action"}}, "https://x/")
+        self.assertEqual([(j["titulo"], j["genero"]) for j in juegos], [("Abc", ""), ("Juego", "Action")])
+        self.assertEqual(juegos[1]["portada"], "https://x/Juego%20%28USA%29.png")
+
+    def test_wikipedia_solo_vale_si_coincide_el_titulo_y_habla_de_un_videojuego(self):
+        self.assertEqual(catalogo.elegir_articulos([{"title": "Metroid"}, {"title": "Silent Hill (franquicia)"}, {"title": "Silent Hill (videojuego)"}], "silent hill"),
+                         ["Silent Hill (videojuego)", "Silent Hill (franquicia)"])
+        self.assertEqual(catalogo.elegir_articulos([{"title": "Metroid"}], "super metroid"), [])
+        bueno = {"type": "standard", "extract": "Es un videojuego.", "content_urls": {"desktop": {"page": "https://es.wikipedia.org/wiki/X"}}}
+        self.assertEqual(catalogo.resumen_valido(bueno, "videojuego", "es")["texto"], "Es un videojuego.")
+        self.assertIsNone(catalogo.resumen_valido({**bueno, "extract": "Es un río."}, "videojuego", "es"))
+        self.assertIsNone(catalogo.resumen_valido({**bueno, "extract": "Es una franquicia de videojuegos."}, "videojuego", "es"))
+        self.assertIsNone(catalogo.resumen_valido({**bueno, "type": "disambiguation"}, "videojuego", "es"))
+        self.assertIsNone(catalogo.resumen_valido({**bueno, "content_urls": {"desktop": {"page": "https://mal.com/x"}}}, "videojuego", "es"))
+
+    def test_juego_gratis_comprueba_lo_que_llega_de_internet(self):
+        base = {"slug": "a_b-c", "basepath": "database-gb", "title": "T", "platform": "GB", "screenshots": ["c d.png", "../x.png"],
+                "website": ["http://a.itch.io/x", "https://malitch.io/x", "https://autor.itch.io/juego"]}
+        j = catalogo.juego_gratis(base)
+        self.assertEqual(j["portada"], "https://hh3.gbdev.io/static/database-gb/entries/a_b-c/c%20d.png")
+        self.assertEqual(len(j["capturas"]), 1)
+        self.assertEqual(j["itch"], "https://autor.itch.io/juego")
+        self.assertEqual(j["enlace"], "https://hh.gbdev.io/game/a_b-c")
+        self.assertIsNone(catalogo.juego_gratis({**base, "slug": "../malo"}))
+        self.assertIsNone(catalogo.juego_gratis({**base, "basepath": "x/y"}))
+
+    def test_leer_itch_solo_acepta_juegos_gratis_de_itch(self):
+        item = """<item><plainTitle>{t}</plainTitle><link>{l}</link><price>{p}</price><imageurl>{i}</imageurl>
+                  <description>Hecho para &lt;b&gt;NES&lt;/b&gt;</description><pubDate>Tue, 15 Nov 2016 16:17:31 GMT</pubDate></item>"""
+        bueno = dict(t="L&amp;#039;Abbaye", l="https://autor.itch.io/juego", p="$0.00", i="https://img.itch.zone/a.png")
+        xml = "<rss><channel>" + item.format(**bueno) + item.format(**{**bueno, "p": "$5.00"}) \
+            + item.format(**{**bueno, "l": "https://malitch.io/x"}) + item.format(**{**bueno, "i": "https://mal.com/a.png", "t": "Sin imagen"}) + "</channel></rss>"
+        juegos = catalogo.leer_itch(xml.encode())
+        self.assertEqual([j["titulo"] for j in juegos], ["L'Abbaye", "Sin imagen"])
+        self.assertEqual((juegos[0]["desarrollador"], juegos[0]["descripcion"], juegos[0]["fecha"]), ("autor", "Hecho para NES", "2016-11-15"))
+        self.assertEqual(juegos[1]["capturas"], [])
+        with self.assertRaises(ValueError):
+            catalogo.leer_itch(b'<!DOCTYPE x [<!ENTITY a "b">]><rss/>')
+
+    def test_solo_se_abren_enlaces_de_itch_reales(self):
+        for host, esperado in (("itch.io", True), ("autor.itch.io", True), ("malitch.io", False), (None, False)):
+            self.assertEqual(catalogo.es_enlace_de_itch(host), esperado, host)
 
 
 class FeedsDeNoticias(unittest.TestCase):

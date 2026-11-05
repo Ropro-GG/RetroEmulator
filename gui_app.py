@@ -12,7 +12,7 @@ import sys
 import webbrowser
 from urllib.parse import urlparse
 
-from nucleo import boxart, db_local, gifs, imagenes, launcher, noticias, ra_client, scanner
+from nucleo import boxart, catalogo, db_local, gifs, imagenes, launcher, noticias, ra_client, scanner
 from nucleo.cloud_client import CloudClient
 from nucleo.db_local import LocalDB
 from nucleo.llamadas_cloud import Llamadas
@@ -20,7 +20,7 @@ from nucleo.llamadas_cloud import Llamadas
 VERSION = "BETA v1"
 DESARROLLADOR = "Rocco Flores"
 URL_GITHUB = "https://github.com/Ropro-GG/RetroEmulator"
-HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"} | noticias.HOSTS
+HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"} | noticias.HOSTS | catalogo.HOSTS
 
 # Métodos que la interfaz puede llamar. Los que empiezan con "_" no se exponen a JavaScript.
 class API:
@@ -595,7 +595,7 @@ class API:
         """Abre un enlace en el navegador (solo sitios de la lista permitida)."""
         try:
             partes = urlparse(url)
-            if partes.scheme == "https" and partes.hostname in HOSTS_PERMITIDOS:
+            if partes.scheme == "https" and (partes.hostname in HOSTS_PERMITIDOS or catalogo.es_enlace_de_itch(partes.hostname)):
                 webbrowser.open(url)
                 return {"exito": True}
         except ValueError:
@@ -609,6 +609,48 @@ class API:
         avisos = self.cloud.obtener_avisos()
         return {"exito": True, "avisos": avisos, "noticias": noticias.obtener(bool(forzar))}
 
+    # --- CATÁLOGO ---
+
+    def catalogo_inicio(self):
+        """Portada de la tienda: juegos gratis y lo que juegan tus amigos."""
+        amigos = self.cloud.juegos_de_amigos()
+        for j in amigos:
+            j["portada"] = catalogo.portada(j["identificativo"], j["consola"], j["titulo"])
+        return {"exito": True, "gratis": catalogo.gratis_recientes(), "itch": catalogo.gratis("itch-homebrew").get("juegos", [])[:12], "amigos": amigos}
+
+    def catalogo_listar(self, identificativo, texto="", genero="", pagina=1):
+        return catalogo.listar(identificativo, db_local.obtener_nombre_consola(identificativo), texto, genero, pagina)
+
+    def catalogo_gratis(self, plataforma, pagina=1):
+        return catalogo.gratis(plataforma, pagina)
+
+    def catalogo_ficha(self, identificativo, titulo):
+        """Ficha de un juego: sus datos, si ya lo tenés y qué opinan tus amigos."""
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        res = catalogo.ficha(identificativo, nombre, titulo)
+        if not res.get("exito"):
+            return res
+        juego = res["juego"]
+        juego["id_biblioteca"] = self._id_en_biblioteca(identificativo, juego["clave"], juego["titulo"])
+        juego["jugaron"] = self.cloud.obtener_amigos_que_jugaron(identificativo, juego["titulo"])
+        juego["deseado"] = self.cloud.obtener_amigos_con_deseado(identificativo, juego["titulo"])
+        juego["opiniones"] = self.cloud.obtener_opiniones(identificativo, juego["titulo"])
+        return res
+
+    def catalogo_logros(self, identificativo, titulo):
+        consola = next((c["id"] for c in self.db.obtener_consolas() if c["identificativo"] == identificativo), None)
+        return ra_client.obtener_logros(identificativo, consola, titulo)
+
+    def _id_en_biblioteca(self, identificativo, clave, titulo):
+        consola = next((c["id"] for c in self.db.obtener_consolas() if c["identificativo"] == identificativo), None)
+        if consola is None:
+            return None
+        # Se busca por la primera palabra: en la biblioteca el título puede venir con región o versión
+        for j in self.db.obtener_juegos_filtrados(titulo.split()[0], consola):
+            if boxart.analizar_titulo(j["titulo"])[0] == clave:
+                return j["id"]
+        return None
+
     # --- DETALLE DE JUEGO ---
 
     # Datos de un juego para su pantalla de detalle.
@@ -619,15 +661,15 @@ class API:
         juego["opinion"] = db_local.obtener_opinion(juego["consola_id"], juego["titulo"])
         return {"exito": True, "juego": juego}
 
-    def guardar_opinion(self, game_id, puntuacion, texto, publica=True):
-        """Guarda la opinión en tu equipo y la publica para tus amigos (si la dejás visible)."""
+    def guardar_opinion(self, game_id, puntuacion, texto, publica=True, para_todos=False):
+        """Guarda la opinión en tu equipo y la publica según quién elegiste que la vea."""
         juego = db_local.obtener_juego_detalle(game_id)
         if not juego:
             return {"exito": False, "error": "No se encontró el juego."}
-        db_local.guardar_opinion(juego["consola_id"], juego["titulo"], puntuacion, texto, publica)
+        db_local.guardar_opinion(juego["consola_id"], juego["titulo"], puntuacion, texto, publica, para_todos)
         publicada = self.cloud.publicar_opinion(
             juego["identificativo"], juego["titulo"], juego["consola"],
-            puntuacion, texto, publica)
+            puntuacion, texto, publica, para_todos)
         if not publicada.get("exito"):
             return {"exito": True, "aviso": publicada.get("error")}
         return {"exito": True}
@@ -640,7 +682,7 @@ class API:
         return ra_client.obtener_logros(juego["identificativo"], juego["consola_id"], juego["titulo"])
 
     def obtener_amigos_juego(self, game_id):
-        """Amigos que jugaron o desean este juego, y sus opiniones."""
+        """Amigos que jugaron o desean este juego, y las opiniones que podés ver."""
         juego = db_local.obtener_juego_detalle(game_id)
         if not juego:
             return {"exito": False, "jugaron": [], "deseado": []}
@@ -648,7 +690,7 @@ class API:
             "exito": True,
             "jugaron": self.cloud.obtener_amigos_que_jugaron(juego["identificativo"], juego["titulo"]),
             "deseado": self.cloud.obtener_amigos_con_deseado(juego["identificativo"], juego["titulo"]),
-            "opiniones": self.cloud.obtener_opiniones_amigos(juego["identificativo"], juego["titulo"]),
+            "opiniones": self.cloud.obtener_opiniones(juego["identificativo"], juego["titulo"]),
         }
 
     # --- RETROACHIEVEMENTS ---

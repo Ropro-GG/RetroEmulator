@@ -226,13 +226,14 @@ def obtener_logros(identificativo, consola_id, titulo):
         return {"exito": False, "motivo": "consola_no_soportada"}
 
     try:
-        ra_id = db_local.obtener_ra_juego(consola_id, titulo)
+        ra_id = db_local.obtener_ra_juego(consola_id, titulo) if consola_id else 0
         if not ra_id:
             juego = buscar_juego(identificativo, titulo)
             if not juego:
                 return {"exito": False, "motivo": "sin_logros"}
             ra_id = juego["ID"]
-            db_local.guardar_ra_juego(consola_id, titulo, ra_id)
+            if consola_id:
+                db_local.guardar_ra_juego(consola_id, titulo, ra_id)
         datos = _pedir("API_GetGameInfoAndUserProgress.php", u=cred["usuario"], g=ra_id)
     except SinCredenciales:
         return {"exito": False, "motivo": "sin_credenciales"}
@@ -243,6 +244,7 @@ def obtener_logros(identificativo, consola_id, titulo):
     crudos = list(crudos.values()) if isinstance(crudos, dict) else []
     crudos.sort(key=lambda a: (a.get("DisplayOrder", 0), a.get("ID", 0)))
 
+    jugadores = (datos.get("NumDistinctPlayers") or 0) if isinstance(datos, dict) else 0
     logros = []
     for a in crudos:
         fecha = a.get("DateEarnedHardcore") or a.get("DateEarned") or ""
@@ -256,6 +258,7 @@ def obtener_logros(identificativo, consola_id, titulo):
             "hardcore": bool(a.get("DateEarnedHardcore")),
             "fecha": fecha,
             "badge_url": f"{MEDIA_URL}/Badge/{badge}{'' if fecha else '_lock'}.png" if badge else "",
+            "porcentaje": min(100, round((a.get("NumAwarded") or 0) * 100 / jugadores)) if jugadores else None,
         })
 
     if not logros:
@@ -271,4 +274,7 @@ def obtener_logros(identificativo, consola_id, titulo):
         "puntos_total": sum(l["puntos"] for l in logros),
         "puntos_obtenidos": sum(l["puntos"] for l in logros if l["obtenido"]),
         "logros": logros,
+        "imagenes": [{"src": MEDIA_URL + ruta, "etiqueta": etiqueta}
+                     for ruta, etiqueta in ((datos.get("ImageTitle"), "Título (RetroAchievements)"), (datos.get("ImageIngame"), "En juego (RetroAchievements)"))
+                     if isinstance(ruta, str) and ruta.startswith("/Images/")],
     }

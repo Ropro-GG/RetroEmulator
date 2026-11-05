@@ -98,6 +98,8 @@ def inicializar_db_local():
         columnas = [f[1] for f in cursor.execute("PRAGMA table_info(opiniones_cuenta);").fetchall()]
         if "publica" not in columnas:
             cursor.execute("ALTER TABLE opiniones_cuenta ADD COLUMN publica INTEGER DEFAULT 1;")
+        if "para_todos" not in columnas:   # las opiniones anteriores se publicaron solo para amigos
+            cursor.execute("ALTER TABLE opiniones_cuenta ADD COLUMN para_todos INTEGER DEFAULT 0;")
 
         # Llaves públicas de amigos aceptadas en este equipo. Va aquí y no en Supabase:
         # quien controle el servidor no debe poder ocultar el aviso de que una llave cambió.
@@ -317,23 +319,24 @@ def obtener_opinion(consola_id, titulo):
     """Opinión de la cuenta que tiene la sesión iniciada."""
     with obtener_conexion() as conn:
         fila = conn.execute(
-            "SELECT puntuacion, texto, publica FROM opiniones_cuenta WHERE usuario_id = ? AND consola_id = ? AND titulo = ?;",
+            "SELECT puntuacion, texto, publica, para_todos FROM opiniones_cuenta WHERE usuario_id = ? AND consola_id = ? AND titulo = ?;",
             (usuario_id(), consola_id, titulo)).fetchone()
-    return {"puntuacion": fila[0], "texto": fila[1], "publica": bool(fila[2])} if fila else None
+    return {"puntuacion": fila[0], "texto": fila[1], "publica": bool(fila[2]), "para_todos": bool(fila[3])} if fila else None
 
 # Guarda la opinión de la cuenta activa; la puntuación queda entre 0 y 5.
-def guardar_opinion(consola_id, titulo, puntuacion, texto, publica=True):
+def guardar_opinion(consola_id, titulo, puntuacion, texto, publica=True, para_todos=False):
     puntuacion = max(0, min(5, int(puntuacion or 0)))
     with obtener_conexion() as conn:
         conn.execute("""
-            INSERT INTO opiniones_cuenta (usuario_id, consola_id, titulo, puntuacion, texto, actualizado, publica)
-            VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+            INSERT INTO opiniones_cuenta (usuario_id, consola_id, titulo, puntuacion, texto, actualizado, publica, para_todos)
+            VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?)
             ON CONFLICT(usuario_id, consola_id, titulo) DO UPDATE SET
                 puntuacion = excluded.puntuacion,
                 texto = excluded.texto,
                 actualizado = excluded.actualizado,
-                publica = excluded.publica;
-        """, (usuario_id(), consola_id, titulo, puntuacion, texto or "", 1 if publica else 0))
+                publica = excluded.publica,
+                para_todos = excluded.para_todos;
+        """, (usuario_id(), consola_id, titulo, puntuacion, texto or "", 1 if publica else 0, 1 if para_todos else 0))
         conn.commit()
 
 def obtener_nombre_consola(identificativo):

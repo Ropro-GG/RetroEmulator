@@ -122,15 +122,19 @@
                                 <span data-v="1" onclick="elegirPuntuacion(1)">★</span><span data-v="2" onclick="elegirPuntuacion(2)">★</span><span data-v="3" onclick="elegirPuntuacion(3)">★</span><span data-v="4" onclick="elegirPuntuacion(4)">★</span><span data-v="5" onclick="elegirPuntuacion(5)">★</span>
                             </div>
                             <textarea id="opinion-text" placeholder="¿Qué te pareció este juego?"></textarea>
-                            <label class="toggle-row opinion-visible">
-                                <input type="checkbox" id="opinion-publica" checked>
-                                Visible para mis amigos
+                            <label class="opinion-visible">
+                                Quién puede verla:
+                                <select id="opinion-alcance" class="settings-input">
+                                    <option value="todos">Todo el mundo</option>
+                                    <option value="amigos">Mis amigos</option>
+                                    <option value="privada">Solo yo</option>
+                                </select>
                             </label>
                             <button class="btn-primary-sm" onclick="guardarOpinion()">Guardar opinión</button>
                             <span id="opinion-msg" class="settings-msg"></span>
                         </div>
                         <div class="detail-card">
-                            <h3>💬 Opiniones de tus amigos</h3>
+                            <h3>💬 Opiniones</h3>
                             <div id="friends-opiniones"></div>
                         </div>
                     </div>
@@ -240,7 +244,7 @@
                 <!-- MI LISTA DE DESEADOS -->
                 <div id="social-deseados" style="display: none;">
                     <h2>Mi lista de deseados</h2>
-                    <p class="settings-help">Juegos que querés jugar. Tus amigos pueden verla (lo controlás en Configuración → Privacidad) y, cuando un amigo tiene uno de esos juegos, lo ve en el detalle del juego. Solo se pueden agregar juegos que existan en el catálogo de la consola: elegí uno de los sugeridos. Más adelante vas a poder agregar juegos desde el Catálogo.</p>
+                    <p class="settings-help">Juegos que querés jugar. Tus amigos pueden verla (lo controlás en Configuración → Privacidad) y, cuando un amigo tiene uno de esos juegos, lo ve en el detalle del juego. Solo se pueden agregar juegos que existan en el catálogo de la consola: elegí uno de los sugeridos. También podés agregarlos desde el Catálogo.</p>
                     <div class="wish-add">
                         <select id="wish-consola" class="settings-input wish-consola" onchange="buscarTitulosConRetraso()"></select>
                         <div class="wish-title-wrap">
@@ -337,10 +341,24 @@
             </div>
         </div>
 
-        <!-- CATÁLOGO (vacío por ahora) -->
-        <div id="view-catalogo" class="view empty-view" style="display: none;">
-            <h2>CATÁLOGO</h2>
-            <p>Próximamente</p>
+        <!-- CATÁLOGO: tienda para descubrir juegos. No vende ni descarga nada. -->
+        <div id="view-catalogo" class="view catalogo-view" style="display: none;">
+            <div class="catalogo-wrap">
+                <div class="catalogo-head">
+                    <h2>Catálogo</h2>
+                    <select id="catalogo-consola" class="settings-input" aria-label="Sección del catálogo" onchange="cambiarSeccionCatalogo()"></select>
+                    <input id="catalogo-busqueda" class="settings-input" type="text" placeholder="🔍 Buscar en esta consola..." aria-label="Buscar en esta consola" oninput="buscarCatalogoConRetraso()" autocomplete="off" style="display: none;">
+                    <select id="catalogo-genero" class="settings-input" aria-label="Género" onchange="cargarListaCatalogo(true)" style="display: none;"></select>
+                </div>
+                <div id="catalogo-inicio"></div>
+                <div id="catalogo-lista" style="display: none;">
+                    <p id="catalogo-total" class="settings-help"></p>
+                    <div id="catalogo-grilla" class="game-grid"></div>
+                    <div class="posts-pie"><button id="catalogo-mas" class="btn-secondary-sm" style="display: none;" onclick="cargarMasCatalogo()">Ver más</button></div>
+                </div>
+                <div id="catalogo-ficha" style="display: none;"></div>
+                <p class="catalogo-creditos">Datos y carátulas: <a href="#" onclick="abrirEnlace('https://github.com/libretro/libretro-database'); return false;">libretro</a> (CC BY-SA 4.0) · Juegos gratis: <a href="#" onclick="abrirEnlace('https://hh.gbdev.io/game/'); return false;">Homebrew Hub</a> · Descripciones: Wikipedia (CC BY-SA)</p>
+            </div>
         </div>
     </div>
 
@@ -664,7 +682,7 @@
                         <input type="checkbox" id="privacy-deseados" onchange="guardarCompartirDeseados()">
                         Mostrar mi lista de deseados a mis amigos
                     </label>
-                    <p class="settings-help">Si lo desactivás, tus amigos dejan de ver tu lista (ni en tu perfil ni en el detalle de los juegos). La lista sigue siendo tuya. Las opiniones se controlan una por una con "Visible para mis amigos".</p>
+                    <p class="settings-help">Si lo desactivás, tus amigos dejan de ver tu lista (ni en tu perfil ni en el detalle de los juegos). La lista sigue siendo tuya. Cada opinión tiene su propia opción "Quién puede verla".</p>
 
                     <h3 class="settings-subtitle">Frase de recuperación</h3>
                     <p class="settings-help">Te permite leer tus chats privados en otro equipo.</p>
@@ -690,7 +708,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+    <script src="vendor/supabase-2.45.4.js"></script>
     <script src="llamadas.js"></script>
     <script src="app.js"></script>
 </body>

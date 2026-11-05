@@ -612,6 +612,28 @@ class CloudClient:
                 return {"exito": False, "error": "Enviaste demasiadas denuncias hoy. Probá de nuevo mañana."}
             return {"exito": False, "error": self._error_social(e)}
 
+    # --- CATÁLOGO ---
+
+    def juegos_de_amigos(self, limite=12):
+        """Lo que más juegan tus amigos. La base solo entrega el historial de quienes lo comparten con vos."""
+        if not self.client or not self.usuario_actual:
+            return []
+        try:
+            filas = self.client.table("juegos_jugados").select("user_id, clave, titulo, consola, identificativo, ultima_vez") \
+                .neq("user_id", self._yo()).order("ultima_vez", desc=True).limit(300).execute().data or []
+        except Exception as e:
+            print(f"[CATALOGO] Sin juegos de amigos: {self._error_social(e)}")
+            return []
+        juegos = {}
+        for f in filas:                      # vienen del más reciente al más viejo
+            if not f.get("identificativo"):
+                continue
+            juego = juegos.setdefault(f["clave"], {"titulo": f["titulo"], "consola": f.get("consola") or "",
+                                                   "identificativo": f["identificativo"], "amigos": set()})
+            juego["amigos"].add(f["user_id"])
+        lista = sorted(juegos.values(), key=lambda j: -len(j["amigos"]))[:limite]   # sort estable: desempata lo más reciente
+        return [{**j, "amigos": len(j["amigos"])} for j in lista]
+
     # --- NOTICIAS ---
 
     def obtener_avisos(self, limite=5):
@@ -1176,10 +1198,10 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
-    # --- OPINIONES DE JUEGOS (las ven tus amigos si las dejás visibles) ---
+    # --- OPINIONES DE JUEGOS (cada una puede ser privada, para amigos o para todo el mundo) ---
 
     # Publica tu opinión; si está vacía, la retira de la nube.
-    def publicar_opinion(self, identificativo, titulo, consola, puntuacion, texto, publica=True):
+    def publicar_opinion(self, identificativo, titulo, consola, puntuacion, texto, publica=True, para_todos=False):
         error = self._requiere_sesion()
         if error:
             return error
@@ -1198,23 +1220,28 @@ class CloudClient:
                     "puntuacion": int(puntuacion or 0),
                     "texto": texto or "",
                     "publica": bool(publica),
+                    "para_todos": bool(publica and para_todos),
                     "actualizado_en": datetime.now(timezone.utc).isoformat(),
                 }).execute()
             return {"exito": True}
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
 
-    def obtener_opiniones_amigos(self, identificativo, titulo):
-        """Opiniones que tus amigos dejaron (y compartieron) de este juego."""
+    def obtener_opiniones(self, identificativo, titulo):
+        """Opiniones de este juego que podés ver: primero la tuya, luego las de amigos y luego el resto. La base aplica la privacidad."""
         if not self.client or not self.usuario_actual:
             return []
         try:
             res = self.client.table("opiniones_juegos") \
                 .select("user_id, puntuacion, texto, actualizado_en") \
-                .eq("clave", clave_juego(identificativo, titulo)).neq("user_id", self._yo()).execute()
+                .eq("clave", clave_juego(identificativo, titulo)) \
+                .order("actualizado_en", desc=True).limit(100).execute()   # shortcut: solo las 100 más nuevas, paginar si un juego supera esa cifra
             filas = res.data or []
             perfiles = self._perfiles_por_id([f["user_id"] for f in filas])
+            amigos = set(self._amigos_aceptados())
             lista = [{
+                "mia": f["user_id"] == self._yo(),
+                "amigo": f["user_id"] in amigos,
                 "user_id": f["user_id"],
                 "username": perfiles.get(f["user_id"], {}).get("username") or "Usuario",
                 "avatar_url": perfiles.get(f["user_id"], {}).get("avatar_url") or "",
@@ -1222,7 +1249,7 @@ class CloudClient:
                 "texto": f.get("texto", ""),
                 "actualizado_en": f.get("actualizado_en"),
             } for f in filas]
-            lista.sort(key=lambda a: a["actualizado_en"] or "", reverse=True)
+            lista.sort(key=lambda a: (not a["mia"], not a["amigo"]))   # sort estable: conserva lo más nuevo primero
             return lista
         except Exception as e:
             print(f"[SOCIAL] No se pudieron cargar las opiniones: {self._error_social(e)}")

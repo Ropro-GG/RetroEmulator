@@ -38,7 +38,7 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
     <td width="50%">
       <h3>🕹️ Biblioteca & Tienda Retro</h3>
       <ul>
-        <li><strong>Catálogo y Tienda Retro:</strong> Descubre y organiza títulos clásicos por consola y género.</li>
+        <li><strong>Catálogo:</strong> Descubre clásicos por consola y género, con imágenes, logros y opiniones, y juegos gratis de la comunidad, sin descargar nada desde la app.</li>
         <li><strong>Boxarts & Carátulas:</strong> Visualización en alta calidad de carátulas retro y arte de caja.</li>
         <li><strong>Lista de Deseados:</strong> Guarda tus próximos retro-juegos a jugar o coleccionar.</li>
         <li><strong>Logros (Achievements):</strong> Desbloquea trofeos y logros jugando a tus títulos preferidos.</li>
@@ -50,7 +50,7 @@ Nuestro objetivo es brindar una experiencia completa de biblioteca digital con f
         <li><strong>Perfiles Personalizables:</strong> Muestra tus estadísticas, logros y juegos favoritos.</li>
         <li><strong>Lista de Amigos & Chats:</strong> Mensajería directa, llamadas de voz y video, y compartir pantalla.</li>
         <li><strong>Publicaciones & Noticias:</strong> Entérate de las últimas novedades del gaming retro y comparte posts.</li>
-        <li><strong>Reseñas por Juego:</strong> Calificaciones y opiniones de tus amigos en cada juego.</li>
+        <li><strong>Reseñas por Juego:</strong> Calificaciones y opiniones de todo el mundo en cada juego, con las de tus amigos primero.</li>
       </ul>
     </td>
   </tr>

@@ -20,17 +20,17 @@ FUENTES = (
     ("RetroRGB", "https://www.retrorgb.com/feed/"),
     ("Libretro", "https://www.libretro.com/index.php/feed/"),
     ("Hackaday", "https://hackaday.com/tag/retrocomputing/feed/"),
-)
-# En espera: desde la red pública actual no se pudieron probar. Para activar uno, comprobarlo y pasarlo a FUENTES.
-FUENTES_EN_ESPERA = (
-    ("RetroManiac", "https://retromaniac.es/feed/"),
     ("VidaExtra Retro", "https://www.vidaextra.com/tag/retro/rss2.xml"),
     ("Time Extension", "https://www.timeextension.com/feeds/latest"),
     ("Retro Dodo", "https://retrododo.com/feed/"),
-    ("Retro Gamer", "https://www.retrogamer.net/feed/"),
-    ("Racketboy", "https://www.racketboy.com/feed"),
     ("Hardcore Gaming 101", "https://hardcoregaming101.net/feed/"),
-    ("RetroPie", "https://retropie.org.uk/feed/"),
+)
+# En espera: probados el 2026-11-04 desde una red sin bloqueos. Rechazan a la app o ya no publican un feed.
+FUENTES_EN_ESPERA = (
+    ("RetroManiac", "https://retromaniac.es/feed/"),   # 403
+    ("Racketboy", "https://www.racketboy.com/feed"),   # 403
+    ("RetroPie", "https://retropie.org.uk/feed/"),     # pide comprobar un navegador
+    ("Retro Gamer", "https://www.retrogamer.net/feed/"),   # redirige a una página de GamesRadar, no a un feed
 )
 
 
@@ -44,8 +44,8 @@ _ATOM = "{http://www.w3.org/2005/Atom}"
 _MEDIA = "{http://search.yahoo.com/mrss/}"
 _CONTENIDO = "{http://purl.org/rss/1.0/modules/content/}encoded"
 _MAX_BYTES = 2 * 1024 * 1024
-_MAX_POR_FUENTE = 15
-_MAX_TOTAL = 40
+_MAX_POR_FUENTE = 10
+_MAX_TOTAL = _MAX_POR_FUENTE * len(FUENTES)   # sin recorte: los sitios que publican poco no deben quedar fuera
 _LARGO_RESUMEN = 220
 _VIGENCIA_S = 30 * 60
 _ESPERA_FORZADA_S = 60   # "Actualizar" no puede insistirle a los sitios más que esto
@@ -103,11 +103,16 @@ def _imagen_de(item, *textos):
     return next(filter(None, map(_imagen_valida, candidatas)), "")
 
 
-def leer_feed(datos, fuente, host):
-    """Convierte un feed RSS o Atom en notas. Rechaza DOCTYPE y entidades: no hacen falta y permiten ataques al XML."""
+def leer_xml(datos):
+    """Rechaza DOCTYPE y entidades: un feed no los necesita y permiten ataques al XML."""
     if b"<!DOCTYPE" in datos[:4096].upper() or b"<!ENTITY" in datos.upper():
         raise ValueError("Feed con DOCTYPE o entidades")
-    raiz = ET.fromstring(datos)
+    return ET.fromstring(datos)
+
+
+def leer_feed(datos, fuente, host):
+    """Convierte un feed RSS o Atom en notas."""
+    raiz = leer_xml(datos)
     notas = []
     es_atom = raiz.tag == _ATOM + "feed"
     for item in raiz.iter(_ATOM + "entry" if es_atom else "item"):

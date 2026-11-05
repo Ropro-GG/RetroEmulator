@@ -6,7 +6,7 @@
 //  - Las señales de conexión viajan por un canal "broadcast" privado por llamada. Las que definen
 //    la conexión van además selladas en Python, para que ni el servidor pueda alterarlas
 //    (llamada:<id>) y no se guardan en ninguna tabla.
-// Requiere: supabase-js (CDN, en index.html) y los métodos de gui_app.py.
+// Requiere: supabase-js (copia local en ui/vendor) y los métodos de gui_app.py.
 // ============================================================================
 
 const LL_ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };  // solo STUN: gratis, pero algunas redes no pueden conectarse
@@ -36,7 +36,7 @@ async function llamadasIniciar() {
     await llamadasDetener();
     llCrearUI();
     if (!window.supabase || !window.supabase.createClient) {
-        console.warn('[LLAMADAS] supabase-js no cargó (¿sin internet?). Las llamadas quedan desactivadas.');
+        console.warn('[LLAMADAS] supabase-js no cargó. Las llamadas quedan desactivadas.');
         return;
     }
     let cfg;

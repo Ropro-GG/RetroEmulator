@@ -772,7 +772,7 @@ function pintarDetalle(j) {
     }
 
     opinionPuntuacion = (j.opinion && j.opinion.puntuacion) || 0;
-    document.getElementById('opinion-publica').checked = j.opinion ? !!j.opinion.publica : true;
+    document.getElementById('opinion-alcance').value = !j.opinion ? 'todos' : (!j.opinion.publica ? 'privada' : (j.opinion.para_todos ? 'todos' : 'amigos'));
     document.getElementById('opinion-text').value = (j.opinion && j.opinion.texto) || '';
     document.getElementById('opinion-msg').textContent = '';
     pintarEstrellas();
@@ -800,17 +800,20 @@ function pintarEstrellas() {
 async function guardarOpinion() {
     if (!juegoDetalleActual) return;
     const msg = document.getElementById('opinion-msg');
+    const alcance = document.getElementById('opinion-alcance').value;
     try {
         const res = await window.pywebview.api.guardar_opinion(
             juegoDetalleActual.id,
             opinionPuntuacion,
             document.getElementById('opinion-text').value,
-            document.getElementById('opinion-publica').checked
+            alcance !== 'privada',
+            alcance === 'todos'
         );
         if (res && res.exito) {
             msg.textContent = res.aviso
                 ? `✔ Guardada en tu equipo. No se pudo publicar: ${res.aviso}`
                 : '✔ Opinión guardada';
+            cargarAmigos(juegoDetalleActual.id);
         } else {
             msg.textContent = (res && res.error) || 'Error al guardar.';
         }
@@ -844,7 +847,7 @@ function mensajeLogros(cont, res) {
     cont.appendChild(p);
 }
 
-// Trae y dibuja los logros con la barra de progreso.
+// Trae los logros de un juego de la biblioteca.
 async function cargarLogros(id) {
     const cont = document.getElementById('achievements-content');
     cont.replaceChildren(mensajeCargando('Cargando logros…'));
@@ -856,7 +859,11 @@ async function cargarLogros(id) {
         res = { exito: false, motivo: 'error', error: String(e) };
     }
     if (!juegoDetalleActual || juegoDetalleActual.id !== id) return;  // el usuario ya cambió de pantalla
+    pintarLogros(cont, res);
+}
 
+// Dibuja los logros con la barra de progreso.
+function pintarLogros(cont, res) {
     cont.innerHTML = '';
     if (!res || !res.exito) {
         mensajeLogros(cont, res);
@@ -906,7 +913,8 @@ async function cargarLogros(id) {
 
         const meta = document.createElement('div');
         meta.className = 'ach-meta';
-        meta.textContent = `${l.puntos} pts` + (l.obtenido ? ` · ${l.hardcore ? '🔥 ' : ''}${l.fecha}` : '');
+        meta.textContent = `${l.puntos} pts` + (l.obtenido ? ` · ${l.hardcore ? '🔥 ' : ''}${l.fecha}` : '')
+            + (l.porcentaje === null || l.porcentaje === undefined ? '' : ` · ${l.porcentaje}% de los jugadores`);
 
         item.append(info, meta);
         lista.appendChild(item);
@@ -928,7 +936,7 @@ async function cargarAmigos(id) {
         'Ninguno de tus amigos jugó este juego todavía.');
     pintarAmigos(document.getElementById('friends-wishlist'), res && res.deseado,
         'Ninguno de tus amigos lo tiene en su lista de deseados.');
-    pintarOpinionesAmigos(document.getElementById('friends-opiniones'), res && res.opiniones);
+    pintarOpiniones(document.getElementById('friends-opiniones'), res && res.opiniones, juegoDetalleActual.titulo);
 }
 
 // Lista de amigos que jugaron o desean el juego.
@@ -986,6 +994,7 @@ function mostrarVista(nombre) {
     });
 
     if (nombre === 'noticias') cargarNoticias();
+    if (nombre === 'catalogo') abrirCatalogo();
     if (nombre === 'social') {
         abrirSocial();
     } else {
@@ -1767,7 +1776,7 @@ function reiniciarEstadoUI() {
     // Textos y listas que dependen de la cuenta
     ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
      'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun', 'pa-deseados',
-     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista', 'noticias-lista'].forEach(id => {
+     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista', 'noticias-lista', 'catalogo-inicio', 'catalogo-grilla', 'catalogo-ficha', 'catalogo-consola'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });
@@ -1790,6 +1799,7 @@ function reiniciarEstadoUI() {
     cerrarDenuncia();
     cerrarCrearGrupo();
     cerrarMiembrosGrupo();
+    catalogoListo = false;
     document.getElementById('game-detail').style.display = 'none';
     document.querySelector('.game-grid-container').style.display = '';
     document.getElementById('social-perfil').style.display = 'none';
@@ -2066,16 +2076,19 @@ async function guardarCompartirDeseados() {
 }
 
 // ============================================================================
-// OPINIONES DE AMIGOS (en el detalle de un juego)
+// OPINIONES (en el detalle de un juego y en el Catálogo)
 // ============================================================================
 
-// Opiniones de tus amigos sobre un juego.
-function pintarOpinionesAmigos(el, opiniones) {
+// Opiniones de un juego: la tuya, las de tus amigos y las de todo el mundo.
+function pintarOpiniones(el, opiniones, titulo) {
     el.innerHTML = '';
     if (!opiniones || opiniones.length === 0) {
-        el.appendChild(mensajeVacio('Ninguno de tus amigos dejó una opinión de este juego todavía.'));
+        el.appendChild(mensajeVacio('Todavía no hay opiniones de este juego.'));
         return;
     }
+    const puntuadas = opiniones.filter(o => o.puntuacion > 0);
+    const promedio = puntuadas.reduce((suma, o) => suma + o.puntuacion, 0) / (puntuadas.length || 1);
+    el.appendChild(nodo('p', 'opiniones-resumen', `${puntuadas.length ? `★ ${promedio.toFixed(1)} · ` : ''}${opiniones.length} ${opiniones.length === 1 ? 'opinión' : 'opiniones'}`));
     opiniones.forEach(o => {
         const item = document.createElement('div');
         item.className = 'opinion-item';
@@ -2088,14 +2101,18 @@ function pintarOpinionesAmigos(el, opiniones) {
         img.onerror = () => { img.style.visibility = 'hidden'; };
         const nombre = document.createElement('strong');
         nombre.textContent = o.username || 'Usuario';
-        nombre.className = 'clickable';
-        nombre.onclick = () => irAPerfilAmigo(o.user_id);
+        if (!o.mia) {
+            nombre.className = 'clickable';
+            nombre.onclick = () => irAPerfilAmigo(o.user_id);
+        }
         const estrellas = document.createElement('span');
         estrellas.className = 'opinion-stars-static';
         estrellas.textContent = o.puntuacion > 0 ? '★'.repeat(o.puntuacion) + '☆'.repeat(5 - o.puntuacion) : '';
         const fecha = document.createElement('small');
         fecha.textContent = formatearFecha(o.actualizado_en);
-        cab.append(img, nombre, estrellas, fecha);
+        cab.append(img, nombre);
+        if (o.mia || o.amigo) cab.appendChild(nodo('span', 'opinion-marca', o.mia ? 'Vos' : 'Amigo'));
+        cab.append(estrellas, fecha);
         item.appendChild(cab);
 
         if (o.texto && o.texto.trim() !== '') {
@@ -2103,6 +2120,14 @@ function pintarOpinionesAmigos(el, opiniones) {
             t.className = 'opinion-text';
             t.textContent = o.texto;
             item.appendChild(t);
+        }
+        if (!o.mia) {
+            const denunciar = nodo('button', 'opinion-denunciar', 'Denunciar');
+            denunciar.onclick = () => {
+                abrirDenuncia(o.user_id, o.username || 'Usuario');
+                document.getElementById('denuncia-detalle').value = `Opinión sobre "${titulo}"`.slice(0, 500);
+            };
+            item.appendChild(denunciar);
         }
         el.appendChild(item);
     });
@@ -4313,5 +4338,346 @@ async function cargarNoticias(forzar = false) {
         const meta = [n.fuente, formatearFecha(n.fecha)].filter(Boolean).join(' · ');
         lista.appendChild(tarjetaNoticia(n.titulo, n.resumen, meta, n.enlace, n.imagen));
     });
+}
+
+// ============================================================================
+// CATÁLOGO: tienda para descubrir juegos. Solo enlaza a la página original de los juegos gratis.
+// ============================================================================
+
+const CATALOGO_PLATAFORMAS_GRATIS = { GB: 'Game Boy', GBC: 'Game Boy Color', GBA: 'Game Boy Advance', NES: 'NES',
+    'itch-homebrew': 'itch.io: Homebrew', 'itch-gb': 'itch.io: GB Studio', 'itch-nes': 'itch.io: NES', 'itch-snes': 'itch.io: Super Nintendo' };
+let catalogoListo = false;       // la portada es de la cuenta actual: se vuelve a pedir al cambiar de cuenta
+let catalogoPagina = 1;
+let catalogoToken = 0;
+let catalogoBusquedaTimer = null;
+let catalogoAnterior = 'inicio'; // panel al que vuelve "← Volver" desde una ficha
+
+// Muestra uno de los paneles del catálogo.
+function panelCatalogo(nombre) {
+    ['inicio', 'lista', 'ficha'].forEach(p => {
+        document.getElementById('catalogo-' + p).style.display = p === nombre ? '' : 'none';
+    });
+    const vista = document.getElementById('view-catalogo');
+    if (nombre === 'ficha') vista.scrollTop = 0;
+}
+
+// Tarjeta de juego; si la carátula no carga, queda el emoji.
+function tarjetaTienda(titulo, detalle, portada, accion) {
+    const card = nodo('button', 'game-card tienda-card');
+    card.type = 'button';
+    const caja = nodo('div', 'game-cover-wrapper');
+    const emoji = nodo('div', 'game-cover-fallback', '🎮');
+    if (portada) {
+        const img = nodo('img');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = () => img.replaceWith(emoji);
+        img.src = portada;
+        caja.appendChild(img);
+    } else {
+        caja.appendChild(emoji);
+    }
+    const info = nodo('div', 'game-info');
+    const h3 = nodo('h3', '', titulo);
+    h3.title = titulo;
+    info.append(h3, nodo('p', 'tienda-detalle', detalle));
+    card.append(caja, info);
+    card.onclick = accion;
+    return card;
+}
+
+// Entra al catálogo; la primera vez arma las secciones y la portada.
+async function abrirCatalogo() {
+    if (catalogoListo) return;
+    catalogoListo = true;
+    const sel = document.getElementById('catalogo-consola');
+    sel.innerHTML = '';
+    sel.add(new Option('Inicio', ''));
+    sel.add(new Option('🎁 Juegos gratis', 'gratis'));
+    let consolas = [];
+    try { consolas = await window.pywebview.api.obtener_consolas_catalogo(); } catch (e) { /* queda Inicio y Juegos gratis */ }
+    (consolas || []).forEach(c => sel.add(new Option(c.nombre, c.identificativo)));
+    cambiarSeccionCatalogo();
+}
+
+// Cambia entre la portada, los juegos gratis y una consola.
+function cambiarSeccionCatalogo() {
+    const seccion = document.getElementById('catalogo-consola').value;
+    const esConsola = seccion !== '' && seccion !== 'gratis';
+    document.getElementById('catalogo-busqueda').style.display = esConsola ? '' : 'none';
+    document.getElementById('catalogo-busqueda').value = '';
+    document.getElementById('catalogo-genero').style.display = seccion ? '' : 'none';
+    const genero = document.getElementById('catalogo-genero');
+    genero.innerHTML = '';
+    if (seccion === 'gratis') {
+        Object.entries(CATALOGO_PLATAFORMAS_GRATIS).forEach(([v, n]) => genero.add(new Option(n, v)));
+        genero.setAttribute('aria-label', 'Consola');
+    } else {
+        genero.add(new Option('Todos los géneros', ''));
+        genero.setAttribute('aria-label', 'Género');
+    }
+    catalogoAnterior = seccion ? 'lista' : 'inicio';
+    if (seccion) cargarListaCatalogo(true);
+    else cargarInicioCatalogo();
+}
+
+// Salta a una consola desde la portada.
+function irAConsolaCatalogo(valor) {
+    document.getElementById('catalogo-consola').value = valor;
+    cambiarSeccionCatalogo();
+}
+
+// Sección con título y una grilla.
+function seccionCatalogo(titulo, tarjetas, accionVerTodo) {
+    const sec = nodo('section', 'tienda-seccion');
+    const cab = nodo('div', 'tienda-seccion-cab');
+    cab.appendChild(nodo('h3', '', titulo));
+    if (accionVerTodo) cab.appendChild(boton('Ver todos', 'btn-secondary-sm', async () => accionVerTodo()));
+    const grilla = nodo('div', 'game-grid');
+    tarjetas.forEach(t => grilla.appendChild(t));
+    sec.append(cab, grilla);
+    return sec;
+}
+
+// Portada de la tienda: gratis, amigos y consolas.
+async function cargarInicioCatalogo() {
+    const cont = document.getElementById('catalogo-inicio');
+    panelCatalogo('inicio');
+    const token = ++catalogoToken;
+    cont.replaceChildren(mensajeCargando('Cargando el catálogo…'));
+    let res;
+    try { res = await window.pywebview.api.catalogo_inicio(); } catch (e) { res = null; }
+    if (token !== catalogoToken) return;
+    cont.innerHTML = '';
+    if (res && res.gratis && res.gratis.length) {
+        cont.appendChild(seccionCatalogo('🎁 Juegos gratis recién agregados', res.gratis.map(tarjetaGratis), () => irAConsolaCatalogo('gratis')));
+    }
+    if (res && res.itch && res.itch.length) {
+        cont.appendChild(seccionCatalogo('🕹️ Homebrew gratis en itch.io', res.itch.map(tarjetaGratis), () => irAConsolaCatalogo('gratis')));
+    }
+    if (res && res.amigos && res.amigos.length) {
+        cont.appendChild(seccionCatalogo('👥 Lo que juegan tus amigos', res.amigos.map(j => tarjetaTienda(
+            j.titulo, `${j.consola} · ${j.amigos} ${j.amigos === 1 ? 'amigo' : 'amigos'}`, j.portada,
+            () => abrirFichaCatalogo(j.identificativo, j.titulo)))));
+    }
+    const sel = document.getElementById('catalogo-consola');
+    const consolas = nodo('section', 'tienda-seccion');
+    consolas.appendChild(nodo('h3', '', '🕹️ Explorar por consola'));
+    const chips = nodo('div', 'tienda-consolas');
+    Array.from(sel.options).filter(o => o.value && o.value !== 'gratis').forEach(o => {
+        chips.appendChild(boton(o.textContent, 'btn-secondary-sm', async () => irAConsolaCatalogo(o.value)));
+    });
+    consolas.appendChild(chips);
+    cont.appendChild(consolas);
+}
+
+// Espera a que dejes de escribir antes de buscar.
+function buscarCatalogoConRetraso() {
+    clearTimeout(catalogoBusquedaTimer);
+    catalogoBusquedaTimer = setTimeout(() => cargarListaCatalogo(true), 350);
+}
+
+// Ver más: siguiente página.
+function cargarMasCatalogo() {
+    catalogoPagina++;
+    cargarListaCatalogo(false);
+}
+
+// Trae una página de la consola o de los juegos gratis. "reiniciar" vuelve a la primera.
+async function cargarListaCatalogo(reiniciar) {
+    const seccion = document.getElementById('catalogo-consola').value;
+    const grilla = document.getElementById('catalogo-grilla');
+    const mas = document.getElementById('catalogo-mas');
+    const total = document.getElementById('catalogo-total');
+    const genero = document.getElementById('catalogo-genero');
+    panelCatalogo('lista');
+    mas.style.display = 'none';
+    if (reiniciar) {
+        catalogoPagina = 1;
+        total.textContent = '';
+        // La primera vez se bajan los datos de la consola y puede tardar
+        grilla.replaceChildren(mensajeCargando('Cargando los juegos…'));
+    }
+    const token = ++catalogoToken;
+    const pagina = catalogoPagina;
+    let res;
+    try {
+        res = seccion === 'gratis'
+            ? await window.pywebview.api.catalogo_gratis(genero.value, pagina)
+            : await window.pywebview.api.catalogo_listar(seccion, document.getElementById('catalogo-busqueda').value, genero.value, pagina);
+    } catch (e) { res = null; }
+    if (token !== catalogoToken) return;
+    if (reiniciar) grilla.innerHTML = '';
+    if (!res || !res.exito) {
+        grilla.appendChild(mensajeVacio((res && res.error) || 'No se pudo cargar el catálogo.'));
+        return;
+    }
+    if (seccion !== 'gratis' && res.generos && genero.options.length === 1) {
+        res.generos.forEach(g => genero.add(new Option(g, g)));
+    }
+    if (seccion === 'gratis') {
+        total.textContent = 'Juegos creados por la comunidad, gratis. Se consiguen en su página original.';
+        res.juegos.forEach(j => grilla.appendChild(tarjetaGratis(j)));
+    } else {
+        total.textContent = `${res.total} ${res.total === 1 ? 'juego' : 'juegos'}`;
+        res.juegos.forEach(j => grilla.appendChild(tarjetaTienda(j.titulo, [j.anio, j.genero].filter(Boolean).join(' · '), j.portada,
+            () => abrirFichaCatalogo(seccion, j.titulo))));
+    }
+    if (!res.juegos.length && reiniciar) grilla.appendChild(mensajeVacio('No se encontraron juegos.'));
+    mas.style.display = res.hay_mas ? '' : 'none';
+}
+
+function plataformaGratis(j) {
+    return j.plataforma === 'itch' ? 'itch.io' : (CATALOGO_PLATAFORMAS_GRATIS[j.plataforma] || j.plataforma);
+}
+
+// Tarjeta de un juego gratis.
+function tarjetaGratis(j) {
+    return tarjetaTienda(j.titulo, `${plataformaGratis(j)} · Gratis`, j.portada, () => abrirFichaGratis(j));
+}
+
+// Parte común de las fichas: volver, carátula, título y datos. Devuelve dónde agregar el resto.
+function armarFicha(titulo, portada, datos, botones) {
+    const cont = document.getElementById('catalogo-ficha');
+    cont.innerHTML = '';
+    const volver = catalogoAnterior;
+    const atras = boton('← Volver', 'btn-back', async () => panelCatalogo(volver));
+    const cabecera = nodo('div', 'tienda-cabecera');
+    const caja = nodo('div', 'tienda-portada');
+    if (portada) {
+        const img = nodo('img');
+        img.alt = '';
+        img.onerror = () => img.remove();
+        img.src = portada;
+        caja.appendChild(img);
+    }
+    const info = nodo('div', 'tienda-info');
+    info.appendChild(nodo('h2', '', titulo));
+    datos.filter(d => d[1]).forEach(([etiqueta, valor]) => {
+        const fila = nodo('p', 'tienda-dato');
+        fila.append(nodo('span', '', etiqueta + ': '), document.createTextNode(valor));
+        info.appendChild(fila);
+    });
+    const acciones = nodo('div', 'tienda-acciones');
+    botones.forEach(b => acciones.appendChild(b));
+    const msg = nodo('p', 'settings-msg');
+    msg.id = 'catalogo-ficha-msg';
+    msg.setAttribute('role', 'status');
+    info.append(acciones, msg);
+    cabecera.append(caja, info);
+    cont.append(atras, cabecera);
+    return cont;
+}
+
+// Galería de imágenes con su etiqueta. Cada una aparece al cargar: si ninguna existe, no queda un hueco.
+function galeriaCatalogo(cont, imagenes) {
+    const galeria = nodo('div', 'tienda-galeria');
+    galeria.style.display = 'none';
+    agregarImagenes(galeria, imagenes);
+    cont.appendChild(galeria);
+    return galeria;
+}
+
+function agregarImagenes(galeria, imagenes) {
+    (imagenes || []).forEach(({ src, etiqueta }) => {
+        const figura = nodo('figure');
+        figura.style.display = 'none';
+        const img = nodo('img');
+        img.alt = etiqueta;
+        img.onload = () => {
+            figura.style.display = '';
+            galeria.style.display = '';
+        };
+        img.onerror = () => figura.remove();
+        img.onclick = () => abrirVisor(img.src);
+        img.src = src;
+        figura.append(img, nodo('figcaption', '', etiqueta));
+        galeria.appendChild(figura);
+    });
+}
+
+// Ficha de un juego clásico.
+async function abrirFichaCatalogo(identificativo, titulo) {
+    const cont = document.getElementById('catalogo-ficha');
+    catalogoAnterior = document.getElementById('catalogo-lista').style.display !== 'none' ? 'lista' : 'inicio';
+    panelCatalogo('ficha');
+    cont.replaceChildren(mensajeCargando('Cargando la ficha…'));
+    const token = ++catalogoToken;
+    let res;
+    try { res = await window.pywebview.api.catalogo_ficha(identificativo, titulo); } catch (e) { res = null; }
+    if (token !== catalogoToken) return;
+    if (!res || !res.exito) {
+        const volver = catalogoAnterior;
+        cont.replaceChildren(boton('← Volver', 'btn-back', async () => panelCatalogo(volver)),
+            mensajeVacio((res && res.error) || 'No se pudo abrir la ficha.'));
+        return;
+    }
+    const j = res.juego;
+    const botones = [boton('⭐ Agregar a deseados', 'btn-primary-sm', () => agregarDeseadoCatalogo(j))];
+    if (j.id_biblioteca) {
+        botones.push(boton('▶ Ver en mi biblioteca', 'btn-secondary-sm', async () => {
+            mostrarVista('biblioteca');
+            await abrirDetalle({ id: j.id_biblioteca });
+        }));
+    }
+    const ficha = armarFicha(j.titulo, j.portada, [['Consola', j.consola], ['Año', j.anio], ['Género', j.genero],
+        ['Desarrollador', j.desarrollador], ['Editor', j.editor]], botones);
+    const galeria = galeriaCatalogo(ficha, j.imagenes);
+    if (j.descripcion) {
+        const texto = nodo('div', 'detail-card');
+        texto.appendChild(nodo('h3', '', 'Acerca de este juego'));
+        texto.appendChild(nodo('p', 'tienda-texto', j.descripcion.texto));
+        texto.appendChild(boton('Texto de Wikipedia (CC BY-SA) ↗', 'btn-secondary-sm', async () => abrirEnlace(j.descripcion.enlace)));
+        ficha.appendChild(texto);
+    }
+    const tarjetaLogros = nodo('div', 'detail-card');
+    const logros = nodo('div');
+    logros.replaceChildren(mensajeCargando('Cargando logros…'));
+    tarjetaLogros.append(nodo('h3', '', '🏆 Logros'), logros);
+    ficha.appendChild(tarjetaLogros);
+    window.pywebview.api.catalogo_logros(identificativo, j.titulo)
+        .catch(e => ({ exito: false, motivo: 'error', error: String(e) }))
+        .then(r => {
+            if (token !== catalogoToken) return;   // ya se abrió otra pantalla del catálogo
+            pintarLogros(logros, r);
+            if (r && r.exito) agregarImagenes(galeria, r.imagenes);
+        });
+    [['👥 Amigos que lo jugaron', j.jugaron, 'Ninguno de tus amigos jugó este juego todavía.'],
+     ['⭐ En su lista de deseados', j.deseado, 'Ninguno de tus amigos lo tiene en su lista de deseados.']].forEach(([t, lista, vacio]) => {
+        const tarjeta = nodo('div', 'detail-card');
+        const el = nodo('div');
+        tarjeta.append(nodo('h3', '', t), el);
+        pintarAmigos(el, lista, vacio);
+        ficha.appendChild(tarjeta);
+    });
+    const tarjeta = nodo('div', 'detail-card');
+    const el = nodo('div');
+    tarjeta.append(nodo('h3', '', '💬 Opiniones'), el);
+    pintarOpiniones(el, j.opiniones, j.titulo);
+    ficha.appendChild(tarjeta);
+}
+
+// Agrega el juego de la ficha a la lista de deseados.
+async function agregarDeseadoCatalogo(j) {
+    const msg = document.getElementById('catalogo-ficha-msg');
+    let res;
+    try { res = await window.pywebview.api.agregar_deseado(j.identificativo, j.titulo); } catch (e) { res = null; }
+    msg.textContent = res && res.exito ? `✔ "${j.titulo}" agregado a tu lista.` : ((res && res.error) || 'No se pudo agregar.');
+}
+
+// Ficha de un juego gratis: la descarga se hace en su página original.
+function abrirFichaGratis(j) {
+    catalogoAnterior = document.getElementById('catalogo-lista').style.display !== 'none' ? 'lista' : 'inicio';
+    const botones = [boton('🎁 Conseguir gratis ↗', 'btn-primary-sm', async () => abrirEnlace(j.enlace))];
+    if (j.itch) botones.push(boton('Ver en itch.io ↗', 'btn-secondary-sm', async () => abrirEnlace(j.itch)));
+    const ficha = armarFicha(j.titulo, j.portada, [['Consola', j.plataforma === 'itch' ? '' : plataformaGratis(j)], ['Tienda', j.plataforma === 'itch' ? 'itch.io' : ''],
+        ['Desarrollador', j.desarrollador], ['Fecha', j.fecha], ['Etiquetas', (j.generos || []).join(', ')], ['Licencia', j.licencia]], botones);
+    galeriaCatalogo(ficha, (j.capturas || []).map(src => ({ src, etiqueta: 'Captura' })));
+    if (j.descripcion) {
+        const texto = nodo('div', 'detail-card');
+        texto.append(nodo('h3', '', 'Acerca de este juego'), nodo('p', 'tienda-texto', j.descripcion));
+        ficha.appendChild(texto);
+    }
+    panelCatalogo('ficha');
 }
 
