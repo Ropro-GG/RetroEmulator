@@ -606,6 +606,42 @@ game (\n\tcomment "Legend of Zelda, The (USA)"\n\treleaseyear "1992"\n\trom ( cr
         with self.assertRaises(ValueError):
             catalogo.leer_itch(b'<!DOCTYPE x [<!ENTITY a "b">]><rss/>')
 
+    def test_logros_encuentra_el_juego_aunque_cambie_el_nombre(self):
+        from nucleo import ra_client
+        lista = [{"ID": 1, "Title": "MediEvil II", "NumAchievements": 5}, {"ID": 2, "Title": "Crash Team Racing", "NumAchievements": 5},
+                 {"ID": 3, "Title": "Mega Man X", "NumAchievements": 5}, {"ID": 4, "Title": "Pac-Man", "NumAchievements": 5},
+                 {"ID": 5, "Title": "Alfa | Beta Gamma", "NumAchievements": 5}]
+        ra_client._indices.pop(12, None)
+        with mock.patch.object(ra_client, "_lista_juegos", return_value=lista):
+            buscar = lambda t: (ra_client.buscar_juego("psx", t) or {}).get("ID")
+            self.assertEqual(buscar("MediEvil 2 (Europe)"), 1)
+            self.assertEqual(buscar("CTR - Crash Team Racing (USA)"), 2)
+            self.assertEqual(buscar("Beta Gamma (Japan)"), 5)
+            self.assertIsNone(buscar("Mega Man 10"))
+            self.assertIsNone(buscar("Ms. Pac-Man"))   # con menos de tres palabras no se empareja por contención
+        ra_client._indices.pop(12, None)
+
+    def test_coleccion_sin_archivo(self):
+        with tempfile.TemporaryDirectory() as carpeta, mock.patch.object(db_local, "DB_NAME", os.path.join(carpeta, "x.db")):
+            db_local.inicializar_db_local()
+            consola = db_local.LocalDB().obtener_consolas()[0]["id"]
+            juego = db_local.agregar_a_coleccion(consola, "psx", "Juego")
+            self.assertTrue(db_local.obtener_juego_detalle(juego)["sin_archivo"])
+            self.assertTrue(launcher.ejecutar_juego(juego)["sin_archivo"])
+            rom = os.path.join(carpeta, "Juego.bin")
+            open(rom, "w").close()
+            db_local.registrar_juego(consola, "Juego", rom)   # ya estaba escaneado: la entrada sin archivo sobra
+            self.assertFalse(db_local.obtener_juego_detalle(juego)["sin_archivo"])
+            self.assertIn("emulador", launcher.ejecutar_juego(juego)["error"])   # usa el archivo real
+            real = db_local.asignar_archivo(juego, rom)
+            self.assertNotEqual(real, juego)
+            self.assertIsNone(db_local.obtener_juego_detalle(juego))
+            juego = db_local.agregar_a_coleccion(consola, "psx", "Juego")
+            db_local.quitar_de_coleccion(consola, "Juego")
+            self.assertIsNone(db_local.obtener_juego_detalle(juego))
+            with db_local.obtener_conexion() as conn:   # el escaneado sigue
+                self.assertEqual(conn.execute("SELECT ruta_rom FROM juegos;").fetchall(), [(rom,)])
+
     def test_solo_se_abren_enlaces_de_itch_reales(self):
         for host, esperado in (("itch.io", True), ("autor.itch.io", True), ("malitch.io", False), (None, False)):
             self.assertEqual(catalogo.es_enlace_de_itch(host), esperado, host)

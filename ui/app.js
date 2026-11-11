@@ -270,6 +270,13 @@ async function lanzarJuego(gameId) {
                     }
                 }
             }
+        } else if (res && res.sin_archivo) {
+            if (!confirm('Este juego está en tu biblioteca sin su archivo. ¿Querés elegir el archivo del juego en tu PC?')) return;
+            const elegido = await window.pywebview.api.elegir_archivo_juego(gameId);
+            if (!elegido || !elegido.exito) return;
+            filtrarCatalogo();
+            if (juegoDetalleActual && juegoDetalleActual.id === gameId) await abrirDetalle({ id: elegido.id });
+            await lanzarJuego(elegido.id);
         } else {
             alert("No se pudo iniciar el juego: " + (res ? res.error : "Error desconocido"));
         }
@@ -756,7 +763,8 @@ function volverABiblioteca() {
 function pintarDetalle(j) {
     document.getElementById('detail-title').textContent = j.titulo;
     document.getElementById('detail-console').textContent =
-        j.consola + (j.total_variantes > 1 ? ` · ${j.total_variantes} versiones/discos` : '');
+        j.consola + (j.sin_archivo ? ' · Sin archivo: al jugar lo elegís' : (j.total_variantes > 1 ? ` · ${j.total_variantes} versiones/discos` : ''));
+    document.getElementById('detail-quitar').style.display = j.sin_archivo ? '' : 'none';
 
     const cover = document.getElementById('detail-cover');
     cover.innerHTML = '';
@@ -776,6 +784,15 @@ function pintarDetalle(j) {
     document.getElementById('opinion-text').value = (j.opinion && j.opinion.texto) || '';
     document.getElementById('opinion-msg').textContent = '';
     pintarEstrellas();
+}
+
+// Quita de la biblioteca un juego agregado desde el Catálogo sin su archivo.
+async function quitarDeBiblioteca() {
+    if (!juegoDetalleActual || !confirm(`¿Quitar "${juegoDetalleActual.titulo}" de tu biblioteca?`)) return;
+    const res = await window.pywebview.api.quitar_de_biblioteca(juegoDetalleActual.id);
+    if (!res || !res.exito) return alert((res && res.error) || 'No se pudo quitar.');
+    volverABiblioteca();
+    filtrarCatalogo();
 }
 
 // Botón Jugar del detalle.
@@ -2086,9 +2103,7 @@ function pintarOpiniones(el, opiniones, titulo) {
         el.appendChild(mensajeVacio('Todavía no hay opiniones de este juego.'));
         return;
     }
-    const puntuadas = opiniones.filter(o => o.puntuacion > 0);
-    const promedio = puntuadas.reduce((suma, o) => suma + o.puntuacion, 0) / (puntuadas.length || 1);
-    el.appendChild(nodo('p', 'opiniones-resumen', `${puntuadas.length ? `★ ${promedio.toFixed(1)} · ` : ''}${opiniones.length} ${opiniones.length === 1 ? 'opinión' : 'opiniones'}`));
+    el.appendChild(nodo('p', 'opiniones-resumen', resumenOpiniones(opiniones)));
     opiniones.forEach(o => {
         const item = document.createElement('div');
         item.className = 'opinion-item';
@@ -4536,64 +4551,108 @@ function tarjetaGratis(j) {
     return tarjetaTienda(j.titulo, `${plataformaGratis(j)} · Gratis`, j.portada, () => abrirFichaGratis(j));
 }
 
-// Parte común de las fichas: volver, carátula, título y datos. Devuelve dónde agregar el resto.
-function armarFicha(titulo, portada, datos, botones) {
+// Ficha estilo Steam: título, visor de imágenes con carátula y datos al lado, barra de acciones y dos columnas.
+function armarFicha(titulo, portada, corta, datos, etiquetas, botones, imagenes) {
     const cont = document.getElementById('catalogo-ficha');
-    cont.innerHTML = '';
     const volver = catalogoAnterior;
-    const atras = boton('← Volver', 'btn-back', async () => panelCatalogo(volver));
-    const cabecera = nodo('div', 'tienda-cabecera');
-    const caja = nodo('div', 'tienda-portada');
+    cont.replaceChildren(boton('← Volver', 'btn-back', async () => panelCatalogo(volver)), nodo('h1', 'steam-titulo', titulo));
+
+    const medios = nodo('div', 'steam-medios');
+    medios.style.display = 'none';   // aparece con la primera imagen que cargue
+    const visor = nodo('img', 'steam-visor');
+    visor.alt = '';
+    visor.onclick = () => abrirVisor(visor.src);
+    const leyenda = nodo('p', 'steam-leyenda');
+    const miniaturas = nodo('div', 'steam-miniaturas');
+    medios.append(visor, leyenda, miniaturas);
+
+    const lateral = nodo('aside', 'steam-lateral');
     if (portada) {
-        const img = nodo('img');
+        const img = nodo('img', 'steam-portada');
         img.alt = '';
         img.onerror = () => img.remove();
         img.src = portada;
-        caja.appendChild(img);
+        lateral.appendChild(img);
     }
-    const info = nodo('div', 'tienda-info');
-    info.appendChild(nodo('h2', '', titulo));
-    datos.filter(d => d[1]).forEach(([etiqueta, valor]) => {
-        const fila = nodo('p', 'tienda-dato');
-        fila.append(nodo('span', '', etiqueta + ': '), document.createTextNode(valor));
-        info.appendChild(fila);
-    });
-    const acciones = nodo('div', 'tienda-acciones');
+    if (corta) lateral.appendChild(nodo('p', 'steam-corta', corta.length > 300 ? corta.slice(0, 300).replace(/\s+\S*$/, '') + '…' : corta));
+    const tabla = nodo('div', 'steam-datos');
+    datos.filter(d => d[1]).forEach(([e, v]) => tabla.appendChild(datoFicha(e, v)));
+    lateral.appendChild(tabla);
+    if (etiquetas.length) {
+        const caja = nodo('div', 'steam-etiquetas');
+        etiquetas.forEach(t => caja.appendChild(nodo('span', 'steam-etiqueta', t)));
+        lateral.appendChild(caja);
+    }
+    const arriba = nodo('div', 'steam-arriba');
+    arriba.append(medios, lateral);
+
+    const compra = nodo('div', 'steam-compra');
+    const acciones = nodo('div', 'steam-acciones');
     botones.forEach(b => acciones.appendChild(b));
     const msg = nodo('p', 'settings-msg');
     msg.id = 'catalogo-ficha-msg';
     msg.setAttribute('role', 'status');
-    info.append(acciones, msg);
-    cabecera.append(caja, info);
-    cont.append(atras, cabecera);
-    return cont;
-}
+    compra.append(nodo('h2', '', titulo), acciones, msg);
 
-// Galería de imágenes con su etiqueta. Cada una aparece al cargar: si ninguna existe, no queda un hueco.
-function galeriaCatalogo(cont, imagenes) {
-    const galeria = nodo('div', 'tienda-galeria');
-    galeria.style.display = 'none';
+    const principal = nodo('div', 'steam-principal');
+    const columna = nodo('div', 'steam-columna');
+    const cuerpo = nodo('div', 'steam-cuerpo');
+    cuerpo.append(principal, columna);
+    cont.append(arriba, compra, cuerpo);
+    const galeria = { medios, visor, leyenda, miniaturas };
     agregarImagenes(galeria, imagenes);
-    cont.appendChild(galeria);
-    return galeria;
+    return { principal, columna, tabla, galeria };
 }
 
-function agregarImagenes(galeria, imagenes) {
+function datoFicha(etiqueta, valor) {
+    const fila = nodo('div', 'steam-dato');
+    fila.append(nodo('span', '', etiqueta), nodo('strong', '', valor));
+    return fila;
+}
+
+function tarjetaFicha(destino, titulo) {
+    const tarjeta = nodo('div', 'detail-card');
+    tarjeta.appendChild(nodo('h3', '', titulo));
+    destino.appendChild(tarjeta);
+    return tarjeta;
+}
+
+// Miniaturas debajo del visor. Solo aparecen las que cargan; la primera que carga va al visor.
+function agregarImagenes({ medios, visor, leyenda, miniaturas }, imagenes) {
     (imagenes || []).forEach(({ src, etiqueta }) => {
-        const figura = nodo('figure');
-        figura.style.display = 'none';
+        const mini = nodo('button', 'steam-mini');
+        mini.type = 'button';
+        mini.title = etiqueta;
+        mini.setAttribute('aria-label', 'Ver ' + etiqueta);
+        mini.style.display = 'none';
         const img = nodo('img');
-        img.alt = etiqueta;
-        img.onload = () => {
-            figura.style.display = '';
-            galeria.style.display = '';
+        img.alt = '';
+        const elegir = () => {
+            visor.src = img.src;
+            visor.alt = etiqueta;
+            leyenda.textContent = etiqueta;
+            miniaturas.querySelectorAll('.activa').forEach(m => m.classList.remove('activa'));
+            mini.classList.add('activa');
         };
-        img.onerror = () => figura.remove();
-        img.onclick = () => abrirVisor(img.src);
+        img.onload = () => {
+            mini.style.display = '';
+            medios.style.display = '';
+            if (!visor.getAttribute('src')) elegir();
+        };
+        img.onerror = () => mini.remove();
+        mini.onclick = elegir;
         img.src = src;
-        figura.append(img, nodo('figcaption', '', etiqueta));
-        galeria.appendChild(figura);
+        mini.appendChild(img);
+        miniaturas.appendChild(mini);
     });
+}
+
+// "★ 4.5 · 3 opiniones", o '' si no hay ninguna.
+function resumenOpiniones(opiniones) {
+    if (!opiniones || !opiniones.length) return '';
+    const puntuadas = opiniones.filter(o => o.puntuacion > 0);
+    const promedio = puntuadas.reduce((suma, o) => suma + o.puntuacion, 0) / (puntuadas.length || 1);
+    return `${puntuadas.length ? `★ ${promedio.toFixed(1)} · ` : ''}${opiniones.length} ${opiniones.length === 1 ? 'opinión' : 'opiniones'}`;
 }
 
 // Ficha de un juego clásico.
@@ -4613,48 +4672,106 @@ async function abrirFichaCatalogo(identificativo, titulo) {
         return;
     }
     const j = res.juego;
-    const botones = [boton('⭐ Agregar a deseados', 'btn-primary-sm', () => agregarDeseadoCatalogo(j))];
-    if (j.id_biblioteca) {
-        botones.push(boton('▶ Ver en mi biblioteca', 'btn-secondary-sm', async () => {
-            mostrarVista('biblioteca');
-            await abrirDetalle({ id: j.id_biblioteca });
-        }));
-    }
-    const ficha = armarFicha(j.titulo, j.portada, [['Consola', j.consola], ['Año', j.anio], ['Género', j.genero],
-        ['Desarrollador', j.desarrollador], ['Editor', j.editor]], botones);
-    const galeria = galeriaCatalogo(ficha, j.imagenes);
+    const botonBiblioteca = () => {
+        if (j.id_biblioteca) {
+            return boton('▶ Ver en mi biblioteca', 'btn-steam', async () => {
+                mostrarVista('biblioteca');
+                await abrirDetalle({ id: j.id_biblioteca });
+            });
+        }
+        const b = boton('+ Agregar a la biblioteca', 'btn-steam', async () => {
+            const msg = document.getElementById('catalogo-ficha-msg');
+            let r;
+            try { r = await window.pywebview.api.catalogo_agregar_biblioteca(identificativo, j.titulo); } catch (e) { r = null; }
+            if (r && r.exito) {
+                j.id_biblioteca = r.id;
+                b.replaceWith(botonBiblioteca());
+                msg.textContent = '✔ Agregado a tu biblioteca. Cuando lo juegues vas a elegir el archivo del juego en tu PC.';
+                filtrarCatalogo();
+            } else {
+                msg.textContent = (r && r.error) || 'No se pudo agregar.';
+            }
+        });
+        return b;
+    };
+    const resena = () => resumenOpiniones(j.opiniones) || 'Sin opiniones todavía';
+    const ficha = armarFicha(j.titulo, j.portada, j.descripcion && j.descripcion.texto,
+        [['Reseñas', resena()], ['Lanzamiento', j.anio], ['Desarrollador', j.desarrollador], ['Editor', j.editor], ['Consola', j.consola]],
+        [j.genero].filter(Boolean),
+        [botonBiblioteca(), boton('⭐ Agregar a deseados', 'btn-steam-sec', () => agregarDeseadoCatalogo(j))], j.imagenes);
+
     if (j.descripcion) {
-        const texto = nodo('div', 'detail-card');
-        texto.appendChild(nodo('h3', '', 'Acerca de este juego'));
-        texto.appendChild(nodo('p', 'tienda-texto', j.descripcion.texto));
-        texto.appendChild(boton('Texto de Wikipedia (CC BY-SA) ↗', 'btn-secondary-sm', async () => abrirEnlace(j.descripcion.enlace)));
-        ficha.appendChild(texto);
+        const texto = tarjetaFicha(ficha.principal, 'Acerca de este juego');
+        texto.append(nodo('p', 'tienda-texto', j.descripcion.texto),
+            boton('Texto de Wikipedia (CC BY-SA) ↗', 'btn-secondary-sm', async () => abrirEnlace(j.descripcion.enlace)));
     }
-    const tarjetaLogros = nodo('div', 'detail-card');
+    const listaOpiniones = nodo('div');
+    const recargarOpiniones = async () => {
+        try { j.opiniones = await window.pywebview.api.catalogo_opiniones(identificativo, j.titulo); } catch (e) { return; }
+        pintarOpiniones(listaOpiniones, j.opiniones, j.titulo);
+        const fila = ficha.tabla.querySelector('.steam-dato strong');
+        if (fila) fila.textContent = resena();
+    };
+    formularioOpinion(tarjetaFicha(ficha.principal, 'Tu opinión'), j, identificativo, recargarOpiniones);
+    tarjetaFicha(ficha.principal, '💬 Opiniones').appendChild(listaOpiniones);
+    pintarOpiniones(listaOpiniones, j.opiniones, j.titulo);
+
     const logros = nodo('div');
     logros.replaceChildren(mensajeCargando('Cargando logros…'));
-    tarjetaLogros.append(nodo('h3', '', '🏆 Logros'), logros);
-    ficha.appendChild(tarjetaLogros);
+    tarjetaFicha(ficha.columna, '🏆 Logros').appendChild(logros);
     window.pywebview.api.catalogo_logros(identificativo, j.titulo)
         .catch(e => ({ exito: false, motivo: 'error', error: String(e) }))
         .then(r => {
             if (token !== catalogoToken) return;   // ya se abrió otra pantalla del catálogo
             pintarLogros(logros, r);
-            if (r && r.exito) agregarImagenes(galeria, r.imagenes);
+            if (r && r.exito) {
+                ficha.tabla.appendChild(datoFicha('Logros', `${r.total} (${r.puntos_total} pts)`));
+                agregarImagenes(ficha.galeria, r.imagenes);
+            }
         });
     [['👥 Amigos que lo jugaron', j.jugaron, 'Ninguno de tus amigos jugó este juego todavía.'],
      ['⭐ En su lista de deseados', j.deseado, 'Ninguno de tus amigos lo tiene en su lista de deseados.']].forEach(([t, lista, vacio]) => {
-        const tarjeta = nodo('div', 'detail-card');
         const el = nodo('div');
-        tarjeta.append(nodo('h3', '', t), el);
+        tarjetaFicha(ficha.columna, t).appendChild(el);
         pintarAmigos(el, lista, vacio);
-        ficha.appendChild(tarjeta);
     });
-    const tarjeta = nodo('div', 'detail-card');
-    const el = nodo('div');
-    tarjeta.append(nodo('h3', '', '💬 Opiniones'), el);
-    pintarOpiniones(el, j.opiniones, j.titulo);
-    ficha.appendChild(tarjeta);
+}
+
+// Estrellas, texto y a quién se le muestra. Sirve sin tener el juego en la biblioteca.
+function formularioOpinion(cont, j, identificativo, alGuardar) {
+    const mia = (j.opiniones || []).find(o => o.mia);
+    let puntos = mia ? mia.puntuacion : 0;
+    const estrellas = nodo('div', 'opinion-estrellas');
+    const pintar = () => estrellas.querySelectorAll('button').forEach((s, i) => s.classList.toggle('on', i < puntos));
+    for (let v = 1; v <= 5; v++) {
+        const s = nodo('button', '', '★');
+        s.type = 'button';
+        s.setAttribute('aria-label', `${v} de 5`);
+        s.onclick = () => { puntos = puntos === v ? 0 : v; pintar(); };
+        estrellas.appendChild(s);
+    }
+    const texto = nodo('textarea');
+    texto.placeholder = '¿Qué te pareció este juego?';
+    texto.maxLength = 2000;
+    texto.value = mia ? mia.texto : '';
+    const alcance = nodo('select', 'settings-input');
+    [['todos', 'Todo el mundo'], ['amigos', 'Mis amigos'], ['privada', 'Solo yo']].forEach(([v, n]) => alcance.add(new Option(n, v)));
+    alcance.value = (mia && mia.alcance) || 'todos';
+    const etiqueta = nodo('label', 'opinion-visible', 'Quién puede verla:');
+    etiqueta.appendChild(alcance);
+    const msg = nodo('span', 'settings-msg');
+    msg.setAttribute('role', 'status');
+    const guardar = boton('Guardar opinión', 'btn-primary-sm', async () => {
+        let r;
+        try {
+            r = await window.pywebview.api.catalogo_guardar_opinion(identificativo, j.titulo, puntos, texto.value,
+                alcance.value !== 'privada', alcance.value === 'todos');
+        } catch (e) { r = null; }
+        msg.textContent = r && r.exito ? '✔ Opinión guardada' : ((r && r.error) || 'No se pudo guardar.');
+        if (r && r.exito) await alGuardar();
+    });
+    cont.append(estrellas, texto, etiqueta, guardar, msg);
+    pintar();
 }
 
 // Agrega el juego de la ficha a la lista de deseados.
@@ -4668,16 +4785,13 @@ async function agregarDeseadoCatalogo(j) {
 // Ficha de un juego gratis: la descarga se hace en su página original.
 function abrirFichaGratis(j) {
     catalogoAnterior = document.getElementById('catalogo-lista').style.display !== 'none' ? 'lista' : 'inicio';
-    const botones = [boton('🎁 Conseguir gratis ↗', 'btn-primary-sm', async () => abrirEnlace(j.enlace))];
-    if (j.itch) botones.push(boton('Ver en itch.io ↗', 'btn-secondary-sm', async () => abrirEnlace(j.itch)));
-    const ficha = armarFicha(j.titulo, j.portada, [['Consola', j.plataforma === 'itch' ? '' : plataformaGratis(j)], ['Tienda', j.plataforma === 'itch' ? 'itch.io' : ''],
-        ['Desarrollador', j.desarrollador], ['Fecha', j.fecha], ['Etiquetas', (j.generos || []).join(', ')], ['Licencia', j.licencia]], botones);
-    galeriaCatalogo(ficha, (j.capturas || []).map(src => ({ src, etiqueta: 'Captura' })));
-    if (j.descripcion) {
-        const texto = nodo('div', 'detail-card');
-        texto.append(nodo('h3', '', 'Acerca de este juego'), nodo('p', 'tienda-texto', j.descripcion));
-        ficha.appendChild(texto);
-    }
+    const botones = [boton('🎁 Conseguir gratis ↗', 'btn-steam', async () => abrirEnlace(j.enlace))];
+    if (j.itch) botones.push(boton('Ver en itch.io ↗', 'btn-steam-sec', async () => abrirEnlace(j.itch)));
+    const esItch = j.plataforma === 'itch';
+    const ficha = armarFicha(j.titulo, j.portada, j.descripcion,
+        [['Precio', 'Gratis'], [esItch ? 'Tienda' : 'Consola', plataformaGratis(j)], ['Desarrollador', j.desarrollador], ['Fecha', j.fecha], ['Licencia', j.licencia]],
+        j.generos || [], botones, (j.capturas || []).map(src => ({ src, etiqueta: 'Captura' })));
+    if (j.descripcion) tarjetaFicha(ficha.principal, 'Acerca de este juego').appendChild(nodo('p', 'tienda-texto', j.descripcion));
     panelCatalogo('ficha');
 }
 

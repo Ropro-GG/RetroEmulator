@@ -304,7 +304,9 @@ def obtener_juego_detalle(juego_id):
                    (SELECT MAX(j2.portada_path) FROM juegos j2
                      WHERE j2.titulo = j.titulo AND j2.consola_id = j.consola_id),
                    (SELECT COUNT(*) FROM juegos j3
-                     WHERE j3.titulo = j.titulo AND j3.consola_id = j.consola_id)
+                     WHERE j3.titulo = j.titulo AND j3.consola_id = j.consola_id),
+                   (SELECT COUNT(*) FROM juegos j4
+                     WHERE j4.titulo = j.titulo AND j4.consola_id = j.consola_id AND j4.ruta_rom NOT LIKE 'coleccion:%')
             FROM juegos j JOIN consolas c ON j.consola_id = c.id
             WHERE j.id = ?;
         """, (juego_id,)).fetchone()
@@ -312,8 +314,42 @@ def obtener_juego_detalle(juego_id):
         return None
     return {
         "id": fila[0], "titulo": fila[1], "consola_id": fila[2], "consola": fila[3],
-        "identificativo": fila[4], "portada_path": fila[5] or "", "total_variantes": fila[6],
+        "identificativo": fila[4], "portada_path": fila[5] or "", "total_variantes": fila[6], "sin_archivo": fila[7] == 0,
     }
+
+# --- COLECCIÓN: juegos agregados desde el Catálogo sin su archivo ---
+# Su ruta_rom es "coleccion:<consola>:<título>": no es un archivo, y ruta_rom debe ser única.
+
+def es_de_coleccion(ruta_rom):
+    return (ruta_rom or "").startswith("coleccion:")
+
+
+def agregar_a_coleccion(consola_id, identificativo, titulo):
+    ruta = f"coleccion:{identificativo}:{titulo}"
+    registrar_juego(consola_id, titulo, ruta)
+    with obtener_conexion() as conn:
+        return conn.execute("SELECT id FROM juegos WHERE ruta_rom = ?;", (ruta,)).fetchone()[0]
+
+
+def asignar_archivo(juego_id, ruta_rom):
+    """Le da su archivo a un juego de la colección. Si ese archivo ya estaba en la biblioteca, sobra la entrada sin archivo."""
+    with obtener_conexion() as conn:
+        try:
+            conn.execute("UPDATE juegos SET ruta_rom = ? WHERE id = ? AND ruta_rom LIKE 'coleccion:%';", (ruta_rom, juego_id))
+        except sqlite3.IntegrityError:
+            conn.execute("DELETE FROM juegos WHERE id = ? AND ruta_rom LIKE 'coleccion:%';", (juego_id,))
+            conn.commit()
+            return conn.execute("SELECT id FROM juegos WHERE ruta_rom = ?;", (ruta_rom,)).fetchone()[0]
+        conn.commit()
+    return juego_id
+
+
+def quitar_de_coleccion(consola_id, titulo):
+    """Borra solo las entradas sin archivo: los juegos escaneados se quitan borrando su archivo."""
+    with obtener_conexion() as conn:
+        conn.execute("DELETE FROM juegos WHERE consola_id = ? AND titulo = ? AND ruta_rom LIKE 'coleccion:%';", (consola_id, titulo))
+        conn.commit()
+
 
 def obtener_opinion(consola_id, titulo):
     """Opinión de la cuenta que tiene la sesión iniciada."""

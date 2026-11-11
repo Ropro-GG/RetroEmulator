@@ -37,6 +37,16 @@ def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
         """, (titulo, consola_id))
         coincidencias = cursor.fetchall()
 
+    # Las entradas de la colección no tienen archivo: si hay alguno real, se usa ese
+    reales = [c for c in coincidencias if not db_local.es_de_coleccion(c[2])]
+    if not reales:
+        return {"exito": False, "sin_archivo": True, "error": "Este juego está en tu colección sin su archivo."}
+    if db_local.es_de_coleccion(ruta_rom):
+        variante = False
+    coincidencias = reales
+    if len(reales) == 1:
+        ruta_rom = reales[0][2]
+
     # Si hay múltiples variantes o discos con el mismo nombre, devolvemos la lista para elegir
     if len(coincidencias) > 1 and not variante:
         opciones = []

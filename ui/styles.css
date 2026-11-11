@@ -1658,18 +1658,6 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .tienda-card { display: block; width: 100%; padding: 0; border: none; color: inherit; text-align: left; cursor: pointer; }
 .tienda-card:focus-visible { outline: 2px solid #66FCF1; }
 .tienda-detalle { color: #45A29E; font-size: 0.82em; }
-.tienda-cabecera { display: flex; gap: 22px; margin: 14px 0 18px; flex-wrap: wrap; }
-.tienda-portada { width: 220px; flex-shrink: 0; }
-.tienda-portada img { width: 100%; border-radius: 8px; display: block; }
-.tienda-info { flex: 1; min-width: 260px; }
-.tienda-info h2 { margin-bottom: 10px; }
-.tienda-dato { color: #C5C6C7; font-size: 0.9em; line-height: 1.7; }
-.tienda-dato span { color: #7d8590; }
-.tienda-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.tienda-galeria { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
-.tienda-galeria figure { margin: 0; }
-.tienda-galeria img { display: block; height: 170px; max-width: 100%; border-radius: 6px; cursor: zoom-in; background: #141722; image-rendering: pixelated; }
-.tienda-galeria figcaption { color: #7d8590; font-size: 0.75em; margin-top: 4px; text-align: center; }
 .opiniones-resumen { color: #C5C6C7; font-size: 0.9em; margin-bottom: 6px; }
 .opinion-marca { color: #0B0C10; background: #45A29E; border-radius: 4px; padding: 0 5px; font-size: 0.7em; }
 .opinion-denunciar { display: block; margin-top: 6px; padding: 0; border: none; background: none; color: #7d8590; font-size: 0.75em; cursor: pointer; }
@@ -1677,6 +1665,46 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .opinion-visible { display: block; }
 .opinion-visible select { display: inline-block; width: auto; margin: 0 0 0 6px; }
 .tienda-texto { color: #C5C6C7; font-size: 0.92em; line-height: 1.6; margin-bottom: 10px; white-space: pre-wrap; }
+/* Ficha del Catálogo con los colores y la distribución de la tienda de Steam */
+.steam-titulo { color: #fff; font-size: 1.8em; font-weight: 400; margin: 12px 0 14px; }
+.steam-arriba, .steam-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
+.steam-arriba { background: linear-gradient(to bottom, #1b2838, #16202d); padding: 16px; border-radius: 4px; }
+.steam-medios { min-width: 0; }
+.steam-visor { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; cursor: zoom-in; image-rendering: pixelated; }
+.steam-leyenda { color: #8f98a0; font-size: 0.75em; margin: 5px 0 6px; }
+.steam-miniaturas { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.steam-mini { flex: 0 0 auto; padding: 0; border: 2px solid transparent; background: #000; cursor: pointer; }
+.steam-mini img { display: block; height: 64px; image-rendering: pixelated; }
+.steam-mini.activa, .steam-mini:focus-visible { border-color: #66c0f4; outline: none; }
+.steam-portada { display: block; width: 100%; max-height: 280px; object-fit: contain; background: #000; margin-bottom: 12px; }
+.steam-corta { color: #c6d4df; font-size: 0.85em; line-height: 1.5; margin-bottom: 12px; }
+.steam-dato { display: flex; gap: 10px; font-size: 0.78em; line-height: 1.9; }
+.steam-dato span { color: #556772; text-transform: uppercase; width: 110px; flex-shrink: 0; }
+.steam-dato strong { color: #66c0f4; font-weight: 400; }
+.steam-etiquetas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.steam-etiqueta { background: rgba(103, 193, 245, 0.2); color: #67c1f5; padding: 2px 7px; border-radius: 2px; font-size: 0.75em; }
+.steam-compra { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0; padding: 16px 18px; border-radius: 4px;
+    background: linear-gradient(-60deg, rgba(226, 244, 255, 0.3) 5%, rgba(84, 107, 115, 0.3) 95%); }
+.steam-compra h2 { color: #fff; font-size: 1.1em; font-weight: 400; margin-right: auto; }
+.steam-compra .settings-msg { flex-basis: 100%; margin: 0; }
+.steam-compra .settings-msg:empty { display: none; }
+.steam-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-steam, .btn-steam-sec { border: none; border-radius: 2px; padding: 9px 16px; font-size: 0.9em; cursor: pointer; }
+.btn-steam { background: linear-gradient(to right, #75b022 5%, #588a1b 95%); color: #d2efa9; }
+.btn-steam:hover { background: linear-gradient(to right, #8ed629 5%, #6aa621 95%); color: #fff; }
+.btn-steam-sec { background: rgba(103, 193, 245, 0.2); color: #67c1f5; }
+.btn-steam-sec:hover { background: #67c1f5; color: #fff; }
+.btn-steam:focus-visible, .btn-steam-sec:focus-visible { outline: 2px solid #fff; }
+.steam-cuerpo .detail-card { background: #16202d; border-color: #2a475e; }
+.steam-columna .ach-summary { flex-wrap: wrap; gap: 8px; }
+.steam-columna .ach-item { flex-wrap: wrap; }
+.steam-columna .ach-info { flex: 1; min-width: 0; }
+.steam-columna .ach-meta { flex-basis: 100%; padding-left: 60px; }
+.opinion-estrellas button { font-size: 1.6em; padding: 0 1px; border: none; background: none; color: #3a4656; cursor: pointer; }
+.opinion-estrellas button.on { color: #f5c518; }
+@media (max-width: 900px) {
+    .steam-arriba, .steam-cuerpo { grid-template-columns: 1fr; }
+}
 .catalogo-creditos { color: #7d8590; font-size: 0.72em; text-align: center; padding: 14px 0 4px; }
 .catalogo-creditos a { color: #45A29E; }
 

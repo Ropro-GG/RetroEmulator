@@ -637,9 +637,57 @@ class API:
         juego["opiniones"] = self.cloud.obtener_opiniones(identificativo, juego["titulo"])
         return res
 
+    def _consola_id(self, identificativo):
+        return next((c["id"] for c in self.db.obtener_consolas() if c["identificativo"] == identificativo), None)
+
     def catalogo_logros(self, identificativo, titulo):
-        consola = next((c["id"] for c in self.db.obtener_consolas() if c["identificativo"] == identificativo), None)
-        return ra_client.obtener_logros(identificativo, consola, titulo)
+        return ra_client.obtener_logros(identificativo, self._consola_id(identificativo), titulo)
+
+    def catalogo_agregar_biblioteca(self, identificativo, titulo):
+        """Agrega el juego a tu colección sin archivo; al jugarlo se elige el archivo. La carátula se baja aparte."""
+        consola = self._consola_id(identificativo)
+        if consola is None or not (titulo or "").strip():
+            return {"exito": False, "error": "No se pudo agregar este juego."}
+        existente = self._id_en_biblioteca(identificativo, boxart.analizar_titulo(titulo)[0], titulo)
+        if existente:
+            return {"exito": True, "id": existente}
+        juego_id = db_local.agregar_a_coleccion(consola, identificativo, titulo)
+        nombre = db_local.obtener_nombre_consola(identificativo)
+        trabajo = {"identificativo": identificativo, "consola": nombre, "nombre_rom": titulo, "titulo": titulo,
+                   "ruta_rom": f"coleccion:{identificativo}:{titulo}"}
+        threading.Thread(target=boxart.descargar_lote, args=([trabajo], db_local.actualizar_portada), daemon=True).start()
+        return {"exito": True, "id": juego_id}
+
+    def catalogo_opiniones(self, identificativo, titulo):
+        return self.cloud.obtener_opiniones(identificativo, titulo)
+
+    def catalogo_guardar_opinion(self, identificativo, titulo, puntuacion, texto, publica=True, para_todos=False):
+        """Opinión desde el Catálogo, sin tener el juego en la biblioteca."""
+        consola = self._consola_id(identificativo)
+        if consola is None:
+            return {"exito": False, "error": "Consola no válida."}
+        if len(texto or "") > 2000:
+            return {"exito": False, "error": "La opinión es demasiado larga (máximo 2000 caracteres)."}
+        db_local.guardar_opinion(consola, titulo, puntuacion, texto, publica, para_todos)
+        publicada = self.cloud.publicar_opinion(identificativo, titulo, db_local.obtener_nombre_consola(identificativo),
+                                                max(0, min(5, int(puntuacion or 0))), texto, publica, para_todos)
+        return publicada if not publicada.get("exito") else {"exito": True}
+
+    def elegir_archivo_juego(self, game_id):
+        """Para un juego de la colección: elegir su archivo y dejarlo listo para jugar."""
+        if not self.window:
+            return {"exito": False, "error": "Ventana no inicializada."}
+        elegido = self.window.create_file_dialog(FileDialog.OPEN, allow_multiple=False)
+        if not elegido or not os.path.isfile(elegido[0]):
+            return {"exito": False, "error": "No se eligió ningún archivo."}
+        return {"exito": True, "id": db_local.asignar_archivo(game_id, elegido[0])}
+
+    def quitar_de_biblioteca(self, game_id):
+        juego = db_local.obtener_juego_detalle(game_id)
+        if not juego:
+            return {"exito": False, "error": "No se encontró el juego."}
+        db_local.quitar_de_coleccion(juego["consola_id"], juego["titulo"])
+        return {"exito": True}
 
     def _id_en_biblioteca(self, identificativo, clave, titulo):
         consola = next((c["id"] for c in self.db.obtener_consolas() if c["identificativo"] == identificativo), None)

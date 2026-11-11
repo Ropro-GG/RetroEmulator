@@ -12,6 +12,7 @@ PCSX2, PPSSPP, Dolphin...) con tu sesión de RA iniciada. El launcher solo lee e
 """
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -38,6 +39,15 @@ CONSOLAS_RA = {
 }
 
 _indices = {}
+# Sin "x": confundiría "Mega Man X" con "Mega Man 10"
+_ROMANOS = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6", "vii": "7", "viii": "8", "ix": "9"}
+_PREFIJOS = re.compile(r"^(the|disneys|disney pixars?|disney) ")
+
+
+def clave_ra(titulo):
+    """Título normalizado para comparar con RA: 'MediEvil II' y 'The MediEvil 2' dan lo mismo."""
+    clave = " ".join(_ROMANOS.get(p, p) for p in boxart.analizar_titulo(titulo)[0].split())
+    return _PREFIJOS.sub("", clave)
 
 
 # Error con un mensaje listo para mostrar.
@@ -184,9 +194,10 @@ def _indice(consola_ra):
             titulo = g["Title"]
             if titulo.startswith("~") or "[Subset" in titulo:   # hacks, homebrew y subsets
                 continue
-            clave, _ = boxart.analizar_titulo(titulo)
-            if clave and (clave not in por_clave or g["NumAchievements"] > por_clave[clave]["NumAchievements"]):
-                por_clave[clave] = g
+            for alternativo in titulo.split("|"):   # RA separa con | los nombres de cada región
+                clave = clave_ra(alternativo)
+                if clave and (clave not in por_clave or g["NumAchievements"] > por_clave[clave]["NumAchievements"]):
+                    por_clave[clave] = g
         prefijos = {}
         for clave in por_clave:
             prefijos.setdefault(clave[:4], []).append(clave)
@@ -200,7 +211,7 @@ def buscar_juego(identificativo, titulo):
     if not consola_ra:
         return None
     por_clave, prefijos = _indice(consola_ra)
-    clave, _ = boxart.analizar_titulo(titulo)
+    clave = clave_ra(titulo)
     if not clave:
         return None
     if clave in por_clave:
@@ -208,7 +219,10 @@ def buscar_juego(identificativo, titulo):
     for cercana in get_close_matches(clave, prefijos.get(clave[:4], []), n=3, cutoff=0.9):
         if boxart.firma_numerica(cercana) == boxart.firma_numerica(clave):
             return por_clave[cercana]
-    return None
+    # El nombre local suele sumar una marca o un subtítulo: "CTR - Crash Team Racing", "Saban's Power Rangers..."
+    contenidas = [c for c in por_clave if len(c.split()) >= 3 and (clave.endswith(" " + c) or clave.startswith(c + " "))
+                  and boxart.firma_numerica(c) == boxart.firma_numerica(clave)]
+    return por_clave[max(contenidas, key=len)] if contenidas else None
 
 
 # ----------------------------------------------------------------------------

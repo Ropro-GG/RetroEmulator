@@ -1233,7 +1233,7 @@ class CloudClient:
             return []
         try:
             res = self.client.table("opiniones_juegos") \
-                .select("user_id, puntuacion, texto, actualizado_en") \
+                .select("user_id, puntuacion, texto, actualizado_en, publica, para_todos") \
                 .eq("clave", clave_juego(identificativo, titulo)) \
                 .order("actualizado_en", desc=True).limit(100).execute()   # shortcut: solo las 100 más nuevas, paginar si un juego supera esa cifra
             filas = res.data or []
@@ -1248,6 +1248,8 @@ class CloudClient:
                 "puntuacion": f.get("puntuacion", 0),
                 "texto": f.get("texto", ""),
                 "actualizado_en": f.get("actualizado_en"),
+                # Solo la tuya: con eso el Catálogo muestra a quién se la dejaste visible
+                "alcance": (("todos" if f.get("para_todos") else "amigos") if f.get("publica") else "privada") if f["user_id"] == self._yo() else None,
             } for f in filas]
             lista.sort(key=lambda a: (not a["mia"], not a["amigo"]))   # sort estable: conserva lo más nuevo primero
             return lista

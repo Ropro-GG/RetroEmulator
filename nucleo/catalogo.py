@@ -192,9 +192,10 @@ def ficha(identificativo, nombre_consola, titulo):
     base = f"{boxart.URL_BASE}/{urllib.parse.quote(sistema)}"
     archivo = urllib.parse.quote(juego["archivo"]) + ".png"
     return {"exito": True, "juego": {**juego, "identificativo": identificativo, "consola": nombre_consola,
-                                     "imagenes": [{"src": juego["portada"], "etiqueta": "Caja"},
+                                     # Como en Steam, el visor arranca con imágenes del juego; la caja va al final
+                                     "imagenes": [{"src": f"{base}/Named_Snaps/{archivo}", "etiqueta": "En juego"},
                                                   {"src": f"{base}/Named_Titles/{archivo}", "etiqueta": "Pantalla de título"},
-                                                  {"src": f"{base}/Named_Snaps/{archivo}", "etiqueta": "En juego"}],
+                                                  {"src": juego["portada"], "etiqueta": "Caja"}],
                                      "descripcion": _descripcion(juego["titulo"], clave)}}
 
 
