@@ -1623,8 +1623,24 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
     animation: cargador-aparece 0.2s 0.15s forwards;
 }
 @keyframes cargador-aparece { to { opacity: 1; } }
+/* Puntos del Catálogo. From Uiverse.io by Juanes200122. Color cambiado: el negro original no se ve sobre el fondo oscuro */
+.cargador-puntos {
+    width: 60px;
+    aspect-ratio: 2;
+    --_g: no-repeat radial-gradient(circle closest-side, #66FCF1 90%, #0000);
+    background: var(--_g) 0% 50%, var(--_g) 50% 50%, var(--_g) 100% 50%;
+    background-size: calc(100% / 3) 50%;
+    animation: puntos-saltar 1s infinite linear;
+}
+@keyframes puntos-saltar {
+    20% { background-position: 0% 0%, 50% 50%, 100% 50%; }
+    40% { background-position: 0% 100%, 50% 0%, 100% 50%; }
+    60% { background-position: 0% 50%, 50% 100%, 100% 0%; }
+    80% { background-position: 0% 50%, 50% 50%, 100% 100%; }
+}
 @media (prefers-reduced-motion: reduce) {
     .cube-loader { animation: none; transform: rotateX(-30deg) rotateY(45deg); }
+    .cargador-puntos { animation: none; }
 }
 
 /* GRUPOS */

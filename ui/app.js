@@ -4454,12 +4454,21 @@ function seccionCatalogo(titulo, tarjetas, accionVerTodo) {
     return sec;
 }
 
+// El Catálogo usa los tres puntos en lugar del cubo.
+function cargandoCatalogo(texto) {
+    const cargador = mensajeCargando(texto);
+    const puntos = nodo('div', 'cargador-puntos');
+    puntos.setAttribute('aria-hidden', 'true');
+    cargador.firstChild.replaceWith(puntos);
+    return cargador;
+}
+
 // Portada de la tienda: gratis, amigos y consolas.
 async function cargarInicioCatalogo() {
     const cont = document.getElementById('catalogo-inicio');
     panelCatalogo('inicio');
     const token = ++catalogoToken;
-    cont.replaceChildren(mensajeCargando('Cargando el catálogo…'));
+    cont.replaceChildren(cargandoCatalogo('Cargando el catálogo…'));
     let res;
     try { res = await window.pywebview.api.catalogo_inicio(); } catch (e) { res = null; }
     if (token !== catalogoToken) return;
@@ -4511,7 +4520,7 @@ async function cargarListaCatalogo(reiniciar) {
         catalogoPagina = 1;
         total.textContent = '';
         // La primera vez se bajan los datos de la consola y puede tardar
-        grilla.replaceChildren(mensajeCargando('Cargando los juegos…'));
+        grilla.replaceChildren(cargandoCatalogo('Cargando los juegos…'));
     }
     const token = ++catalogoToken;
     const pagina = catalogoPagina;
@@ -4660,7 +4669,7 @@ async function abrirFichaCatalogo(identificativo, titulo) {
     const cont = document.getElementById('catalogo-ficha');
     catalogoAnterior = document.getElementById('catalogo-lista').style.display !== 'none' ? 'lista' : 'inicio';
     panelCatalogo('ficha');
-    cont.replaceChildren(mensajeCargando('Cargando la ficha…'));
+    cont.replaceChildren(cargandoCatalogo('Cargando la ficha…'));
     const token = ++catalogoToken;
     let res;
     try { res = await window.pywebview.api.catalogo_ficha(identificativo, titulo); } catch (e) { res = null; }
@@ -4717,7 +4726,7 @@ async function abrirFichaCatalogo(identificativo, titulo) {
     pintarOpiniones(listaOpiniones, j.opiniones, j.titulo);
 
     const logros = nodo('div');
-    logros.replaceChildren(mensajeCargando('Cargando logros…'));
+    logros.replaceChildren(cargandoCatalogo('Cargando logros…'));
     tarjetaFicha(ficha.columna, '🏆 Logros').appendChild(logros);
     window.pywebview.api.catalogo_logros(identificativo, j.titulo)
         .catch(e => ({ exito: false, motivo: 'error', error: String(e) }))
