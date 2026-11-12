@@ -177,7 +177,7 @@ async function aplicarBanner(promesa) {
     if (!res || !res.exito) { msg.textContent = (res && res.error) || 'No se pudo guardar el banner.'; return; }
     if (perfilActual) perfilActual.banner = res.banner;
     pintarBanner(document.getElementById('mi-fondo'), res.banner);
-    msg.textContent = '✔ Banner guardado';
+    mensajeOk(msg, 'Banner guardado');
 }
 
 const guardarBannerColor = color => aplicarBanner(window.pywebview.api.guardar_banner_color(color));
@@ -349,7 +349,7 @@ function crearPortada(juego, nombre) {
 
     const fallback = document.createElement('div');
     fallback.className = 'game-cover-fallback';
-    fallback.textContent = '🎮';
+    fallback.appendChild(icono('gamepad-2'));
 
     if (!juego.portada_path) {
         wrapper.appendChild(fallback);
@@ -740,7 +740,7 @@ function tarjetaEmulador(c) {
     btnGuardar.textContent = 'Guardar';
     btnGuardar.onclick = async () => {
         const res = await window.pywebview.api.guardar_ruta_emulador(c.id, input.value);
-        msg.textContent = res && res.exito ? '✔ Guardado' : (res ? res.error : 'Error');
+        if (res && res.exito) mensajeOk(msg, 'Guardado'); else msg.textContent = res ? res.error : 'Error';
         msg.style.color = res && res.exito ? '#66FCF1' : '#ff4d4d';
     };
 
@@ -931,9 +931,7 @@ async function guardarOpinion() {
             alcance === 'todos'
         );
         if (res && res.exito) {
-            msg.textContent = res.aviso
-                ? `✔ Guardada en tu equipo. No se pudo publicar: ${res.aviso}`
-                : '✔ Opinión guardada';
+            mensajeOk(msg, res.aviso ? `Guardada en tu equipo. No se pudo publicar: ${res.aviso}` : 'Opinión guardada');
             cargarAmigos(juegoDetalleActual.id);
         } else {
             msg.textContent = (res && res.error) || 'Error al guardar.';
@@ -1038,8 +1036,9 @@ function pintarLogros(cont, res) {
 
         const meta = document.createElement('div');
         meta.className = 'ach-meta';
-        meta.textContent = `${l.puntos} pts` + (l.obtenido ? ` · ${l.hardcore ? '🔥 ' : ''}${l.fecha}` : '')
+        meta.textContent = `${l.puntos} pts` + (l.obtenido ? ` · ${l.fecha}` : '')
             + (l.porcentaje === null || l.porcentaje === undefined ? '' : ` · ${l.porcentaje}% de los jugadores`);
+        if (l.obtenido && l.hardcore) meta.prepend(icono('flame', 'icono-fuego'), ' ');
 
         item.append(info, meta);
         lista.appendChild(item);
@@ -1190,7 +1189,7 @@ function avatarDe(u) {
 function boton(texto, clase, accion) {
     const b = document.createElement('button');
     b.className = clase;
-    b.textContent = texto;
+    b.append(...[].concat(texto));   // texto o [icono(...), ' texto']
     b.onclick = async () => {
         b.disabled = true;   // evita dobles clics mientras se procesa
         try { await accion(); } finally { b.disabled = false; }
@@ -1198,10 +1197,10 @@ function boton(texto, clase, accion) {
     return b;
 }
 
-// "📞 En llamada · 🎮 Jugando a X · PS1" (cualquiera de las dos partes puede faltar)
+// "En llamada · Jugando a X · PS1" (cualquiera de las dos partes puede faltar)
 function textoActividad(enLlamada, jugando) {
-    const juego = jugando ? `🎮 Jugando a ${jugando.titulo}` + (jugando.consola ? ` · ${jugando.consola}` : '') : '';
-    return [enLlamada ? '📞 En llamada' : '', juego].filter(Boolean).join(' · ');
+    const juego = jugando ? `Jugando a ${jugando.titulo}` + (jugando.consola ? ` · ${jugando.consola}` : '') : '';
+    return [enLlamada ? 'En llamada' : '', juego].filter(Boolean).join(' · ');
 }
 
 // Fila de un usuario: foto, nombre, estado y acciones.
@@ -1314,9 +1313,9 @@ async function cargarSocial() {
     }
     res.amigos.forEach(u => {
         cont.appendChild(filaUsuario(u, textoActividad(u.en_llamada, u.jugando), !!u.jugando || u.en_llamada, [
-            botonIcono('💬', 'Enviar mensaje', () => irAlChat(u.user_id)),
-            botonIcono('📞', 'Llamada de voz', () => llamarAmigo(u.user_id, u.username)),
-            botonIcono('🎥', 'Videollamada', () => llamarAmigo(u.user_id, u.username, true)),
+            botonIcono('message-circle', 'Enviar mensaje', () => irAlChat(u.user_id)),
+            botonIcono('phone', 'Llamada de voz', () => llamarAmigo(u.user_id, u.username)),
+            botonIcono('video', 'Videollamada', () => llamarAmigo(u.user_id, u.username, true)),
             menuAmigo(u),
         ]));
     });
@@ -1374,7 +1373,7 @@ async function buscarUsuarios() {
     res.usuarios.forEach(u => {
         let accion;
         if (u.relacion === 'amigos') {
-            accion = boton('✔ Amigos', 'btn-secondary-sm', () => {});
+            accion = boton([icono('user-check'), ' Amigos'], 'btn-secondary-sm', () => {});
             accion.disabled = true;
         } else if (u.relacion === 'enviada') {
             accion = boton('Solicitud enviada', 'btn-secondary-sm', () => {});
@@ -1678,7 +1677,7 @@ async function cargarPerfilAjeno() {
             boton('Rechazar', 'btn-secondary-sm', () => responderSolicitud(res.friendship_id, false))
         );
     } else if (res.relacion === 'amigos') {
-        acciones.appendChild(boton('💬 Enviar mensaje', 'btn-primary-sm', () => irAlChat(p.user_id)));
+        acciones.appendChild(boton([icono('message-circle'), ' Enviar mensaje'], 'btn-primary-sm', () => irAlChat(p.user_id)));
     }
     if (res.relacion !== 'yo') {
         // Quitar, bloquear y denunciar van en el mismo menú ▾ que la lista de Amigos
@@ -2004,7 +2003,7 @@ function pintarVitrina(cont, r) {
         r.insignias.forEach(i => {
             const b = nodo('div', `insignia insignia-${i.grado}`);
             b.title = `${i.nombre}, grado ${i.grado}: ${i.detalle}`;
-            b.append(nodo('span', 'insignia-icono', i.icono), nodo('small', '', i.nombre));
+            b.append(nodo('span', 'insignia-icono', [icono(i.icono)]), nodo('small', '', i.nombre));
             lista.appendChild(b);
         });
         cont.append(nodo('h4', 'vitrina-titulo', 'Insignias'), lista);
@@ -2183,7 +2182,7 @@ async function agregarDeseado(titulo) {
     if (res && res.exito) {
         document.getElementById('wish-titulo').value = '';
         document.getElementById('wish-sugerencias').innerHTML = '';
-        mensajeDeseados(`✔ "${titulo}" agregado a tu lista.`, false);
+        mensajeDeseados(`"${titulo}" agregado a tu lista.`, false);
         await cargarDeseados();
     } else {
         mensajeDeseados((res && res.error) || 'No se pudo agregar.', true);
@@ -2341,7 +2340,7 @@ function solicitarPortada(ident, titulo) {
 function crearMiniPortada(identificativo, titulo, chica) {
     const caja = document.createElement('div');
     caja.className = 'mini-cover' + (chica ? ' mini-cover-sm' : '');
-    caja.textContent = '🎮';
+    caja.replaceChildren(icono('gamepad-2'));
     if (!identificativo) return caja;
 
     solicitarPortada(identificativo, titulo).then(info => {
@@ -2350,7 +2349,7 @@ function crearMiniPortada(identificativo, titulo, chica) {
         img.alt = '';
         img.onerror = () => {
             img.remove();
-            caja.textContent = '🎮';
+            caja.replaceChildren(icono('gamepad-2'));
         };
         img.src = info.url;
         caja.textContent = '';
@@ -2510,7 +2509,9 @@ async function cargarConversaciones() {
         const info = document.createElement('div');
         info.className = 'chat-item-info';
         const nombre = document.createElement('strong');
-        nombre.textContent = c.username + (c.en_llamada ? ' 📞' : '') + (c.jugando ? ' 🎮' : '');
+        nombre.textContent = c.username;
+        if (c.en_llamada) nombre.append(' ', icono('phone'));
+        if (c.jugando) nombre.append(' ', icono('gamepad-2'));
         const previo = document.createElement('small');
         previo.textContent = c.ultimo ? (c.ultimo.mio ? 'Tú: ' : '') + c.ultimo.texto : 'Sin mensajes todavía';
         info.append(nombre, previo);
@@ -2573,10 +2574,10 @@ function crearBurbuja(m) {
         if (m.tipo === 'gif') {
             if (urlGifPermitida(m.contenido)) {
                 img.src = m.contenido;
-                img.onerror = () => { img.classList.add('rota'); img.alt = '⚠️ No se pudo cargar el GIF'; };
+                img.onerror = () => { img.classList.add('rota'); img.alt = 'No se pudo cargar el GIF'; };
             } else {
                 img.classList.add('rota');
-                img.alt = '⚠️ GIF no válido';
+                img.alt = 'GIF no válido';
             }
         } else {
             cargarImagenEn(img, m.contenido);
@@ -2586,7 +2587,7 @@ function crearBurbuja(m) {
         burbuja.className = 'msg-burbuja msg-publicacion';
         burbuja.appendChild(crearTarjetaCompartida(m.contenido));
     } else {
-        burbuja.textContent = m.tipo === 'texto' ? m.contenido : '📎 Contenido que esta versión todavía no puede mostrar';
+        burbuja.textContent = m.tipo === 'texto' ? m.contenido : 'Contenido que esta versión todavía no puede mostrar';
         if (m.tipo === 'texto' && esSoloEmojis(m.contenido)) burbuja.classList.add('msg-emoji');
     }
 
@@ -2598,14 +2599,14 @@ function crearBurbuja(m) {
     if (m.alerta_llave) {
         const alerta = document.createElement('span');
         alerta.className = 'msg-alerta';
-        alerta.textContent = '⚠️ Llave no confirmada';
+        alerta.replaceChildren(icono('triangle-alert'), ' Llave no confirmada');
         alerta.title = 'Este mensaje usa una llave que no aceptaste en este equipo. Puede ser una llave anterior de tu amigo, o alguien haciéndose pasar por él.';
         meta.appendChild(alerta);
     }
     if (m.mio && !m.en_grupo) {
         const estado = document.createElement('span');
         estado.className = 'msg-estado' + (m.leido ? ' visto' : '');
-        estado.textContent = m.leido ? '✓✓ Visto' : '✓';
+        estado.replaceChildren(icono(m.leido ? 'check-check' : 'check'), m.leido ? ' Visto' : '');
         meta.appendChild(estado);
     }
     fila.append(burbuja, meta);
@@ -2754,7 +2755,7 @@ async function chatRevisarLlave() {
     document.getElementById('chat-llave-texto').textContent =
         `La llave de ${chatAmigo.username} cambió. Puede ser porque cambió su frase, o alguien podría estar haciéndose pasar por esa persona. No se envía nada hasta que la aceptes.`;
     document.getElementById('chat-llave-aviso').style.display = res.estado === 'cambio' ? 'flex' : 'none';
-    document.getElementById('chat-seguridad').textContent = res.verificada ? '✅' : '🔒';
+    document.getElementById('chat-seguridad').replaceChildren(icono(res.verificada ? 'shield-check' : 'lock'));
 }
 
 // Pinta la ventana según el estado actual de la llave.
@@ -2939,7 +2940,7 @@ function cargarImagenEn(img, ruta) {
             img.src = uri;
         } else {
             img.classList.add('rota');
-            img.alt = '⚠️ No se pudo cargar la imagen';
+            img.alt = 'No se pudo cargar la imagen';
         }
     });
 }
@@ -3137,7 +3138,7 @@ async function cargarStickers() {
 
         const x = document.createElement('button');
         x.className = 'sticker-borrar';
-        x.textContent = '✕';
+        x.replaceChildren(icono('x'));
         x.title = 'Quitar de mi colección';
         x.onclick = ev => { ev.stopPropagation(); quitarStickerPropio(s.id); };
 
@@ -3459,8 +3460,25 @@ const ICONOS_POST = {
 function nodo(etiqueta, clase, texto) {
     const n = document.createElement(etiqueta);
     if (clase) n.className = clase;
-    if (texto !== undefined) n.textContent = texto;
+    if (texto !== undefined) n.append(...[].concat(texto));   // texto o [icono(...), ' texto']
     return n;
+}
+
+// Icono de ui/iconos.svg (Lucide). Toma el color del texto que acompaña.
+function icono(nombre, clase) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'icono' + (clase ? ' ' + clase : ''));
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(ns, 'use');
+    use.setAttribute('href', 'iconos.svg#i-' + nombre);
+    svg.appendChild(use);
+    return svg;
+}
+
+// Mensaje de éxito con el ícono de tilde.
+function mensajeOk(el, texto) {
+    el.replaceChildren(icono('check'), ' ' + texto);
 }
 
 // Abrevia contadores: 1,2K o 3M.
@@ -3748,7 +3766,7 @@ function crearTarjetaPost(p) {
     avatar.onclick = autor.onclick = irAlPerfil;
     cab.append(avatar, info);
     if (p.mia) {
-        const borrar = nodo('button', 'post-borrar', '🗑️');
+        const borrar = nodo('button', 'post-borrar', [icono('trash-2')]);
         borrar.title = 'Eliminar publicación';
         borrar.onclick = () => eliminarPost(p, tarjeta);
         cab.appendChild(borrar);
@@ -3766,7 +3784,7 @@ function crearTarjetaPost(p) {
         m.loading = 'lazy';
         m.src = p.media_url;
         m.onclick = () => abrirVisor(m.src);
-        m.onerror = () => { m.classList.add('rota'); m.alt = '⚠️ No se pudo cargar el contenido'; };
+        m.onerror = () => { m.classList.add('rota'); m.alt = 'No se pudo cargar el contenido'; };
         tarjeta.appendChild(m);
     }
 
@@ -4012,7 +4030,7 @@ async function alternarComentarios(p, tarjeta) {
     input.maxLength = 500;
     input.placeholder = 'Escribí un comentario…';
     input.autocomplete = 'off';
-    const btnEmoji = nodo('button', 'chat-icono', '😀');
+    const btnEmoji = nodo('button', 'chat-icono', [icono('smile')]);
     btnEmoji.title = 'Emojis';
     btnEmoji.onclick = () => abrirPickerEn(slot, { id: 'comentario-' + p.id, caja: input, gif: null, stickers: false });
     const enviar = nodo('button', 'btn-primary-sm', 'Comentar');
@@ -4079,7 +4097,7 @@ function filaComentario(c, p, tarjeta, lista) {
     nombre.onclick = irAlPerfil;
     cab.append(nombre, nodo('small', '', fechaPublicacion(c.creado_en)));
     if (c.mio || p.mia) {   // tus comentarios, y los que te hicieron en tus publicaciones
-        const borrar = nodo('button', 'comentario-borrar', '🗑️');
+        const borrar = nodo('button', 'comentario-borrar', [icono('trash-2')]);
         borrar.title = 'Eliminar comentario';
         borrar.onclick = async () => {
             borrar.disabled = true;
@@ -4112,7 +4130,7 @@ function filaComentario(c, p, tarjeta, lista) {
 function crearTarjetaCompartida(contenido) {
     const id = parseInt(contenido, 10);
     const caja = nodo('div', 'chat-post');
-    caja.appendChild(nodo('div', 'chat-post-titulo', '📰 PUBLICACIÓN'));
+    caja.appendChild(nodo('div', 'chat-post-titulo', [icono('newspaper'), ' PUBLICACIÓN']));
     const cuerpo = nodo('div', 'chat-post-cuerpo', 'Cargando…');
     caja.appendChild(cuerpo);
     if (!id) {
@@ -4129,7 +4147,7 @@ function crearTarjetaCompartida(contenido) {
         caja.onclick = () => irAPublicacion(id);
         cuerpo.appendChild(nodo('div', 'chat-post-autor', p.username));
         if (p.texto) cuerpo.appendChild(nodo('div', 'chat-post-texto', p.texto.length > 140 ? p.texto.slice(0, 140) + '…' : p.texto));
-        if (p.media_url) cuerpo.appendChild(nodo('div', 'chat-post-media', p.tipo_media === 'gif' ? '🎞️ GIF' : '🖼️ Imagen'));
+        if (p.media_url) cuerpo.appendChild(nodo('div', 'chat-post-media', p.tipo_media === 'gif' ? [icono('film'), ' GIF'] : [icono('image'), ' Imagen']));
     };
 
     if (postsCache.has(id)) {
@@ -4156,10 +4174,10 @@ function crearTarjetaCompartida(contenido) {
 // ============================================================================
 
 // Botón redondo de amigo; se desactiva mientras se procesa.
-function botonIcono(icono, titulo, accion) {
+function botonIcono(nombre, titulo, accion) {
     const b = document.createElement('button');
     b.className = 'amigo-icono';
-    b.textContent = icono;
+    b.appendChild(icono(nombre));
     b.title = titulo;
     b.setAttribute('aria-label', titulo);
     b.onclick = async ev => {
@@ -4292,10 +4310,10 @@ function pintarGrupos(cont, res) {
     if (!res.grupos.length) cont.appendChild(mensajeVacio('Creá un grupo para chatear y llamar a varios amigos a la vez.'));
     res.grupos.forEach(g => {
         cont.appendChild(filaUsuario({ username: g.nombre }, g.soy_creador ? 'Lo administrás vos' : `Creado por ${g.creador}`, false, [
-            botonIcono('💬', 'Abrir el chat del grupo', () => irAlChat(g.chat_id)),
-            botonIcono('📞', 'Llamar al grupo', () => llamarGrupo(g.chat_id, g.nombre)),
-            botonIcono('🎥', 'Videollamada con el grupo', () => llamarGrupo(g.chat_id, g.nombre, true)),
-            botonIcono('👥', 'Ver miembros', () => abrirMiembrosGrupo(g.chat_id)),
+            botonIcono('message-circle', 'Abrir el chat del grupo', () => irAlChat(g.chat_id)),
+            botonIcono('phone', 'Llamar al grupo', () => llamarGrupo(g.chat_id, g.nombre)),
+            botonIcono('video', 'Videollamada con el grupo', () => llamarGrupo(g.chat_id, g.nombre, true)),
+            botonIcono('users', 'Ver miembros', () => abrirMiembrosGrupo(g.chat_id)),
         ]));
     });
 }
@@ -4371,11 +4389,11 @@ async function cargarMiembrosGrupo() {
     document.getElementById('grupo-invitar-abrir').style.display = res.soy_creador ? '' : 'none';
     res.miembros.forEach(m => {
         const sub = [m.es_creador ? 'Administra el grupo' : '', m.estado === 'invitado' ? 'Invitación pendiente' : '',
-                     m.llave === 'cambio' ? '⚠️ Su llave cambió' : '', m.llave === 'sin_llave' ? 'Sin mensajes privados activos' : '']
+                     m.llave === 'cambio' ? 'Su llave cambió' : '', m.llave === 'sin_llave' ? 'Sin mensajes privados activos' : '']
             .filter(Boolean).join(' · ');
         const acciones = [];
         if (!m.soy_yo) {
-            if (m.estado === 'miembro') acciones.push(botonIcono('🔒', 'Código de seguridad', () => abrirCodigoDe(m.user_id, m.username)));
+            if (m.estado === 'miembro') acciones.push(botonIcono('lock', 'Código de seguridad', () => abrirCodigoDe(m.user_id, m.username)));
             if (res.soy_creador) acciones.push(boton('Quitar', 'btn-secondary-sm', () => quitarDeGrupo(chatId, m)));
             acciones.push(boton('Bloquear', 'btn-secondary-sm', () => bloquearDesdeGrupo(m)));
             acciones.push(boton('Denunciar', 'btn-secondary-sm', async () => abrirDenuncia(m.user_id, m.username)));
@@ -4482,11 +4500,11 @@ function tarjetaNoticia(titulo, texto, meta, enlace, imagen) {
         img.src = imagen;
         tarjeta.appendChild(img);
     }
-    tarjeta.append(nodo('h3', '', (enlace ? '📰 ' : '📌 ') + titulo));
+    tarjeta.append(nodo('h3', '', [icono(enlace ? 'newspaper' : 'pin'), ' ' + titulo]));
     if (texto) tarjeta.appendChild(nodo('p', 'noticia-texto', texto));
     const pie = nodo('div', 'noticia-pie');
     pie.appendChild(nodo('small', '', meta));
-    if (enlace) pie.appendChild(boton('Leer más ↗', 'btn-secondary-sm', async () => abrirEnlace(enlace)));
+    if (enlace) pie.appendChild(boton(['Leer más ', icono('external-link')], 'btn-secondary-sm', async () => abrirEnlace(enlace)));
     tarjeta.appendChild(pie);
     return tarjeta;
 }
@@ -4537,7 +4555,7 @@ function tarjetaTienda(titulo, detalle, portada, accion) {
     const card = nodo('button', 'game-card tienda-card');
     card.type = 'button';
     const caja = nodo('div', 'game-cover-wrapper');
-    const emoji = nodo('div', 'game-cover-fallback', '🎮');
+    const emoji = nodo('div', 'game-cover-fallback', [icono('gamepad-2')]);
     if (portada) {
         const img = nodo('img');
         img.alt = '';
@@ -4571,7 +4589,7 @@ async function abrirCatalogo() {
     const sel = document.getElementById('catalogo-consola');
     sel.innerHTML = '';
     sel.add(new Option('Inicio', ''));
-    sel.add(new Option('🎁 Juegos gratis', 'gratis'));
+    sel.add(new Option('Juegos gratis', 'gratis'));
     let consolas = [];
     try { consolas = await window.pywebview.api.obtener_consolas_catalogo(); } catch (e) { /* queda Inicio y Juegos gratis */ }
     const grupos = {};
@@ -4738,13 +4756,13 @@ async function cargarInicioCatalogo() {
     const destacados = [...((res && res.gratis) || []), ...((res && res.itch) || [])].filter(j => j.capturas && j.capturas.length).slice(0, 8);
     if (destacados.length) cont.appendChild(destacadosCatalogo(destacados));
     if (res && res.gratis && res.gratis.length) {
-        cont.appendChild(seccionCatalogo('🎁 Juegos gratis recién agregados', res.gratis.map(tarjetaGratis), () => irAConsolaCatalogo('gratis')));
+        cont.appendChild(seccionCatalogo([icono('gift'), ' Juegos gratis recién agregados'], res.gratis.map(tarjetaGratis), () => irAConsolaCatalogo('gratis')));
     }
     if (res && res.itch && res.itch.length) {
-        cont.appendChild(seccionCatalogo('🕹️ Homebrew gratis en itch.io', res.itch.map(tarjetaGratis), () => irAConsolaCatalogo('gratis')));
+        cont.appendChild(seccionCatalogo([icono('joystick'), ' Homebrew gratis en itch.io'], res.itch.map(tarjetaGratis), () => irAConsolaCatalogo('gratis')));
     }
     if (res && res.amigos && res.amigos.length) {
-        cont.appendChild(seccionCatalogo('👥 Lo que juegan tus amigos', res.amigos.map(j => tarjetaTienda(
+        cont.appendChild(seccionCatalogo([icono('users'), ' Lo que juegan tus amigos'], res.amigos.map(j => tarjetaTienda(
             j.titulo, `${j.consola} · ${j.amigos} ${j.amigos === 1 ? 'amigo' : 'amigos'}`, j.portada,
             () => abrirFichaCatalogo(j.identificativo, j.titulo)))));
     }
@@ -4840,7 +4858,7 @@ function tarjetaGratis(j) {
 function armarFicha(titulo, portada, corta, datos, etiquetas, botones, imagenes) {
     const cont = document.getElementById('catalogo-ficha');
     const volver = catalogoAnterior;
-    cont.replaceChildren(boton('← Volver', 'btn-back', async () => panelCatalogo(volver)), nodo('h1', 'steam-titulo', titulo));
+    cont.replaceChildren(boton([icono('arrow-left'), ' Volver'], 'btn-back', async () => panelCatalogo(volver)), nodo('h1', 'steam-titulo', titulo));
 
     const medios = nodo('div', 'steam-medios');
     medios.style.display = 'none';   // aparece con la primera imagen que cargue
@@ -4952,14 +4970,14 @@ async function abrirFichaCatalogo(identificativo, titulo) {
     if (token !== catalogoToken) return;
     if (!res || !res.exito) {
         const volver = catalogoAnterior;
-        cont.replaceChildren(boton('← Volver', 'btn-back', async () => panelCatalogo(volver)),
+        cont.replaceChildren(boton([icono('arrow-left'), ' Volver'], 'btn-back', async () => panelCatalogo(volver)),
             mensajeVacio((res && res.error) || 'No se pudo abrir la ficha.'));
         return;
     }
     const j = res.juego;
     const botonBiblioteca = () => {
         if (j.id_biblioteca) {
-            return boton('▶ Ver en mi biblioteca', 'btn-steam', async () => {
+            return boton([icono('play'), ' Ver en mi biblioteca'], 'btn-steam', async () => {
                 mostrarVista('biblioteca');
                 await abrirDetalle({ id: j.id_biblioteca });
             });
@@ -4971,7 +4989,7 @@ async function abrirFichaCatalogo(identificativo, titulo) {
             if (r && r.exito) {
                 j.id_biblioteca = r.id;
                 b.replaceWith(botonBiblioteca());
-                msg.textContent = '✔ Agregado a tu biblioteca. Cuando lo juegues vas a elegir el archivo del juego en tu PC.';
+                mensajeOk(msg, 'Agregado a tu biblioteca. Cuando lo juegues vas a elegir el archivo del juego en tu PC.');
                 filtrarCatalogo();
             } else {
                 msg.textContent = (r && r.error) || 'No se pudo agregar.';
@@ -4983,12 +5001,12 @@ async function abrirFichaCatalogo(identificativo, titulo) {
     const ficha = armarFicha(j.titulo, j.portada, j.descripcion && j.descripcion.texto,
         [['Reseñas', resena()], ['Lanzamiento', j.anio], ['Desarrollador', j.desarrollador], ['Editor', j.editor], ['Consola', j.consola]],
         generosDe(j.genero),
-        [botonBiblioteca(), boton('⭐ Agregar a deseados', 'btn-steam-sec', () => agregarDeseadoCatalogo(j))], j.imagenes);
+        [botonBiblioteca(), boton([icono('star'), ' Agregar a deseados'], 'btn-steam-sec', () => agregarDeseadoCatalogo(j))], j.imagenes);
 
     if (j.descripcion) {
         const texto = tarjetaFicha(ficha.principal, 'Acerca de este juego');
         texto.append(nodo('p', 'tienda-texto', j.descripcion.texto),
-            boton('Texto de Wikipedia (CC BY-SA) ↗', 'btn-secondary-sm', async () => abrirEnlace(j.descripcion.enlace)));
+            boton(['Texto de Wikipedia (CC BY-SA) ', icono('external-link')], 'btn-secondary-sm', async () => abrirEnlace(j.descripcion.enlace)));
     }
     const listaOpiniones = nodo('div');
     const recargarOpiniones = async () => {
@@ -4998,12 +5016,12 @@ async function abrirFichaCatalogo(identificativo, titulo) {
         if (fila) fila.textContent = resena();
     };
     formularioOpinion(tarjetaFicha(ficha.principal, 'Tu opinión'), j, identificativo, recargarOpiniones);
-    tarjetaFicha(ficha.principal, '💬 Opiniones').appendChild(listaOpiniones);
+    tarjetaFicha(ficha.principal, [icono('message-circle'), ' Opiniones']).appendChild(listaOpiniones);
     pintarOpiniones(listaOpiniones, j.opiniones, j.titulo);
 
     const logros = nodo('div');
     logros.replaceChildren(cargandoCatalogo('Cargando logros…'));
-    tarjetaFicha(ficha.columna, '🏆 Logros').appendChild(logros);
+    tarjetaFicha(ficha.columna, [icono('trophy'), ' Logros']).appendChild(logros);
     window.pywebview.api.catalogo_logros(identificativo, j.titulo)
         .catch(e => ({ exito: false, motivo: 'error', error: String(e) }))
         .then(r => {
@@ -5014,8 +5032,8 @@ async function abrirFichaCatalogo(identificativo, titulo) {
                 agregarImagenes(ficha.galeria, r.imagenes);
             }
         });
-    [['👥 Amigos que lo jugaron', j.jugaron, 'Ninguno de tus amigos jugó este juego todavía.'],
-     ['⭐ En su lista de deseados', j.deseado, 'Ninguno de tus amigos lo tiene en su lista de deseados.']].forEach(([t, lista, vacio]) => {
+    [[[icono('users'), ' Amigos que lo jugaron'], j.jugaron, 'Ninguno de tus amigos jugó este juego todavía.'],
+     [[icono('star'), ' En su lista de deseados'], j.deseado, 'Ninguno de tus amigos lo tiene en su lista de deseados.']].forEach(([t, lista, vacio]) => {
         const el = nodo('div');
         tarjetaFicha(ficha.columna, t).appendChild(el);
         pintarAmigos(el, lista, vacio);
@@ -5052,7 +5070,7 @@ function formularioOpinion(cont, j, identificativo, alGuardar) {
             r = await window.pywebview.api.catalogo_guardar_opinion(identificativo, j.titulo, puntos, texto.value,
                 alcance.value !== 'privada', alcance.value === 'todos');
         } catch (e) { r = null; }
-        msg.textContent = r && r.exito ? '✔ Opinión guardada' : ((r && r.error) || 'No se pudo guardar.');
+        if (r && r.exito) mensajeOk(msg, 'Opinión guardada'); else msg.textContent = (r && r.error) || 'No se pudo guardar.';
         if (r && r.exito) await alGuardar();
     });
     cont.append(estrellas, texto, etiqueta, guardar, msg);
@@ -5064,14 +5082,14 @@ async function agregarDeseadoCatalogo(j) {
     const msg = document.getElementById('catalogo-ficha-msg');
     let res;
     try { res = await window.pywebview.api.agregar_deseado(j.identificativo, j.titulo); } catch (e) { res = null; }
-    msg.textContent = res && res.exito ? `✔ "${j.titulo}" agregado a tu lista.` : ((res && res.error) || 'No se pudo agregar.');
+    if (res && res.exito) mensajeOk(msg, `"${j.titulo}" agregado a tu lista.`); else msg.textContent = (res && res.error) || 'No se pudo agregar.';
 }
 
 // Ficha de un juego gratis: la descarga se hace en su página original.
 function abrirFichaGratis(j) {
     catalogoAnterior = document.getElementById('catalogo-lista').style.display !== 'none' ? 'lista' : 'inicio';
-    const botones = [boton('🎁 Conseguir gratis ↗', 'btn-steam', async () => abrirEnlace(j.enlace))];
-    if (j.itch) botones.push(boton('Ver en itch.io ↗', 'btn-steam-sec', async () => abrirEnlace(j.itch)));
+    const botones = [boton([icono('gift'), ' Conseguir gratis ', icono('external-link')], 'btn-steam', async () => abrirEnlace(j.enlace))];
+    if (j.itch) botones.push(boton(['Ver en itch.io ', icono('external-link')], 'btn-steam-sec', async () => abrirEnlace(j.itch)));
     const esItch = j.plataforma === 'itch';
     const ficha = armarFicha(j.titulo, j.portada, j.descripcion,
         [['Precio', 'Gratis'], [esItch ? 'Tienda' : 'Consola', plataformaGratis(j)], ['Desarrollador', j.desarrollador], ['Fecha', j.fecha], ['Licencia', j.licencia]],
@@ -5101,7 +5119,7 @@ function mostrarLogro(l) {
     const aviso = nodo('button', 'aviso-logro');
     aviso.type = 'button';
     aviso.title = l.descripcion || '';
-    const imagen = nodo('div', 'aviso-logro-imagen', '🏆');
+    const imagen = nodo('div', 'aviso-logro-imagen', [icono('trophy')]);
     if (l.badge_url) {
         const img = nodo('img');
         img.alt = '';
@@ -5109,7 +5127,7 @@ function mostrarLogro(l) {
         img.src = l.badge_url;
     }
     const texto = nodo('div', 'aviso-logro-texto');
-    texto.append(nodo('small', '', l.hardcore ? '🔥 Logro desbloqueado (hardcore)' : 'Logro desbloqueado'),
+    texto.append(nodo('small', '', l.hardcore ? [icono('flame'), ' Logro desbloqueado (hardcore)'] : 'Logro desbloqueado'),
         nodo('strong', '', l.titulo), nodo('span', '', l.juego));
     aviso.append(imagen, texto, nodo('span', 'aviso-logro-puntos', `+${l.puntos} pts`));
     const cerrar = () => {

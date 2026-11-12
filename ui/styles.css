@@ -1876,3 +1876,18 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 @media (prefers-reduced-motion: reduce) {
     .aviso-logro, .aviso-logro.saliendo { animation: none; }
 }
+
+/* ICONOS (ui/iconos.svg, Lucide): todos en el celeste de la app.
+   Sobre fondos celestes (botones principales) van oscuros, para que se vean. */
+.icono { width: 1.1em; height: 1.1em; vertical-align: -0.18em; flex-shrink: 0; color: #66FCF1; stroke: currentColor; }
+.btn-primary-sm .icono, .btn-steam .icono, .btn-play .icono, .btn-save-bio .icono,
+.btn-steam-sec:hover .icono, .btn-secondary-sm:hover .icono { color: #0B0C10; }
+.chat-icono .icono, .amigo-icono .icono, .btn-settings .icono { width: 1.25em; height: 1.25em; }
+.llamada-btn .icono { width: 22px; height: 22px; vertical-align: middle; }
+.llamada-grande-btn .icono { width: 18px; height: 18px; vertical-align: middle; }
+.soon-icon .icono { width: 64px; height: 64px; }
+.insignia-icono .icono { width: 28px; height: 28px; }
+.aviso-logro-imagen .icono { width: 30px; height: 30px; }
+.game-cover-fallback .icono { width: 42%; height: 42%; }
+.mini-cover .icono { width: 60%; height: 60%; }
+.punto-en-linea { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 6px rgba(46, 204, 113, 0.7); }

@@ -29,8 +29,10 @@ HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"} | noticias.HOSTS | ca
 def html_aviso_logro(logro):
     """Página del aviso que aparece encima del juego. Todo lo que llega de RetroAchievements se escapa."""
     e = lambda v: html.escape(str(v or ""))
-    imagen = f'<img src="{e(logro.get("badge_url"))}" alt="">' if logro.get("badge_url") else "🏆"
-    titulo = "🔥 Logro desbloqueado (hardcore)" if logro.get("hardcore") else "Logro desbloqueado"
+    trofeo = ('<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#66FCF1" stroke-width="2" stroke-linecap="round" '
+              'stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>')   # trophy de ui/iconos.svg (Lucide, ISC)
+    imagen = f'<img src="{e(logro.get("badge_url"))}" alt="">' if logro.get("badge_url") else trofeo
+    titulo = "Logro desbloqueado (hardcore)" if logro.get("hardcore") else "Logro desbloqueado"
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 html, body {{ margin: 0; background: transparent; overflow: hidden; font-family: sans-serif; }}
 .aviso {{ box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 372px; height: 88px; margin: 4px; padding: 12px 14px;

@@ -69,7 +69,7 @@
                     </div>
                     <span id="header-username" class="user-pill-name">Cargando...</span>
                 </div>
-                <button class="btn-settings" onclick="abrirConfiguracion()" title="Configuración">⚙️</button>
+                <button class="btn-settings" onclick="abrirConfiguracion()" title="Configuración"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-settings"/></svg></button>
             </div>
         </header>
 
@@ -77,7 +77,7 @@
         <main id="view-biblioteca" class="main-content view">
             <aside class="sidebar">
                 <div class="search-container sidebar-search">
-                    <input type="text" id="search-input" placeholder="🔍 Buscar juego..." oninput="alBuscar()">
+                    <input type="text" id="search-input" placeholder="Buscar juego..." oninput="alBuscar()">
                 </div>
                 <div class="sidebar-list">
                     <h3>Consolas</h3>
@@ -109,7 +109,7 @@
         
             <!-- DETALLE DE JUEGO (estilo biblioteca de Steam) -->
             <section id="game-detail" class="game-detail-container" style="display: none;">
-                <button class="btn-back" onclick="volverABiblioteca()">← Biblioteca</button>
+                <button class="btn-back" onclick="volverABiblioteca()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-arrow-left"/></svg> Biblioteca</button>
 
                 <div class="detail-hero">
                     <div id="detail-hero-bg" class="detail-hero-bg"></div>
@@ -124,7 +124,7 @@
 
                 <!-- Barra de la biblioteca de Steam: Jugar y tus datos del juego -->
                 <div class="detail-barra">
-                    <button class="btn-play" onclick="jugarDesdeDetalle()">▶ JUGAR</button>
+                    <button class="btn-play" onclick="jugarDesdeDetalle()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-play"/></svg> JUGAR</button>
                     <div class="detail-stat"><span>Última sesión</span><strong id="detail-ultima">—</strong></div>
                     <div class="detail-stat"><span>Tiempo de juego</span><strong id="detail-tiempo">—</strong></div>
                     <div class="detail-stat detail-stat-logros"><span>Logros</span><strong id="detail-logros">—</strong>
@@ -136,7 +136,7 @@
                 <div class="detail-body">
                     <div class="detail-col-main">
                         <div class="detail-card">
-                            <h3>🏆 Logros</h3>
+                            <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-trophy"/></svg> Logros</h3>
                             <div id="achievements-content"></div>
                         </div>
                         <div class="detail-card">
@@ -157,17 +157,17 @@
                             <span id="opinion-msg" class="settings-msg"></span>
                         </div>
                         <div class="detail-card">
-                            <h3>💬 Opiniones</h3>
+                            <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-message-circle"/></svg> Opiniones</h3>
                             <div id="friends-opiniones"></div>
                         </div>
                     </div>
                     <div class="detail-col-side">
                         <div class="detail-card">
-                            <h3>👥 Amigos que lo jugaron</h3>
+                            <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-users"/></svg> Amigos que lo jugaron</h3>
                             <div id="friends-played"></div>
                         </div>
                         <div class="detail-card">
-                            <h3>⭐ En su lista de deseados</h3>
+                            <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-star"/></svg> En su lista de deseados</h3>
                             <div id="friends-wishlist"></div>
                         </div>
                     </div>
@@ -180,11 +180,11 @@
             <aside class="social-nav">
                 <h3>Social</h3>
                 <ul>
-                    <li class="active" data-social="amigos" onclick="seleccionarSeccionSocial('amigos')"><span>👥 Amigos</span><span id="social-amigos-badge" class="count-badge" style="display: none;"></span></li>
-                    <li data-social="deseados" onclick="seleccionarSeccionSocial('deseados')">⭐ Deseados</li>
-                    <!-- Chat: se abre desde Amigos (botón 💬) -->
-                    <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')">📰 Publicaciones</li>
-                    <!-- Llamadas: se hacen desde Amigos (botón 📞) -->
+                    <li class="active" data-social="amigos" onclick="seleccionarSeccionSocial('amigos')"><span><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-users"/></svg> Amigos</span><span id="social-amigos-badge" class="count-badge" style="display: none;"></span></li>
+                    <li data-social="deseados" onclick="seleccionarSeccionSocial('deseados')"><span><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-star"/></svg> Deseados</span></li>
+                    <!-- Chat: se abre desde Amigos (botón de mensaje) -->
+                    <li data-social="publicaciones" onclick="seleccionarSeccionSocial('publicaciones')"><span><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-newspaper"/></svg> Publicaciones</span></li>
+                    <!-- Llamadas: se hacen desde Amigos (botón de llamada) -->
                 </ul>
             </aside>
 
@@ -192,7 +192,7 @@
                 <div id="social-amigos">
                     <h2>Amigos</h2>
                     <div class="friend-search-box">
-                        <input type="text" id="friend-search" placeholder="🔍 Buscar usuarios por nombre..." oninput="buscarUsuariosConRetraso()" onkeydown="if (event.key === 'Enter') buscarUsuarios()" autocomplete="off">
+                        <input type="text" id="friend-search" placeholder="Buscar usuarios por nombre..." oninput="buscarUsuariosConRetraso()" onkeydown="if (event.key === 'Enter') buscarUsuarios()" autocomplete="off">
                     </div>
                     <div id="friend-search-results"></div>
                     <div id="friend-lists"></div>
@@ -204,20 +204,20 @@
                         <aside id="chat-list" class="chat-list"></aside>
                         <section class="chat-window">
                             <div id="chat-vacio" class="chat-empty">
-                                <div class="soon-icon">💬</div>
+                                <div class="soon-icon"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-message-circle"/></svg></div>
                                 <p>Elegí una conversación para empezar a chatear.</p>
                             </div>
                             <div id="chat-activo" class="chat-activo" style="display: none;">
                                 <header class="chat-header">
-                                    <button class="btn-secondary-sm" onclick="seleccionarSeccionSocial('amigos')">← Amigos</button>
+                                    <button class="btn-secondary-sm" onclick="seleccionarSeccionSocial('amigos')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-arrow-left"/></svg> Amigos</button>
                                     <img id="chat-avatar" alt="">
                                     <div class="chat-header-info">
                                         <strong id="chat-nombre"></strong>
                                         <small id="chat-estado"></small>
                                     </div>
-                                    <button id="chat-seguridad" class="chat-icono" title="Código de seguridad" onclick="abrirCodigoSeguridad()">🔒</button>
-                                    <button class="chat-icono" title="Llamada de voz" onclick="llamarAmigoChat()">📞</button>
-                                    <button class="chat-icono" title="Videollamada" onclick="llamarAmigoChat(true)">🎥</button>
+                                    <button id="chat-seguridad" class="chat-icono" title="Código de seguridad" onclick="abrirCodigoSeguridad()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-lock"/></svg></button>
+                                    <button class="chat-icono" title="Llamada de voz" onclick="llamarAmigoChat()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-phone"/></svg></button>
+                                    <button class="chat-icono" title="Videollamada" onclick="llamarAmigoChat(true)"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-video"/></svg></button>
                                     <button id="chat-ver-perfil" class="btn-secondary-sm" onclick="verPerfilDelChat()">Ver perfil</button>
                                 </header>
                                 <div id="chat-llave-aviso" class="chat-llave-aviso" role="alert" style="display: none;">
@@ -228,8 +228,8 @@
                                 <p id="chat-error" class="chat-error"></p>
                                 <div id="picker" class="picker" style="display: none;">
                                     <div class="picker-tabs">
-                                        <button class="picker-tab active" data-tab="emojis" onclick="elegirPestanaPicker('emojis')">😀 Emojis</button>
-                                        <button class="picker-tab" data-tab="stickers" onclick="elegirPestanaPicker('stickers')">🏷️ Stickers</button>
+                                        <button class="picker-tab active" data-tab="emojis" onclick="elegirPestanaPicker('emojis')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-smile"/></svg> Emojis</button>
+                                        <button class="picker-tab" data-tab="stickers" onclick="elegirPestanaPicker('stickers')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-tag"/></svg> Stickers</button>
                                         <button class="picker-tab" data-tab="gifs" onclick="elegirPestanaPicker('gifs')">GIF</button>
                                     </div>
                                     <div id="picker-emojis" class="picker-body">
@@ -254,8 +254,8 @@
                                     </div>
                                 </div>
                                 <div class="chat-composer">
-                                    <button class="chat-icono" title="Enviar una imagen" onclick="elegirImagenChat()">🖼️</button>
-                                    <button class="chat-icono" title="Emojis, stickers y GIFs" onclick="alternarPicker()">😀</button>
+                                    <button class="chat-icono" title="Enviar una imagen" onclick="elegirImagenChat()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg></button>
+                                    <button class="chat-icono" title="Emojis, stickers y GIFs" onclick="alternarPicker()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-smile"/></svg></button>
                                     <textarea id="chat-texto" rows="1" maxlength="1000" placeholder="Escribí un mensaje..." oninput="autoAjustarChat(this)" onkeydown="teclaChat(event)"></textarea>
                                     <button id="chat-enviar" class="btn-primary-sm" onclick="enviarMensaje()">Enviar</button>
                                 </div>
@@ -282,7 +282,7 @@
 
                 <!-- PERFIL DE OTRO USUARIO -->
                 <div id="social-perfil" style="display: none;">
-                    <button class="btn-back" onclick="cerrarPerfilAjeno()">← Amigos</button>
+                    <button class="btn-back" onclick="cerrarPerfilAjeno()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-arrow-left"/></svg> Amigos</button>
 
                     <div class="profile-hero">
                         <div id="pa-fondo" class="perfil-fondo"></div>
@@ -300,15 +300,15 @@
                         <p id="pa-bio" class="pa-bio"></p>
                     </div>
                     <div class="detail-card">
-                        <h3>🎮 Juegos jugados recientemente</h3>
+                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-gamepad-2"/></svg> Juegos jugados recientemente</h3>
                         <div id="pa-juegos"></div>
                     </div>
                     <div class="detail-card">
-                        <h3>🤝 Juegos en común</h3>
+                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-handshake"/></svg> Juegos en común</h3>
                         <div id="pa-comun"></div>
                     </div>
                     <div class="detail-card">
-                        <h3>⭐ Lista de deseados</h3>
+                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-star"/></svg> Lista de deseados</h3>
                         <div id="pa-deseados"></div>
                     </div>
                 </div>
@@ -321,9 +321,9 @@
                             <div id="posts-tabs" class="posts-tabs">
                                 <button class="posts-tab active" data-filtro="todas" onclick="cambiarFiltroPosts('todas')">Todas</button>
                                 <button class="posts-tab" data-filtro="mias" onclick="cambiarFiltroPosts('mias')">Mías</button>
-                                <button class="btn-secondary-sm" title="Actualizar" onclick="cargarPublicaciones(true)">↻ Actualizar</button>
+                                <button class="btn-secondary-sm" title="Actualizar" onclick="cargarPublicaciones(true)"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-refresh-cw"/></svg> Actualizar</button>
                             </div>
-                            <button id="posts-volver" class="btn-back" style="display: none;" onclick="cambiarFiltroPosts('todas')">← Todas las publicaciones</button>
+                            <button id="posts-volver" class="btn-back" style="display: none;" onclick="cambiarFiltroPosts('todas')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-arrow-left"/></svg> Todas las publicaciones</button>
                         </div>
 
                         <div id="post-composer" class="post-composer">
@@ -333,14 +333,14 @@
                             </div>
                             <div id="post-adjunto" class="post-adjunto" style="display: none;">
                                 <img id="post-adjunto-img" alt="">
-                                <button class="post-adjunto-quitar" title="Quitar" onclick="quitarAdjuntoPost()">✕</button>
+                                <button class="post-adjunto-quitar" title="Quitar" onclick="quitarAdjuntoPost()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-x"/></svg></button>
                             </div>
                             <div id="post-picker-slot"></div>
                             <p id="post-error" class="post-error"></p>
                             <div class="post-composer-bar">
                                 <div class="post-composer-tools">
-                                    <button class="chat-icono" title="Agregar una imagen" onclick="elegirImagenPost()">🖼️</button>
-                                    <button class="chat-icono" title="Emojis y GIFs" onclick="alternarPickerPost()">😀</button>
+                                    <button class="chat-icono" title="Agregar una imagen" onclick="elegirImagenPost()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg></button>
+                                    <button class="chat-icono" title="Emojis y GIFs" onclick="alternarPickerPost()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-smile"/></svg></button>
                                     <span id="post-contador" class="post-contador">0 / 2000</span>
                                 </div>
                                 <button id="post-publicar" class="btn-primary-sm" onclick="publicar()">Publicar</button>
@@ -360,7 +360,7 @@
             <div class="posts-wrap">
                 <div class="posts-head">
                     <h2>Noticias</h2>
-                    <button class="btn-secondary-sm" title="Actualizar" onclick="cargarNoticias(true)">↻ Actualizar</button>
+                    <button class="btn-secondary-sm" title="Actualizar" onclick="cargarNoticias(true)"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-refresh-cw"/></svg> Actualizar</button>
                 </div>
                 <div id="noticias-lista"></div>
             </div>
@@ -371,7 +371,7 @@
             <div class="catalogo-wrap">
                 <nav class="steam-nav" aria-label="Catálogo">
                     <button class="steam-nav-btn" onclick="irAConsolaCatalogo('')">Tu tienda</button>
-                    <button class="steam-nav-btn" onclick="irAConsolaCatalogo('gratis')">🎁 Gratis</button>
+                    <button class="steam-nav-btn" onclick="irAConsolaCatalogo('gratis')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-gift"/></svg> Gratis</button>
                     <select id="catalogo-consola" class="steam-nav-select" aria-label="Explorar por consola" onchange="cambiarSeccionCatalogo()"></select>
                 </nav>
                 <div id="catalogo-inicio"></div>
@@ -406,14 +406,14 @@
                 <div class="profile-avatar-container">
                     <img id="profile-avatar" src="https://via.placeholder.com/100" alt="Foto de Perfil">
                     <div class="avatar-buttons">
-                        <button class="change-avatar-btn" onclick="subirNuevaFoto()">📷 Foto</button>
-                        <button class="change-avatar-btn" onclick="cambiarNombreUsuario()">✏️ Nombre</button>
-                        <button class="change-avatar-btn" onclick="abrirEditorBanner()">🎨 Banner</button>
+                        <button class="change-avatar-btn" onclick="subirNuevaFoto()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-camera"/></svg> Foto</button>
+                        <button class="change-avatar-btn" onclick="cambiarNombreUsuario()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-pencil"/></svg> Nombre</button>
+                        <button class="change-avatar-btn" onclick="abrirEditorBanner()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-palette"/></svg> Banner</button>
                     </div>
                 </div>
                 <div class="profile-info">
                     <h2 id="profile-username">NombreUsuario</h2>
-                    <span class="user-status">🟢 En línea</span>
+                    <span class="user-status"><span class="punto-en-linea"></span> En línea</span>
                 </div>
             </div>
 
@@ -422,7 +422,7 @@
                 <div id="banner-colores" class="banner-colores"></div>
                 <div class="banner-acciones">
                     <label class="banner-propio">Otro color <input type="color" id="banner-color" value="#45a29e" onchange="guardarBannerColor(this.value)"></label>
-                    <button class="btn-secondary-sm" onclick="subirBannerImagen()">🖼️ Imagen de tu equipo</button>
+                    <button class="btn-secondary-sm" onclick="subirBannerImagen()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg> Imagen de tu equipo</button>
                     <button class="btn-secondary-sm" onclick="guardarBannerColor(null)">Quitar</button>
                 </div>
                 <p class="settings-help">La imagen se recorta al formato del banner (3:1). La ven todos los que abran tu perfil.</p>
@@ -437,11 +437,11 @@
                 <button class="btn-save-bio" onclick="guardarPerfil()">Guardar Cambios</button>
 
                 <div class="profile-section">
-                    <h3>🎮 Jugados recientemente</h3>
+                    <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-gamepad-2"/></svg> Jugados recientemente</h3>
                     <div id="mi-recientes"></div>
                 </div>
                 <div class="profile-section">
-                    <h3>⭐ Lista de deseados</h3>
+                    <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-star"/></svg> Lista de deseados</h3>
                     <div id="mi-deseados"></div>
                 </div>
             </div>
@@ -665,10 +665,10 @@
             <aside class="settings-nav">
                 <h3>Parámetros</h3>
                 <ul>
-                    <li class="active" data-section="paths" onclick="seleccionarSeccionConfig('paths')">📁 Rutas y Emuladores</li>
-                    <li data-section="audio" onclick="seleccionarSeccionConfig('audio')">🎧 Audio de llamadas</li>
-                    <li data-section="ra" onclick="seleccionarSeccionConfig('ra')">🏆 RetroAchievements</li>
-                    <li data-section="privacy" onclick="seleccionarSeccionConfig('privacy')">🔒 Privacidad</li>
+                    <li class="active" data-section="paths" onclick="seleccionarSeccionConfig('paths')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-folder"/></svg> Rutas y Emuladores</li>
+                    <li data-section="audio" onclick="seleccionarSeccionConfig('audio')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-headphones"/></svg> Audio de llamadas</li>
+                    <li data-section="ra" onclick="seleccionarSeccionConfig('ra')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-trophy"/></svg> RetroAchievements</li>
+                    <li data-section="privacy" onclick="seleccionarSeccionConfig('privacy')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-lock"/></svg> Privacidad</li>
                     <li data-section="info" onclick="seleccionarSeccionConfig('info')">ℹ️ Información</li>
                 </ul>
                 <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesión</button>
@@ -682,7 +682,7 @@
                             <strong>Escanear ROMs</strong>
                             <p class="settings-help">Busca juegos nuevos en las carpetas de ROMs y descarga sus carátulas.</p>
                         </div>
-                        <button id="btn-scan" class="btn-primary-sm" onclick="escanearRoms()">🔍 Escanear ROMs</button>
+                        <button id="btn-scan" class="btn-primary-sm" onclick="escanearRoms()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-search"/></svg> Escanear ROMs</button>
                     </div>
                     <p id="scan-status-config" class="settings-msg"></p>
                     <div id="paths-content"></div>
@@ -709,8 +709,8 @@
                     <div class="settings-actions">
                         <button class="btn-primary-sm" onclick="guardarCredencialesRA()">Guardar y probar</button>
                         <button class="btn-secondary-sm" onclick="borrarCredencialesRA()">Quitar cuenta</button>
-                        <button class="btn-secondary-sm" onclick="probarAvisoLogro()">🏆 Probar aviso</button>
-                        <button class="btn-secondary-sm" onclick="probarAvisoLogro(true)">🏆 Probar aviso sobre el juego</button>
+                        <button class="btn-secondary-sm" onclick="probarAvisoLogro()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-trophy"/></svg> Probar aviso</button>
+                        <button class="btn-secondary-sm" onclick="probarAvisoLogro(true)"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-trophy"/></svg> Probar aviso sobre el juego</button>
                     </div>
                     <p id="ra-status" class="settings-msg"></p>
                     <p class="settings-help">Los logros se desbloquean desde el emulador: cada emulador (RetroArch, DuckStation, etc.) debe tener iniciada tu sesión de RetroAchievements. El launcher solo muestra tu progreso.</p>

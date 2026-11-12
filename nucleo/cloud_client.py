@@ -38,13 +38,13 @@ def clave_juego(identificativo, titulo):
 
 # Cliente único de Supabase; recuerda el usuario con la sesión iniciada.
 
-# Insignias de actividad: (icono, nombre, qué se cuenta, umbrales de cada nivel)
+# Insignias de actividad: (icono de ui/iconos.svg, nombre, qué se cuenta, umbrales de cada nivel)
 _INSIGNIAS = (
-    ("🎮", "Jugador", "juegos", (1, 10, 25, 50, 100)),
-    ("⏱️", "Dedicación", "horas", (1, 10, 50, 100, 500)),
-    ("🔁", "Constancia", "sesiones", (10, 50, 200, 500)),
-    ("💬", "Crítico", "opiniones", (1, 5, 25, 50)),
-    ("🏆", "Cazador de logros", "puntos_ra", (100, 500, 1000, 5000, 10000)),
+    ("gamepad-2", "Jugador", "juegos", (1, 10, 25, 50, 100)),
+    ("timer", "Dedicación", "horas", (1, 10, 50, 100, 500)),
+    ("repeat", "Constancia", "sesiones", (10, 50, 200, 500)),
+    ("message-circle", "Crítico", "opiniones", (1, 5, 25, 50)),
+    ("trophy", "Cazador de logros", "puntos_ra", (100, 500, 1000, 5000, 10000)),
 )
 _ETIQUETAS = {"puntos_ra": "puntos de logros"}
 
@@ -718,8 +718,8 @@ class CloudClient:
         tipo = m.get("tipo", "texto")
         if tipo == "texto":
             return m.get("contenido", "")
-        return {"imagen": "📷 Imagen", "sticker": "Sticker", "gif": "GIF",
-                "publicacion": "📰 Publicación"}.get(tipo, "Mensaje")
+        return {"imagen": "Imagen", "sticker": "Sticker", "gif": "GIF",
+                "publicacion": "Publicación"}.get(tipo, "Mensaje")
 
     # Ids de tus amigos con la solicitud aceptada.
     def _amigos_aceptados(self):

@@ -108,23 +108,23 @@ function llCrearUI() {
         <div id="llamada-timbre" class="llamada-panel" style="display:none;">
             <img id="llamada-timbre-avatar" alt="">
             <div class="llamada-texto"><strong id="llamada-timbre-nombre"></strong><small id="llamada-timbre-sub">te está llamando…</small></div>
-            <button class="llamada-btn llamada-aceptar" title="Aceptar solo con audio" onclick="llAceptar(false)">📞</button>
-            <button id="llamada-aceptar-video" class="llamada-btn llamada-aceptar" title="Aceptar con video" onclick="llAceptar(true)" style="display:none;">🎥</button>
-            <button class="llamada-btn llamada-colgar" title="Rechazar" onclick="llRechazar()">✖</button>
+            <button class="llamada-btn llamada-aceptar" title="Aceptar solo con audio" onclick="llAceptar(false)"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-phone"/></svg></button>
+            <button id="llamada-aceptar-video" class="llamada-btn llamada-aceptar" title="Aceptar con video" onclick="llAceptar(true)" style="display:none;"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-video"/></svg></button>
+            <button class="llamada-btn llamada-colgar" title="Rechazar" onclick="llRechazar()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-x"/></svg></button>
         </div>
         <div id="llamada-videos" style="display:none;">
-            <button id="llamada-grande" class="llamada-grande-btn" title="Agrandar / achicar" onclick="llAlternarGrande()">⛶</button>
+            <button id="llamada-grande" class="llamada-grande-btn" title="Agrandar / achicar" onclick="llAlternarGrande()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-maximize-2"/></svg></button>
             <div id="llamada-videos-grid"></div>
             <video id="llamada-local" autoplay muted playsinline style="display:none;"></video>
         </div>
         <div id="llamada-barra" class="llamada-panel" style="display:none;">
             <div class="llamada-texto"><strong id="llamada-barra-nombre"></strong><small id="llamada-barra-estado"></small></div>
-            <button id="llamada-mute" class="llamada-btn" title="Silenciar micrófono" onclick="llAlternarMute()">🎤</button>
-            <button id="llamada-camara" class="llamada-btn" title="Activar cámara" onclick="llAlternarCamara()">📷</button>
-            <button id="llamada-pantalla" class="llamada-btn" title="Compartir pantalla" onclick="llAlternarPantalla()">🖥️</button>
-            <button class="llamada-btn" title="Elegir micrófono y altavoz" onclick="abrirConfiguracion('audio')">🎧</button>
-            <button class="llamada-btn" title="Agregar a alguien a la llamada" onclick="llAbrirInvitar()">➕</button>
-            <button class="llamada-btn llamada-colgar" title="Colgar" onclick="llColgarManual()">📵</button>
+            <button id="llamada-mute" class="llamada-btn" title="Silenciar micrófono" onclick="llAlternarMute()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-mic"/></svg></button>
+            <button id="llamada-camara" class="llamada-btn" title="Activar cámara" onclick="llAlternarCamara()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-camera"/></svg></button>
+            <button id="llamada-pantalla" class="llamada-btn" title="Compartir pantalla" onclick="llAlternarPantalla()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-monitor"/></svg></button>
+            <button class="llamada-btn" title="Elegir micrófono y altavoz" onclick="abrirConfiguracion('audio')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-headphones"/></svg></button>
+            <button class="llamada-btn" title="Agregar a alguien a la llamada" onclick="llAbrirInvitar()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-plus"/></svg></button>
+            <button class="llamada-btn llamada-colgar" title="Colgar" onclick="llColgarManual()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-phone-off"/></svg></button>
         </div>
         <div id="llamada-invitar" class="llamada-invitar" style="display:none;">
             <strong>Agregar a la llamada</strong>
@@ -297,7 +297,7 @@ async function guardarConfigAudio(cambio) {
     const res = await window.pywebview.api.guardar_audio_llamadas(
         document.getElementById('audio-mic').value, document.getElementById('audio-altavoz').value);
     if (!res || !res.exito) { msg.textContent = (res && res.error) || 'No se pudo guardar.'; return; }
-    msg.textContent = '✔ Guardado';
+    mensajeOk(msg, 'Guardado');
     if (!llActual) return;
     if (cambio === 'altavoz') {
         document.querySelectorAll('#llamada-audios audio').forEach(llAplicarAltavoz);
@@ -930,7 +930,7 @@ function llAlternarMute() {
     if (!llActual) return;
     llActual.silenciado = !llActual.silenciado;
     llActual.local.getAudioTracks().forEach(t => { t.enabled = !llActual.silenciado; });
-    document.getElementById('llamada-mute').textContent = llActual.silenciado ? '🔇' : '🎤';
+    document.getElementById('llamada-mute').replaceChildren(icono(llActual.silenciado ? 'mic-off' : 'mic'));
 }
 
 // Botón colgar: si aún suena y llamaste tú, se cancela para todos.
@@ -960,7 +960,7 @@ async function llColgar(aviso, terminar = false) {
     if (a.canal && llSb) { try { llSb.removeChannel(a.canal); } catch (e) { /* nada */ } }
     document.getElementById('llamada-audios').innerHTML = '';
     document.getElementById('llamada-videos-grid').innerHTML = '';
-    document.getElementById('llamada-mute').textContent = '🎤';
+    document.getElementById('llamada-mute').replaceChildren(icono('mic'));
     llActualizarBotonCamara();
     llRefrescarVideos();
     llOcultar('llamada-barra');
@@ -1115,7 +1115,7 @@ function crearRegistroLlamada(l) {
 
     if (l.resultado === 'completada') {
         fila.className = 'msg-llamada';
-        titulo.textContent = l.con_video ? '🎥 Videollamada finalizada' : '📞 Llamada de voz finalizada';
+        titulo.replaceChildren(icono(l.con_video ? 'video' : 'phone'), l.con_video ? ' Videollamada finalizada' : ' Llamada de voz finalizada');
         lineas = [
             `Duración: ${llDuracionTexto(l.duracion_s)}`,
             `Inició ${llHora(l.inicio)} · Terminó ${llHora(l.fin)}`,
@@ -1124,9 +1124,9 @@ function crearRegistroLlamada(l) {
     } else {
         fila.className = 'msg-llamada perdida';
         if (l.resultado === 'rechazada') {
-            titulo.textContent = l.rechazada_por_mi ? '📵 Rechazaste la llamada' : '📵 Llamada rechazada';
+            titulo.replaceChildren(icono('phone-off'), l.rechazada_por_mi ? ' Rechazaste la llamada' : ' Llamada rechazada');
         } else {
-            titulo.textContent = l.yo_llame ? '📵 Llamada sin respuesta' : '📵 Llamada perdida';
+            titulo.replaceChildren(icono('phone-off'), l.yo_llame ? ' Llamada sin respuesta' : ' Llamada perdida');
         }
         lineas = [llHora(l.inicio)];
     }
