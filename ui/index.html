@@ -709,9 +709,12 @@
                     <div class="settings-actions">
                         <button class="btn-primary-sm" onclick="guardarCredencialesRA()">Guardar y probar</button>
                         <button class="btn-secondary-sm" onclick="borrarCredencialesRA()">Quitar cuenta</button>
+                        <button class="btn-secondary-sm" onclick="probarAvisoLogro()">🏆 Probar aviso</button>
+                        <button class="btn-secondary-sm" onclick="probarAvisoLogro(true)">🏆 Probar aviso sobre el juego</button>
                     </div>
                     <p id="ra-status" class="settings-msg"></p>
                     <p class="settings-help">Los logros se desbloquean desde el emulador: cada emulador (RetroArch, DuckStation, etc.) debe tener iniciada tu sesión de RetroAchievements. El launcher solo muestra tu progreso.</p>
+                    <p class="settings-help">Mientras jugás, la app revisa cada minuto si conseguiste logros nuevos y te avisa arriba a la derecha. Si estás en el juego, el aviso aparece unos segundos encima de él, sin quitarle el control. Los puntos de RetroAchievements también suman experiencia al nivel de tu perfil.</p>
                 </section>
 
                 <section id="settings-privacy" class="settings-section" style="display: none;">

@@ -54,6 +54,37 @@ class NivelDelPerfil(unittest.TestCase):
         self.assertEqual([j["titulo"] for j in r["mas_jugados"]], ["A", "C", "B"])
 
 
+class AvisosDeLogros(unittest.TestCase):
+    def test_solo_se_anuncian_los_nuevos_y_se_valida_lo_que_llega(self):
+        from nucleo import ra_client
+        a = {"AchievementID": "7", "Title": "Uno", "Points": 10, "GameTitle": "Juego", "BadgeName": "12345", "HardcoreMode": 1}
+        logro = ra_client.logro_reciente(a)
+        self.assertEqual((logro["id"], logro["puntos"], logro["hardcore"], logro["badge_url"]),
+                         (7, 10, True, "https://media.retroachievements.org/Badge/12345.png"))
+        self.assertEqual(ra_client.logro_reciente({**a, "BadgeName": "../x"})["badge_url"], "")
+        self.assertIsNone(ra_client.logro_reciente({"Title": "sin id"}))
+        vistos = {7}   # ya estaba antes de abrir el juego
+        b = ra_client.logro_reciente({**a, "AchievementID": 8})
+        self.assertEqual(ra_client.nuevos([logro, b], vistos), [b])
+        self.assertEqual(ra_client.nuevos([logro, b], vistos), [])   # cada logro se anuncia una sola vez
+
+
+class AvisoSobreElJuego(unittest.TestCase):
+    def test_el_html_del_aviso_escapa_lo_que_llega(self):
+        import gui_app
+        pagina = gui_app.html_aviso_logro({"titulo": "<script>x</script>", "juego": "A & B", "puntos": "7", "badge_url": ""})
+        self.assertNotIn("<script>x", pagina)
+        self.assertIn("&lt;script&gt;", pagina)
+        self.assertIn("A &amp; B", pagina)
+        self.assertIn("+7 pts", pagina)
+
+    def test_los_puntos_de_logros_suman_al_nivel(self):
+        from nucleo.cloud_client import resumen_perfil
+        r = resumen_perfil([], 0, 650)
+        self.assertEqual((r["xp"], r["nivel"], r["puntos_ra"]), (650, 3, 650))   # el nivel 3 pide 600
+        self.assertEqual([(i["nombre"], i["grado"], i["detalle"]) for i in r["insignias"]], [("Cazador de logros", 2, "500+ puntos de logros")])
+
+
 class BannerDelPerfil(unittest.TestCase):
     def test_la_imagen_se_recorta_a_3_por_1_sin_metadatos(self):
         from nucleo import imagenes

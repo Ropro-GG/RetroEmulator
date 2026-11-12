@@ -1993,7 +1993,7 @@ function pintarVitrina(cont, r) {
     datos.append(nodo('strong', '', `Nivel ${r.nivel}`), nodo('small', '', `${r.xp} XP · faltan ${r.xp_siguiente - r.xp} para el nivel ${r.nivel + 1}`), barra);
     nivel.append(circulo, datos);
     const numeros = nodo('div', 'vitrina-stats');
-    [['Juegos', r.juegos], ['Horas', r.horas], ['Sesiones', r.sesiones], ['Opiniones', r.opiniones]].forEach(([e, v]) => {
+    [['Juegos', r.juegos], ['Horas', r.horas], ['Sesiones', r.sesiones], ['Opiniones', r.opiniones], ['Pts. logros', r.puntos_ra]].forEach(([e, v]) => {
         const s = nodo('div', 'vitrina-stat');
         s.append(nodo('strong', '', String(v)), nodo('span', '', e));
         numeros.appendChild(s);
@@ -5080,3 +5080,51 @@ function abrirFichaGratis(j) {
     panelCatalogo('ficha');
 }
 
+
+
+// ============================================================================
+// AVISOS DE LOGROS: Python los manda con mostrarLogro() mientras jugás
+// ============================================================================
+
+const DURACION_AVISO_LOGRO = 4000;
+
+// Devuelve si se mostró en la app. Si estás en el juego, Python lo muestra encima del juego.
+function mostrarLogro(l) {
+    if (!document.hasFocus()) return false;
+    let cont = document.getElementById('avisos-logros');
+    if (!cont) {
+        cont = nodo('div', 'avisos-logros');
+        cont.id = 'avisos-logros';
+        cont.setAttribute('aria-live', 'polite');
+        document.body.appendChild(cont);
+    }
+    const aviso = nodo('button', 'aviso-logro');
+    aviso.type = 'button';
+    aviso.title = l.descripcion || '';
+    const imagen = nodo('div', 'aviso-logro-imagen', '🏆');
+    if (l.badge_url) {
+        const img = nodo('img');
+        img.alt = '';
+        img.onload = () => imagen.replaceChildren(img);
+        img.src = l.badge_url;
+    }
+    const texto = nodo('div', 'aviso-logro-texto');
+    texto.append(nodo('small', '', l.hardcore ? '🔥 Logro desbloqueado (hardcore)' : 'Logro desbloqueado'),
+        nodo('strong', '', l.titulo), nodo('span', '', l.juego));
+    aviso.append(imagen, texto, nodo('span', 'aviso-logro-puntos', `+${l.puntos} pts`));
+    const cerrar = () => {
+        aviso.classList.add('saliendo');
+        setTimeout(() => aviso.remove(), 300);
+    };
+    aviso.onclick = cerrar;
+    cont.appendChild(aviso);
+    setTimeout(cerrar, DURACION_AVISO_LOGRO);
+    return true;
+}
+
+async function probarAvisoLogro(sobreElJuego = false) {
+    try {
+        const logro = await window.pywebview.api.probar_aviso_logro(sobreElJuego);
+        if (logro) mostrarLogro(logro);
+    } catch (e) { /* sin aviso */ }
+}

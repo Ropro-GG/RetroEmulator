@@ -44,16 +44,20 @@ _INSIGNIAS = (
     ("⏱️", "Dedicación", "horas", (1, 10, 50, 100, 500)),
     ("🔁", "Constancia", "sesiones", (10, 50, 200, 500)),
     ("💬", "Crítico", "opiniones", (1, 5, 25, 50)),
+    ("🏆", "Cazador de logros", "puntos_ra", (100, 500, 1000, 5000, 10000)),
 )
+_ETIQUETAS = {"puntos_ra": "puntos de logros"}
 
 
-def resumen_perfil(filas, opiniones):
+def resumen_perfil(filas, opiniones, puntos_ra=0):
     """Nivel, insignias y juegos más jugados a partir del historial (filas de juegos_jugados).
-    Cada juego da 100 XP, cada sesión 10, cada hora 20 y cada opinión 50. El nivel N pide 100 + 200 + ... + N*100 XP."""
+    Cada juego da 100 XP, cada sesión 10, cada hora 20, cada opinión 50 y cada punto de RetroAchievements 1.
+    El nivel N pide 100 + 200 + ... + N*100 XP."""
     juegos, sesiones = len(filas), sum(int(f.get("veces") or 0) for f in filas)
     segundos = sum(int(f.get("segundos") or 0) for f in filas)
-    cuentas = {"juegos": juegos, "horas": segundos // 3600, "sesiones": sesiones, "opiniones": int(opiniones or 0)}
-    xp = juegos * 100 + sesiones * 10 + cuentas["horas"] * 20 + cuentas["opiniones"] * 50
+    cuentas = {"juegos": juegos, "horas": segundos // 3600, "sesiones": sesiones, "opiniones": int(opiniones or 0),
+               "puntos_ra": max(0, int(puntos_ra or 0))}
+    xp = juegos * 100 + sesiones * 10 + cuentas["horas"] * 20 + cuentas["opiniones"] * 50 + cuentas["puntos_ra"]
     nivel = 0
     while xp >= 100 * (nivel + 1) * (nivel + 2) // 2:
         nivel += 1
@@ -61,7 +65,8 @@ def resumen_perfil(filas, opiniones):
     for icono, nombre, campo, umbrales in _INSIGNIAS:
         alcanzados = [u for u in umbrales if cuentas[campo] >= u]
         if alcanzados:
-            insignias.append({"icono": icono, "nombre": nombre, "grado": len(alcanzados), "detalle": f"{alcanzados[-1]}+ {campo}"})
+            insignias.append({"icono": icono, "nombre": nombre, "grado": len(alcanzados),
+                              "detalle": f"{alcanzados[-1]}+ {_ETIQUETAS.get(campo, campo)}"})
     mas_jugados = sorted(filas, key=lambda f: (int(f.get("segundos") or 0), int(f.get("veces") or 0)), reverse=True)[:3]
     return {**cuentas, "segundos": segundos, "xp": xp, "nivel": nivel,
             "xp_nivel": 100 * nivel * (nivel + 1) // 2, "xp_siguiente": 100 * (nivel + 1) * (nivel + 2) // 2, "insignias": insignias,
@@ -1070,6 +1075,22 @@ class CloudClient:
         except Exception as e:
             print(f"[SOCIAL] No se pudo guardar el tiempo de juego: {self._error_social(e)}")
 
+    def guardar_puntos_ra(self, puntos):
+        """Los puntos de RetroAchievements suman experiencia al nivel del perfil."""
+        if not self.client or not self.usuario_actual or puntos is None:
+            return
+        try:
+            self.client.table("profiles").update({"ra_puntos": max(0, min(int(puntos), 10_000_000))}).eq("id", self._yo()).execute()
+        except Exception as e:
+            print(f"[SOCIAL] No se pudieron guardar los puntos de logros: {self._error_social(e)}")
+
+    def _puntos_ra(self, user_id):
+        try:
+            filas = self.client.table("profiles").select("ra_puntos").eq("id", user_id).execute().data or []
+            return int(filas[0].get("ra_puntos") or 0) if filas else 0
+        except Exception:
+            return 0
+
     def _cantidad_opiniones(self, user_id):
         """Opiniones de esa persona que podés ver (todas, si sos vos)."""
         try:
@@ -1106,7 +1127,7 @@ class CloudClient:
         en_comun = sorted(({"titulo": r["titulo"], "consola": r.get("consola", ""),
                             "identificativo": r.get("identificativo", "")}
                            for r in suyos if r["clave"] in mios), key=lambda j: j["titulo"].lower())
-        return recientes, en_comun, resumen_perfil(suyos, self._cantidad_opiniones(amigo))
+        return recientes, en_comun, resumen_perfil(suyos, self._cantidad_opiniones(amigo), self._puntos_ra(amigo))
 
     def obtener_mi_actividad(self, limite=6):
         """Mis juegos jugados recientemente y mi lista de deseados (para mi perfil)."""
@@ -1130,7 +1151,7 @@ class CloudClient:
         except Exception as e:
             print(f"[SOCIAL] Sin lista de deseados propia: {self._error_social(e)}")
         return {"exito": True, "recientes": recientes, "deseados": deseados,
-                "resumen": resumen_perfil(filas, self._cantidad_opiniones(self._yo()))}
+                "resumen": resumen_perfil(filas, self._cantidad_opiniones(self._yo()), self._puntos_ra(self._yo()))}
 
     def obtener_amigos_que_jugaron(self, identificativo, titulo):
         """Amigos que ya jugaron este juego (con cuántas veces y cuándo fue la última)."""

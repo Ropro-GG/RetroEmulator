@@ -758,3 +758,7 @@ create policy banners_borrar on storage.objects for delete to authenticated
 -- Reemplazar un archivo (upsert) también pide poder leerlo
 create policy banners_ver on storage.objects for select to authenticated
     using (bucket_id = 'banners' and name = 'banner_' || auth.uid()::text || '.jpg');
+
+-- Puntos de RetroAchievements de la cuenta conectada: suman experiencia al nivel del perfil (1 punto = 1 XP).
+alter table public.profiles add column if not exists ra_puntos integer not null default 0 check (ra_puntos between 0 and 10000000);
+grant update (ra_puntos) on public.profiles to authenticated;

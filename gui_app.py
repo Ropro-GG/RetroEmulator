@@ -3,11 +3,13 @@
 # Cada método público de API se puede llamar desde JavaScript como
 # window.pywebview.api.nombre_del_metodo(...), y su resultado vuelve como una promesa.
 # Esta clase casi no tiene lógica: valida lo básico y delega en los módulos de nucleo/.
+import html
 import webview
 from webview import FileDialog
 import json
 import os
 import threading
+import time
 import sys
 import webbrowser
 from urllib.parse import urlparse
@@ -23,6 +25,29 @@ URL_GITHUB = "https://github.com/Ropro-GG/RetroEmulator"
 HOSTS_PERMITIDOS = {"github.com", "retroachievements.org"} | noticias.HOSTS | catalogo.HOSTS
 
 # Métodos que la interfaz puede llamar. Los que empiezan con "_" no se exponen a JavaScript.
+
+def html_aviso_logro(logro):
+    """Página del aviso que aparece encima del juego. Todo lo que llega de RetroAchievements se escapa."""
+    e = lambda v: html.escape(str(v or ""))
+    imagen = f'<img src="{e(logro.get("badge_url"))}" alt="">' if logro.get("badge_url") else "🏆"
+    titulo = "🔥 Logro desbloqueado (hardcore)" if logro.get("hardcore") else "Logro desbloqueado"
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>
+html, body {{ margin: 0; background: transparent; overflow: hidden; font-family: sans-serif; }}
+.aviso {{ box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 372px; height: 88px; margin: 4px; padding: 12px 14px;
+  background: linear-gradient(135deg, #1F2833, #0B0C10); border: 1px solid #45A29E; border-radius: 14px; animation: entra .35s ease-out; }}
+.img {{ display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 10px;
+  background: #0B0C10; border: 1px solid #66FCF1; font-size: 26px; overflow: hidden; }}
+.img img {{ width: 100%; height: 100%; object-fit: cover; }}
+.txt {{ flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }}
+small {{ color: #66FCF1; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }}
+strong, span.j {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+strong {{ color: #fff; font-size: 15px; }} span.j {{ color: #7d8590; font-size: 12px; }}
+.pts {{ flex-shrink: 0; padding: 4px 9px; border-radius: 999px; background: rgba(102,252,241,.15); color: #66FCF1; font-weight: bold; font-size: 13px; }}
+@keyframes entra {{ from {{ opacity: 0; transform: translateX(40px); }} }}
+</style></head><body><div class="aviso"><div class="img">{imagen}</div>
+<div class="txt"><small>{titulo}</small><strong>{e(logro.get("titulo"))}</strong><span class="j">{e(logro.get("juego"))}</span></div>
+<span class="pts">+{int(logro.get("puntos") or 0)} pts</span></div></body></html>"""
+
 class API:
     # Crea los servicios una sola vez; la ventana se asigna después con set_window.
     def __init__(self):
@@ -35,6 +60,7 @@ class API:
         self._imagen_elegida = ""         # archivo que elegiste para enviar o convertir en sticker
         self._imagen_publicacion = ""     # imagen elegida para la publicación que estás escribiendo
         self._lock_juegos = threading.Lock()
+        self._hilo_logros = None          # vigía de logros nuevos mientras hay un juego abierto
 
     # Guarda la ventana: hace falta para abrir los selectores de archivos.
     def set_window(self, window):
@@ -218,11 +244,74 @@ class API:
         """Avisa a tus amigos a qué jugás (si no lo desactivaste en Privacidad)."""
         with self._lock_juegos:
             self._juegos_activos += 1
+            if ra_client.obtener_credenciales() and not (self._hilo_logros and self._hilo_logros.is_alive()):
+                self._hilo_logros = threading.Thread(target=self._vigilar_logros, daemon=True)
+                self._hilo_logros.start()
         if db_local.obtener_config_usuario("compartir_actividad", "1") == "1":
             self.cloud.establecer_jugando(titulo, consola)
         if db_local.obtener_config_usuario("compartir_historial", "1") == "1":
             identificativo = db_local.obtener_identificativo_por_consola(consola)
             self.cloud.registrar_jugada(identificativo, titulo, consola)
+
+    INTERVALO_LOGROS = 60   # segundos entre consultas a RetroAchievements: es lo que tarda en reflejarse un logro
+
+    def _vigilar_logros(self):
+        """Mientras haya un juego abierto, pregunta a RetroAchievements por logros nuevos y los muestra en la app.
+        Los que ya tenías al abrir el juego no se anuncian. Al cerrar el último emulador hace una revisión más."""
+        vistos, ultima = None, False
+        while True:
+            try:
+                recientes = ra_client.logros_recientes(60)
+                if vistos is None:
+                    vistos = {l["id"] for l in recientes}
+                    self._actualizar_puntos_ra()
+                else:
+                    nuevos = ra_client.nuevos(recientes, vistos)
+                    for logro in nuevos:
+                        self._anunciar_logro(logro)
+                    if nuevos:
+                        self._actualizar_puntos_ra()
+            except Exception as e:
+                print(f"[LOGROS] No se pudieron revisar los logros: {e}")
+            if ultima:
+                return
+            time.sleep(self.INTERVALO_LOGROS)
+            with self._lock_juegos:
+                ultima = self._juegos_activos == 0
+
+    DURACION_AVISO = 4   # segundos que el aviso queda sobre el juego
+
+    def _anunciar_logro(self, logro):
+        """Si estás mirando la app, el aviso sale en ella; si no, sale encima del juego."""
+        try:
+            en_la_app = self.window.evaluate_js(f"mostrarLogro({json.dumps(logro)})")
+        except Exception:
+            en_la_app = False
+        if not en_la_app:
+            self._aviso_sobre_juego(logro)
+
+    def _aviso_sobre_juego(self, logro):
+        """Ventanita sin bordes, siempre encima y que no toma el foco: el juego sigue recibiendo tus controles."""
+        try:
+            pantalla = webview.screens[0]
+            ancho, alto = 380, 96
+            aviso = webview.create_window(
+                "Logro desbloqueado", html=html_aviso_logro(logro), width=ancho, height=alto,
+                x=pantalla.x + pantalla.width - ancho - 24, y=pantalla.y + 24, screen=pantalla,
+                frameless=True, easy_drag=False, on_top=True, focus=False, transparent=True, resizable=False, shadow=False)
+            time.sleep(self.DURACION_AVISO)
+            aviso.destroy()
+        except Exception as e:
+            print(f"[LOGROS] No se pudo mostrar el aviso sobre el juego: {e}")
+
+    def probar_aviso_logro(self, sobre_el_juego=False):
+        """Un aviso de ejemplo. Con sobre_el_juego=True sale en la ventanita que aparece encima de los juegos."""
+        logro = {"id": 0, "titulo": "Primer paso", "descripcion": "Así se ve un logro nuevo en la app.", "puntos": 10,
+                 "juego": "RetroEmulator", "hardcore": False, "badge_url": ""}
+        if sobre_el_juego:
+            threading.Thread(target=self._aviso_sobre_juego, args=(logro,), daemon=True).start()
+            return None
+        return logro
 
     # Se llama cuando un emulador se cierra (desde el hilo que lo vigila).
     def _al_cerrar_juego(self, titulo, consola, segundos):
@@ -782,10 +871,20 @@ class API:
 
     # Prueba las credenciales de RetroAchievements y las guarda si funcionan.
     def guardar_credenciales_ra(self, usuario, api_key):
-        return ra_client.guardar_credenciales(usuario, api_key)
+        res = ra_client.guardar_credenciales(usuario, api_key)
+        if res.get("exito"):
+            threading.Thread(target=self._actualizar_puntos_ra, daemon=True).start()
+        return res
+
+    def _actualizar_puntos_ra(self):
+        try:
+            self.cloud.guardar_puntos_ra(ra_client.puntos_totales())
+        except Exception as e:
+            print(f"[LOGROS] No se pudieron leer los puntos de RetroAchievements: {e}")
 
     # Desconecta la cuenta de RetroAchievements.
     def borrar_credenciales_ra(self):
+        self.cloud.guardar_puntos_ra(0)   # sin cuenta conectada los logros dejan de sumar al perfil
         return ra_client.borrar_credenciales()
 
     # --- LLAMADAS (la conexión de audio va por ui/llamadas.js; esto solo habla con Supabase) ---

@@ -292,3 +292,49 @@ def obtener_logros(identificativo, consola_id, titulo):
                      for ruta, etiqueta in ((datos.get("ImageTitle"), "Título (RetroAchievements)"), (datos.get("ImageIngame"), "En juego (RetroAchievements)"))
                      if isinstance(ruta, str) and ruta.startswith("/Images/")],
     }
+
+
+# ----------------------------------------------------------------------------
+# Avisos de logros nuevos mientras jugás
+# ----------------------------------------------------------------------------
+
+def logro_reciente(a):
+    """Un logro de API_GetUserRecentAchievements, listo para el aviso, o None si viene incompleto."""
+    try:
+        logro_id = int(a["AchievementID"])
+    except (TypeError, KeyError, ValueError):
+        return None
+    badge = str(a.get("BadgeName") or "")
+    return {"id": logro_id, "titulo": str(a.get("Title") or "")[:120], "descripcion": str(a.get("Description") or "")[:300],
+            "puntos": int(a.get("Points") or 0), "juego": str(a.get("GameTitle") or "")[:120],
+            "hardcore": bool(a.get("HardcoreMode")),
+            "badge_url": f"{MEDIA_URL}/Badge/{badge}.png" if re.fullmatch(r"\w+", badge) else ""}
+
+
+def logros_recientes(minutos=60):
+    """Logros que conseguiste en los últimos minutos. Sin cuenta conectada, ninguno."""
+    if not obtener_credenciales():
+        return []
+    datos = _pedir("API_GetUserRecentAchievements.php", u=obtener_credenciales()["usuario"], m=int(minutos))
+    return [l for l in map(logro_reciente, datos if isinstance(datos, list) else []) if l]
+
+
+def nuevos(recientes, vistos):
+    """Los que todavía no se anunciaron. Los marca como vistos."""
+    sin_anunciar = [l for l in recientes if l["id"] not in vistos]
+    vistos.update(l["id"] for l in recientes)
+    return sin_anunciar
+
+
+def puntos_totales():
+    """Puntos de RetroAchievements de la cuenta conectada (hardcore + softcore), o None si no se pudo leer."""
+    cred = obtener_credenciales()
+    if not cred:
+        return None
+    perfil = _pedir("API_GetUserProfile.php", u=cred["usuario"])
+    if not isinstance(perfil, dict):
+        return None
+    try:
+        return int(perfil.get("TotalPoints") or 0) + int(perfil.get("TotalSoftcorePoints") or 0)
+    except (TypeError, ValueError):
+        return None

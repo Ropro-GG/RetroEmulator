@@ -1085,7 +1085,7 @@ select.settings-input option { background-color: #141722; color: #FFFFFF; }
 .nivel-datos strong { color: #fff; }
 .nivel-datos small { color: #7d8590; font-size: 0.78em; }
 .nivel-datos .ach-bar { margin: 4px 0 0; }
-.vitrina-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.vitrina-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .vitrina-stat { display: flex; flex-direction: column; align-items: center; padding: 8px 4px; border-radius: 6px; background: rgba(11, 12, 16, 0.6); }
 .vitrina-stat strong { color: #66FCF1; font-size: 1.2em; }
 .vitrina-stat span { color: #7d8590; font-size: 0.72em; text-transform: uppercase; }
@@ -1855,3 +1855,24 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .catalogo-creditos { color: #7d8590; font-size: 0.72em; text-align: center; padding: 14px 0 4px; }
 .catalogo-creditos a { color: #45A29E; }
 
+
+
+/* Aviso de logro nuevo: arriba a la derecha, con los colores de la app */
+.avisos-logros { position: fixed; top: 82px; right: 20px; z-index: 2500; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.aviso-logro { pointer-events: auto; display: flex; align-items: center; gap: 12px; width: 340px; padding: 12px 14px; text-align: left; cursor: pointer;
+    background: linear-gradient(135deg, #1F2833, #0B0C10); border: 1px solid #45A29E; border-radius: 14px; color: inherit;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 14px rgba(102, 252, 241, 0.25); animation: aviso-entra 0.35s ease-out; }
+.aviso-logro.saliendo { animation: aviso-sale 0.3s ease-in forwards; }
+.aviso-logro-imagen { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0;
+    border-radius: 10px; background: #0B0C10; border: 1px solid #66FCF1; font-size: 1.6em; overflow: hidden; }
+.aviso-logro-imagen img { width: 100%; height: 100%; object-fit: cover; }
+.aviso-logro-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.aviso-logro-texto small { color: #66FCF1; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.06em; }
+.aviso-logro-texto strong { color: #fff; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aviso-logro-texto span { color: #7d8590; font-size: 0.78em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aviso-logro-puntos { flex-shrink: 0; padding: 4px 9px; border-radius: 999px; background: rgba(102, 252, 241, 0.15); color: #66FCF1; font-weight: bold; font-size: 0.85em; }
+@keyframes aviso-entra { from { opacity: 0; transform: translateX(40px); } }
+@keyframes aviso-sale { to { opacity: 0; transform: translateX(40px); } }
+@media (prefers-reduced-motion: reduce) {
+    .aviso-logro, .aviso-logro.saliendo { animation: none; }
+}
