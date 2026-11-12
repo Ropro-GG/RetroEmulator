@@ -722,3 +722,39 @@ create policy opiniones_select on public.opiniones_juegos for select to authenti
               and ((f.requester_id = auth.uid() and f.addressee_id = opiniones_juegos.user_id)
                 or (f.addressee_id = auth.uid() and f.requester_id = opiniones_juegos.user_id)))))
 );
+
+-- Tiempo de juego en el historial que ven los amigos. Solo se suma, como mucho un día por sesión.
+alter table public.juegos_jugados add column if not exists segundos integer not null default 0 check (segundos >= 0);
+grant update (segundos) on public.juegos_jugados to authenticated;
+create or replace function public.sumar_tiempo_jugado(p_clave text, p_segundos integer)
+returns void language sql security invoker set search_path = '' as $$
+    update public.juegos_jugados
+       set segundos = segundos + least(greatest(p_segundos, 0), 86400)
+     where user_id = auth.uid() and clave = p_clave;
+$$;
+revoke all on function public.sumar_tiempo_jugado(text, integer) from public, anon;
+grant execute on function public.sumar_tiempo_jugado(text, integer) to authenticated;
+
+-- Banner del perfil: un color o una imagen del espacio "banners" (una por persona, recortada a 1500x500 por la app).
+alter table public.profiles add column if not exists banner text
+    check (banner is null
+        or banner ~ '^#[0-9a-fA-F]{6}$'
+        or banner ~ '^https://uuuuwlmopgapjwivzmux\.supabase\.co/storage/v1/object/public/banners/banner_[0-9a-f-]{36}\.jpg(\?t=[0-9]+)?$');
+grant update (banner) on public.profiles to authenticated;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('banners', 'banners', true, 5242880, array['image/jpeg'])
+    on conflict (id) do nothing;
+drop policy if exists banners_subir on storage.objects;
+drop policy if exists banners_cambiar on storage.objects;
+drop policy if exists banners_borrar on storage.objects;
+drop policy if exists banners_ver on storage.objects;
+create policy banners_subir on storage.objects for insert to authenticated
+    with check (bucket_id = 'banners' and name = 'banner_' || auth.uid()::text || '.jpg');
+create policy banners_cambiar on storage.objects for update to authenticated
+    using (bucket_id = 'banners' and name = 'banner_' || auth.uid()::text || '.jpg')
+    with check (bucket_id = 'banners' and name = 'banner_' || auth.uid()::text || '.jpg');
+create policy banners_borrar on storage.objects for delete to authenticated
+    using (bucket_id = 'banners' and name = 'banner_' || auth.uid()::text || '.jpg');
+-- Reemplazar un archivo (upsert) también pide poder leerlo
+create policy banners_ver on storage.objects for select to authenticated
+    using (bucket_id = 'banners' and name = 'banner_' || auth.uid()::text || '.jpg');

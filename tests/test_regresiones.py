@@ -41,6 +41,34 @@ class Escaneo(unittest.TestCase):
             self.assertEqual([os.path.basename(r) for r in registrados], ["Juego.m3u"])
 
 
+class NivelDelPerfil(unittest.TestCase):
+    def test_nivel_insignias_y_mas_jugados(self):
+        from nucleo.cloud_client import resumen_perfil
+        vacio = resumen_perfil([], 0)
+        self.assertEqual((vacio["nivel"], vacio["insignias"], vacio["mas_jugados"]), (0, [], []))
+        filas = [{"titulo": "A", "veces": 3, "segundos": 7200}, {"titulo": "B", "veces": 10, "segundos": 0}, {"titulo": "C", "veces": 1, "segundos": 60}]
+        r = resumen_perfil(filas, 2)
+        # 3 juegos (300) + 14 sesiones (140) + 2 horas (40) + 2 opiniones (100) = 580 XP: nivel 2 (300), el 3 pide 600
+        self.assertEqual((r["xp"], r["nivel"], r["xp_nivel"], r["xp_siguiente"]), (580, 2, 300, 600))
+        self.assertEqual([(i["nombre"], i["grado"]) for i in r["insignias"]], [("Jugador", 1), ("Dedicación", 1), ("Constancia", 1), ("Crítico", 1)])
+        self.assertEqual([j["titulo"] for j in r["mas_jugados"]], ["A", "C", "B"])
+
+
+class BannerDelPerfil(unittest.TestCase):
+    def test_la_imagen_se_recorta_a_3_por_1_sin_metadatos(self):
+        from nucleo import imagenes
+        if not imagenes.disponible():
+            self.skipTest("Pillow no instalado")
+        from PIL import Image
+        import io
+        with tempfile.TemporaryDirectory() as carpeta:
+            ruta = os.path.join(carpeta, "foto.png")
+            Image.new("RGBA", (800, 900), (255, 0, 0, 128)).save(ruta)
+            datos = imagenes.preparar_banner(ruta)
+        img = Image.open(io.BytesIO(datos))
+        self.assertEqual((img.format, img.size, img.info.get("exif")), ("JPEG", (1500, 500), None))
+
+
 class ElegirVariante(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()

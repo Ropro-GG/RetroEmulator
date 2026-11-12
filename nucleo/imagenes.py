@@ -93,6 +93,17 @@ def preparar_para_chat(ruta):
     raise ErrorImagen("La imagen es demasiado pesada incluso después de achicarla.")
 
 
+BANNER = (1500, 500)
+
+
+def preparar_banner(ruta):
+    """Recorta al formato del banner (3:1), lo achica y lo guarda como JPG sin metadatos."""
+    img = ImageOps.fit(_abrir(ruta).convert("RGB"), BANNER, Image.LANCZOS)
+    salida = io.BytesIO()
+    img.save(salida, "JPEG", quality=85, optimize=True)
+    return salida.getvalue()
+
+
 # Recorta o ajusta, aplica la forma y agrega el contorno blanco opcional.
 def _construir_sticker(img, forma, ajuste, contorno):
     L = LADO_STICKER

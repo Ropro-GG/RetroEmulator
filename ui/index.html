@@ -95,7 +95,7 @@
                 <div class="biblio-cabecera">
                     <h3 class="biblio-titulo">Todos los juegos <span id="biblio-total"></span></h3>
                     <label class="biblio-orden">Ordenar por
-                        <select id="biblio-orden" onchange="filtrarCatalogo()">
+                        <select id="biblio-orden" onchange="window.pywebview.api.recordar('orden', this.value).catch(() => {}); filtrarCatalogo()">
                             <option value="alfabetico">Alfabético</option>
                             <option value="recientes">Jugados recientemente</option>
                             <option value="tiempo">Tiempo de juego</option>
@@ -285,6 +285,7 @@
                     <button class="btn-back" onclick="cerrarPerfilAjeno()">← Amigos</button>
 
                     <div class="profile-hero">
+                        <div id="pa-fondo" class="perfil-fondo"></div>
                         <img id="pa-avatar" class="pa-avatar" alt="">
                         <div class="pa-main">
                             <h2 id="pa-nombre"></h2>
@@ -293,6 +294,7 @@
                         </div>
                     </div>
 
+                    <div id="pa-vitrina" class="vitrina detail-card" style="display: none;"></div>
                     <div class="detail-card">
                         <h3>Biografía</h3>
                         <p id="pa-bio" class="pa-bio"></p>
@@ -397,6 +399,7 @@
     <!-- MODAL DE PERFIL DE USUARIO -->
     <div id="profile-modal" class="modal" style="display: none;">
         <div class="modal-content profile-card">
+            <div id="mi-fondo" class="perfil-fondo"></div>
             <span class="close-btn" onclick="cerrarPerfil()">&times;</span>
             
             <div class="profile-header">
@@ -405,6 +408,7 @@
                     <div class="avatar-buttons">
                         <button class="change-avatar-btn" onclick="subirNuevaFoto()">📷 Foto</button>
                         <button class="change-avatar-btn" onclick="cambiarNombreUsuario()">✏️ Nombre</button>
+                        <button class="change-avatar-btn" onclick="abrirEditorBanner()">🎨 Banner</button>
                     </div>
                 </div>
                 <div class="profile-info">
@@ -412,6 +416,20 @@
                     <span class="user-status">🟢 En línea</span>
                 </div>
             </div>
+
+            <div id="banner-editor" class="banner-editor" style="display: none;">
+                <h4 class="vitrina-titulo">Banner del perfil</h4>
+                <div id="banner-colores" class="banner-colores"></div>
+                <div class="banner-acciones">
+                    <label class="banner-propio">Otro color <input type="color" id="banner-color" value="#45a29e" onchange="guardarBannerColor(this.value)"></label>
+                    <button class="btn-secondary-sm" onclick="subirBannerImagen()">🖼️ Imagen de tu equipo</button>
+                    <button class="btn-secondary-sm" onclick="guardarBannerColor(null)">Quitar</button>
+                </div>
+                <p class="settings-help">La imagen se recorta al formato del banner (3:1). La ven todos los que abran tu perfil.</p>
+                <p id="banner-msg" class="settings-msg" role="status"></p>
+            </div>
+
+            <div id="mi-vitrina" class="vitrina"></div>
 
             <div class="profile-body">
                 <h3>Biografía</h3>

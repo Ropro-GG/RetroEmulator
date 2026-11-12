@@ -86,18 +86,19 @@ def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
 
 # Hilo por juego: avisa al iniciar, espera a que el emulador se cierre y guarda cuánto se jugó.
 def _vigilar(proceso, titulo, consola, consola_id, al_iniciar, al_cerrar):
-    usuario, inicio = db_local.usuario_id(), time.monotonic()   # la sesión es de quien abrió el juego
+    usuario, inicio, segundos = db_local.usuario_id(), time.monotonic(), 0   # la sesión es de quien abrió el juego
     try:
         db_local.sumar_tiempo(usuario, consola_id, titulo, 0)
         if al_iniciar:
             al_iniciar(titulo, consola)
         proceso.wait()
-        db_local.sumar_tiempo(usuario, consola_id, titulo, time.monotonic() - inicio)
+        segundos = time.monotonic() - inicio
+        db_local.sumar_tiempo(usuario, consola_id, titulo, segundos)
     except Exception as e:
         print(f"[LAUNCHER] Error vigilando el emulador: {e}")
     finally:
         if al_cerrar:
             try:
-                al_cerrar()
+                al_cerrar(titulo, consola, segundos)
             except Exception as e:
                 print(f"[LAUNCHER] Error al cerrar: {e}")

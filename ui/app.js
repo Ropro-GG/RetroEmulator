@@ -84,6 +84,10 @@ async function cargarPantallaPrincipal() {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'flex';
 
+    let recuerdos = {};
+    try { recuerdos = await window.pywebview.api.obtener_recuerdos() || {}; } catch (e) { /* se arranca en la biblioteca */ }
+    if (recuerdos.consola) consolaSeleccionada = recuerdos.consola === 'todas' ? 'todas' : Number(recuerdos.consola);
+    if (recuerdos.orden) document.getElementById('biblio-orden').value = recuerdos.orden;
     try {
         await cargarPerfilUsuario();
         await cargarConsolas();
@@ -91,6 +95,7 @@ async function cargarPantallaPrincipal() {
     } finally {
         mostrarPantallaCarga(false);
     }
+    if (recuerdos.vista && recuerdos.vista !== 'biblioteca') mostrarVista(recuerdos.vista);
     iniciarInsignias();
     llamadasIniciar();
     llavesIniciar();
@@ -133,8 +138,50 @@ async function cargarPerfilUsuario() {
 // Abre tu perfil.
 function abrirPerfil() {
     document.getElementById('profile-modal').style.display = 'flex';
+    document.getElementById('banner-editor').style.display = 'none';
+    pintarBanner(document.getElementById('mi-fondo'), perfilActual && perfilActual.banner);
     cargarMiActividad();
 }
+
+// Banner de un perfil: un color, una imagen o, si no eligió nada, el degradé de la app.
+function pintarBanner(el, banner) {
+    el.style.background = '';
+    if (banner && banner.startsWith('#')) el.style.background = `linear-gradient(135deg, ${banner}, #0B0C10)`;
+    else if (banner && banner.startsWith('https://')) el.style.background = `center / cover no-repeat url("${banner}")`;
+}
+
+const COLORES_BANNER = ['#45A29E', '#66FCF1', '#1F6FEB', '#8957E5', '#DB2777', '#E5534B', '#F0883E', '#D4A72C', '#2DA44E'];
+
+function abrirEditorBanner() {
+    const editor = document.getElementById('banner-editor');
+    editor.style.display = editor.style.display === 'none' ? '' : 'none';
+    const colores = document.getElementById('banner-colores');
+    if (colores.children.length) return;
+    COLORES_BANNER.forEach(color => {
+        const b = nodo('button', 'banner-muestra');
+        b.type = 'button';
+        b.style.background = color;
+        b.title = color;
+        b.setAttribute('aria-label', 'Banner de color ' + color);
+        b.onclick = () => guardarBannerColor(color);
+        colores.appendChild(b);
+    });
+}
+
+async function aplicarBanner(promesa) {
+    const msg = document.getElementById('banner-msg');
+    msg.textContent = 'Guardando…';
+    let res;
+    try { res = await promesa; } catch (e) { res = { exito: false, error: String(e) }; }
+    if (res && res.cancelado) { msg.textContent = ''; return; }
+    if (!res || !res.exito) { msg.textContent = (res && res.error) || 'No se pudo guardar el banner.'; return; }
+    if (perfilActual) perfilActual.banner = res.banner;
+    pintarBanner(document.getElementById('mi-fondo'), res.banner);
+    msg.textContent = '✔ Banner guardado';
+}
+
+const guardarBannerColor = color => aplicarBanner(window.pywebview.api.guardar_banner_color(color));
+const subirBannerImagen = () => aplicarBanner(window.pywebview.api.elegir_banner_imagen());
 
 // Cierra tu perfil.
 function cerrarPerfil() {
@@ -227,6 +274,7 @@ async function cargarConsolas() {
 // Filtra la biblioteca por la consola elegida.
 function seleccionarConsola(id, elemento) {
     consolaSeleccionada = id;
+    window.pywebview.api.recordar('consola', id).catch(() => {});
     volverABiblioteca();
     
     const items = document.querySelectorAll('#console-list li');
@@ -563,7 +611,7 @@ async function cerrarSesion() {
     volverABiblioteca();
     detenerInsignias();
     reiniciarEstadoUI();
-    mostrarVista('biblioteca');
+    mostrarVista('biblioteca', false);
     document.getElementById('app-screen').style.display = 'none';
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('login-pass').value = '';
@@ -1061,8 +1109,10 @@ function pintarAmigos(el, amigos, textoVacio) {
 let vistaActual = 'biblioteca';
 
 // Cambia de pestaña principal y detiene lo que deja de verse.
-function mostrarVista(nombre) {
+// "recordar" es false cuando la app vuelve sola a la biblioteca (al cerrar o abrir sesión): no es una elección tuya.
+function mostrarVista(nombre, recordar = true) {
     vistaActual = nombre;
+    if (recordar) window.pywebview.api.recordar('vista', nombre).catch(() => {});
     document.querySelectorAll('.view').forEach(v => {
         v.style.display = (v.id === 'view-' + nombre) ? '' : 'none';
     });
@@ -1554,6 +1604,8 @@ async function abrirPerfilAjeno(userId) {
     document.getElementById('pa-juegos').innerHTML = '';
     document.getElementById('pa-comun').innerHTML = '';
     document.getElementById('pa-deseados').innerHTML = '';
+    document.getElementById('pa-vitrina').style.display = 'none';
+    pintarBanner(document.getElementById('pa-fondo'), null);
     document.getElementById('pa-avatar').removeAttribute('src');
     await cargarPerfilAjeno();
 }
@@ -1593,6 +1645,7 @@ async function cargarPerfilAjeno() {
         avatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.username || '?')}&background=45A29E&color=fff`;
     };
     avatar.src = avatarDe(p);
+    pintarBanner(document.getElementById('pa-fondo'), p.banner);
     document.getElementById('pa-nombre').textContent = p.username || 'Usuario';
 
     const estado = document.getElementById('pa-estado');
@@ -1626,11 +1679,11 @@ async function cargarPerfilAjeno() {
         );
     } else if (res.relacion === 'amigos') {
         acciones.appendChild(boton('💬 Enviar mensaje', 'btn-primary-sm', () => irAlChat(p.user_id)));
-        acciones.appendChild(boton('Quitar de amigos', 'btn-secondary-sm', () => quitarAmistad(res.friendship_id, p.username)));
     }
     if (res.relacion !== 'yo') {
-        acciones.appendChild(boton('Bloquear', 'btn-secondary-sm', () => bloquearUsuario(p.user_id, p.username)));
-        acciones.appendChild(boton('Denunciar', 'btn-secondary-sm', () => abrirDenuncia(p.user_id, p.username)));
+        // Quitar, bloquear y denunciar van en el mismo menú ▾ que la lista de Amigos
+        acciones.appendChild(menuAmigo({ user_id: p.user_id, username: p.username,
+            friendship_id: res.relacion === 'amigos' ? res.friendship_id : null }));
     }
 }
 
@@ -1888,7 +1941,7 @@ function reiniciarEstadoUI() {
     document.getElementById('social-chat').style.display = 'none';
     reiniciarChat();
     reiniciarPublicaciones();
-    mostrarVista('biblioteca');
+    mostrarVista('biblioteca', false);
 }
 
 // ============================================================================
@@ -1924,6 +1977,45 @@ function filaJuego(titulo, subtitulo, identificativo) {
     return fila;
 }
 
+// Vitrina del perfil, como la de Steam: nivel, números, insignias y juegos más jugados.
+function pintarVitrina(cont, r) {
+    cont.innerHTML = '';
+    if (!r) return;
+    const nivel = nodo('div', 'vitrina-nivel');
+    const circulo = nodo('span', 'nivel-circulo', String(r.nivel));
+    circulo.setAttribute('aria-hidden', 'true');
+    const datos = nodo('div', 'nivel-datos');
+    const progreso = (r.xp - r.xp_nivel) * 100 / Math.max(1, r.xp_siguiente - r.xp_nivel);
+    const barra = nodo('div', 'ach-bar');
+    const relleno = nodo('div', 'ach-bar-fill');
+    relleno.style.width = progreso + '%';
+    barra.appendChild(relleno);
+    datos.append(nodo('strong', '', `Nivel ${r.nivel}`), nodo('small', '', `${r.xp} XP · faltan ${r.xp_siguiente - r.xp} para el nivel ${r.nivel + 1}`), barra);
+    nivel.append(circulo, datos);
+    const numeros = nodo('div', 'vitrina-stats');
+    [['Juegos', r.juegos], ['Horas', r.horas], ['Sesiones', r.sesiones], ['Opiniones', r.opiniones]].forEach(([e, v]) => {
+        const s = nodo('div', 'vitrina-stat');
+        s.append(nodo('strong', '', String(v)), nodo('span', '', e));
+        numeros.appendChild(s);
+    });
+    cont.append(nivel, numeros);
+    if (r.insignias.length) {
+        const lista = nodo('div', 'vitrina-insignias');
+        r.insignias.forEach(i => {
+            const b = nodo('div', `insignia insignia-${i.grado}`);
+            b.title = `${i.nombre}, grado ${i.grado}: ${i.detalle}`;
+            b.append(nodo('span', 'insignia-icono', i.icono), nodo('small', '', i.nombre));
+            lista.appendChild(b);
+        });
+        cont.append(nodo('h4', 'vitrina-titulo', 'Insignias'), lista);
+    }
+    if (r.mas_jugados.length) {
+        cont.appendChild(nodo('h4', 'vitrina-titulo', 'Juegos más jugados'));
+        r.mas_jugados.forEach(g => cont.appendChild(filaJuego(g.titulo,
+            [g.consola, formatearTiempo(g.segundos) || `${g.veces} ${g.veces === 1 ? 'vez' : 'veces'}`].filter(Boolean).join(' · '), g.identificativo)));
+    }
+}
+
 // Juegos recientes, en común y deseados de un amigo.
 function pintarJuegosPerfil(res) {
     const jugados = document.getElementById('pa-juegos');
@@ -1933,6 +2025,9 @@ function pintarJuegosPerfil(res) {
     comun.innerHTML = '';
     deseados.innerHTML = '';
 
+    const vitrina = document.getElementById('pa-vitrina');
+    pintarVitrina(vitrina, res.relacion === 'amigos' ? res.resumen : null);
+    vitrina.style.display = vitrina.children.length ? '' : 'none';
     if (res.relacion !== 'amigos') {
         jugados.appendChild(mensajeVacio('Solo los amigos pueden ver los juegos que jugó.'));
         comun.appendChild(mensajeVacio('Agregalo a tus amigos para ver qué juegos tienen en común.'));
@@ -1946,7 +2041,7 @@ function pintarJuegosPerfil(res) {
     }
     recientes.forEach(j => {
         const veces = `${j.veces} ${j.veces === 1 ? 'vez' : 'veces'}`;
-        jugados.appendChild(filaJuego(j.titulo, [j.consola, veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
+        jugados.appendChild(filaJuego(j.titulo, [j.consola, formatearTiempo(j.segundos) || veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
     });
 
     const enComun = res.en_comun || [];
@@ -2293,8 +2388,9 @@ async function cargarMiActividad() {
     }
     res.recientes.forEach(j => {
         const veces = `${j.veces} ${j.veces === 1 ? 'vez' : 'veces'}`;
-        recientes.appendChild(filaJuego(j.titulo, [j.consola, veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
+        recientes.appendChild(filaJuego(j.titulo, [j.consola, formatearTiempo(j.segundos) || veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
     });
+    pintarVitrina(document.getElementById('mi-vitrina'), res.resumen);
 
     if (res.deseados.length === 0) {
         deseados.appendChild(mensajeVacio('Tu lista está vacía. Podés agregar juegos en Social → Deseados.'));
@@ -4111,8 +4207,8 @@ function menuAmigo(u) {
 
         const menu = document.createElement('div');
         menu.className = 'amigo-menu';
+        if (u.friendship_id) menu.appendChild(itemMenuAmigo('Quitar de amigos', '', () => quitarAmistad(u.friendship_id, u.username)));
         menu.append(
-            itemMenuAmigo('Quitar de amigos', '', () => quitarAmistad(u.friendship_id, u.username)),
             itemMenuAmigo('Bloquear', '', () => bloquearUsuario(u.user_id, u.username)),
             itemMenuAmigo('Denunciar', 'peligro', () => abrirDenuncia(u.user_id, u.username)),
         );

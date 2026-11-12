@@ -4,6 +4,8 @@
 # para que la interfaz pueda mostrar el mensaje. Los permisos reales los aplica Supabase (RLS).
 import hashlib
 import os
+import re
+import time
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -35,6 +37,37 @@ def clave_juego(identificativo, titulo):
 
 
 # Cliente único de Supabase; recuerda el usuario con la sesión iniciada.
+
+# Insignias de actividad: (icono, nombre, qué se cuenta, umbrales de cada nivel)
+_INSIGNIAS = (
+    ("🎮", "Jugador", "juegos", (1, 10, 25, 50, 100)),
+    ("⏱️", "Dedicación", "horas", (1, 10, 50, 100, 500)),
+    ("🔁", "Constancia", "sesiones", (10, 50, 200, 500)),
+    ("💬", "Crítico", "opiniones", (1, 5, 25, 50)),
+)
+
+
+def resumen_perfil(filas, opiniones):
+    """Nivel, insignias y juegos más jugados a partir del historial (filas de juegos_jugados).
+    Cada juego da 100 XP, cada sesión 10, cada hora 20 y cada opinión 50. El nivel N pide 100 + 200 + ... + N*100 XP."""
+    juegos, sesiones = len(filas), sum(int(f.get("veces") or 0) for f in filas)
+    segundos = sum(int(f.get("segundos") or 0) for f in filas)
+    cuentas = {"juegos": juegos, "horas": segundos // 3600, "sesiones": sesiones, "opiniones": int(opiniones or 0)}
+    xp = juegos * 100 + sesiones * 10 + cuentas["horas"] * 20 + cuentas["opiniones"] * 50
+    nivel = 0
+    while xp >= 100 * (nivel + 1) * (nivel + 2) // 2:
+        nivel += 1
+    insignias = []
+    for icono, nombre, campo, umbrales in _INSIGNIAS:
+        alcanzados = [u for u in umbrales if cuentas[campo] >= u]
+        if alcanzados:
+            insignias.append({"icono": icono, "nombre": nombre, "grado": len(alcanzados), "detalle": f"{alcanzados[-1]}+ {campo}"})
+    mas_jugados = sorted(filas, key=lambda f: (int(f.get("segundos") or 0), int(f.get("veces") or 0)), reverse=True)[:3]
+    return {**cuentas, "segundos": segundos, "xp": xp, "nivel": nivel,
+            "xp_nivel": 100 * nivel * (nivel + 1) // 2, "xp_siguiente": 100 * (nivel + 1) * (nivel + 2) // 2, "insignias": insignias,
+            "mas_jugados": [{"titulo": f["titulo"], "consola": f.get("consola", ""), "identificativo": f.get("identificativo", ""),
+                             "segundos": int(f.get("segundos") or 0), "veces": int(f.get("veces") or 0)} for f in mas_jugados]}
+
 class CloudClient:
     # Conecta al crear el objeto; la sesión se abre más tarde.
     def __init__(self):
@@ -390,7 +423,7 @@ class CloudClient:
             return error
         try:
             yo = self._yo()
-            res = self.client.table("profiles").select("id, username, bio, avatar_url") \
+            res = self.client.table("profiles").select("id, username, bio, avatar_url, banner") \
                 .eq("id", user_id).execute()
             if not res.data or user_id in self._ids_con_bloqueo():
                 return {"exito": False, "error": "No se encontró ese usuario."}
@@ -411,7 +444,7 @@ class CloudClient:
 
             jugando = self._presencias([user_id]).get(user_id) if relacion == "amigos" else None
             en_llamada = relacion == "amigos" and user_id in self._en_llamada([user_id])
-            recientes, en_comun = self._historial_con_amigo(yo, user_id) if relacion == "amigos" else ([], [])
+            recientes, en_comun, resumen = self._historial_con_amigo(yo, user_id) if relacion == "amigos" else ([], [], None)
             deseados = self.obtener_deseados_de(user_id) if relacion == "amigos" else []
             return {
                 "exito": True,
@@ -420,6 +453,7 @@ class CloudClient:
                     "username": p.get("username") or "Usuario",
                     "bio": p.get("bio") or "",
                     "avatar_url": p.get("avatar_url") or "",
+                    "banner": p.get("banner") or "",
                 },
                 "relacion": relacion,
                 "friendship_id": fid,
@@ -427,6 +461,7 @@ class CloudClient:
                 "en_llamada": en_llamada,
                 "recientes": recientes,
                 "en_comun": en_comun,
+                "resumen": resumen,
                 "deseados": deseados,
             }
         except Exception as e:
@@ -1026,6 +1061,22 @@ class CloudClient:
         except Exception as e:
             print(f"[SOCIAL] No se pudo registrar la partida: {self._error_social(e)}")
 
+    def sumar_tiempo(self, identificativo, titulo, segundos):
+        """Suma la sesión al tiempo de juego que ven tus amigos. La fila ya existe: se crea al empezar a jugar."""
+        if not self.client or not self.usuario_actual or segundos < 1:
+            return
+        try:
+            self.client.rpc("sumar_tiempo_jugado", {"p_clave": clave_juego(identificativo, titulo), "p_segundos": int(segundos)}).execute()
+        except Exception as e:
+            print(f"[SOCIAL] No se pudo guardar el tiempo de juego: {self._error_social(e)}")
+
+    def _cantidad_opiniones(self, user_id):
+        """Opiniones de esa persona que podés ver (todas, si sos vos)."""
+        try:
+            return self.client.table("opiniones_juegos").select("clave", count="exact").eq("user_id", user_id).limit(1).execute().count or 0
+        except Exception:
+            return 0
+
     def borrar_historial(self):
         """Borra de la nube el historial propio (al desactivar la opción de privacidad)."""
         if not self.client or not self.usuario_actual:
@@ -1040,44 +1091,46 @@ class CloudClient:
         las filas propias y las de amigos, y las de un amigo solo si comparte su historial."""
         try:
             res = self.client.table("juegos_jugados") \
-                .select("user_id, clave, titulo, consola, identificativo, veces, ultima_vez") \
+                .select("user_id, clave, titulo, consola, identificativo, veces, ultima_vez, segundos") \
                 .in_("user_id", [yo, amigo]).execute()
         except Exception as e:
             print(f"[SOCIAL] Sin historial disponible: {self._error_social(e)}")
-            return [], []
+            return [], [], resumen_perfil([], 0)
         filas = res.data or []
         mios = {r["clave"] for r in filas if r["user_id"] == yo}
         suyos = sorted((r for r in filas if r["user_id"] == amigo),
                        key=lambda r: r.get("ultima_vez") or "", reverse=True)
         recientes = [{"titulo": r["titulo"], "consola": r.get("consola", ""),
                       "identificativo": r.get("identificativo", ""),
-                      "veces": r.get("veces", 1), "ultima_vez": r.get("ultima_vez")} for r in suyos[:8]]
+                      "veces": r.get("veces", 1), "ultima_vez": r.get("ultima_vez"), "segundos": r.get("segundos") or 0} for r in suyos[:8]]
         en_comun = sorted(({"titulo": r["titulo"], "consola": r.get("consola", ""),
                             "identificativo": r.get("identificativo", "")}
                            for r in suyos if r["clave"] in mios), key=lambda j: j["titulo"].lower())
-        return recientes, en_comun
+        return recientes, en_comun, resumen_perfil(suyos, self._cantidad_opiniones(amigo))
 
     def obtener_mi_actividad(self, limite=6):
         """Mis juegos jugados recientemente y mi lista de deseados (para mi perfil)."""
         error = self._requiere_sesion()
         if error:
             return error
-        recientes, deseados = [], []
+        recientes, deseados, filas = [], [], []
         try:
             res = self.client.table("juegos_jugados") \
-                .select("titulo, consola, identificativo, veces, ultima_vez") \
+                .select("titulo, consola, identificativo, veces, ultima_vez, segundos") \
                 .eq("user_id", self._yo()).execute()
             filas = sorted(res.data or [], key=lambda r: r.get("ultima_vez") or "", reverse=True)
             recientes = [{"titulo": r["titulo"], "consola": r.get("consola", ""),
                           "identificativo": r.get("identificativo", ""),
-                          "veces": r.get("veces", 1), "ultima_vez": r.get("ultima_vez")} for r in filas[:limite]]
+                          "veces": r.get("veces", 1), "ultima_vez": r.get("ultima_vez"), "segundos": r.get("segundos") or 0}
+                         for r in filas[:limite]]
         except Exception as e:
             print(f"[SOCIAL] Sin historial propio: {self._error_social(e)}")
         try:
             deseados = self._lista_deseados_de(self._yo())[:limite]
         except Exception as e:
             print(f"[SOCIAL] Sin lista de deseados propia: {self._error_social(e)}")
-        return {"exito": True, "recientes": recientes, "deseados": deseados}
+        return {"exito": True, "recientes": recientes, "deseados": deseados,
+                "resumen": resumen_perfil(filas, self._cantidad_opiniones(self._yo()))}
 
     def obtener_amigos_que_jugaron(self, identificativo, titulo):
         """Amigos que ya jugaron este juego (con cuántas veces y cuándo fue la última)."""
@@ -1617,6 +1670,36 @@ class CloudClient:
             return {"exito": False, "error": str(e)}
 
     # Sube tu foto; ?t=... evita que se siga mostrando la versión anterior en caché.
+    def guardar_banner(self, banner):
+        """Un color (#rrggbb) o None para volver al banner de la app. La base también lo comprueba."""
+        if not self.client or not self.usuario_actual:
+            return {"exito": False, "error": "Debes iniciar sesión."}
+        if banner is not None and not re.fullmatch(r"#[0-9a-fA-F]{6}", str(banner)):
+            return {"exito": False, "error": "Color no válido."}
+        try:
+            self.client.table("profiles").update({"banner": banner}).eq("id", self._yo()).execute()
+            return {"exito": True, "banner": banner}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def subir_banner(self, ruta_imagen_local):
+        """Recorta la imagen a 1500x500, la sube y la deja como banner."""
+        if not self.client or not self.usuario_actual:
+            return {"exito": False, "error": "Debes iniciar sesión."}
+        try:
+            datos = imagenes.preparar_banner(ruta_imagen_local)
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        try:
+            archivo = f"banner_{self._yo()}.jpg"
+            self.client.storage.from_("banners").upload(
+                path=archivo, file=datos, file_options={"content-type": "image/jpeg", "upsert": "true"})
+            url = f"{self.client.storage.from_('banners').get_public_url(archivo).split('?')[0]}?t={int(time.time())}"   # ?t= evita ver el anterior guardado
+            self.client.table("profiles").update({"banner": url}).eq("id", self._yo()).execute()
+            return {"exito": True, "banner": url}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
     def subir_avatar(self, ruta_imagen_local):
         if not self.client or not self.usuario_actual:
             return {"exito": False, "error": "Debes iniciar sesión."}

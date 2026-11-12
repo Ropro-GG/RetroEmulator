@@ -162,6 +162,19 @@ class API:
     def cambiar_username(self, nuevo_username):
         return self.cloud.cambiar_username(nuevo_username)
 
+    def guardar_banner_color(self, color):
+        return self.cloud.guardar_banner(color or None)
+
+    def elegir_banner_imagen(self):
+        """Elegir una imagen de tu equipo para el banner del perfil."""
+        if not self.window:
+            return {"exito": False, "error": "Ventana no inicializada."}
+        elegido = self.window.create_file_dialog(FileDialog.OPEN, allow_multiple=False,
+                                                 file_types=('Imágenes (*.png;*.jpg;*.jpeg;*.webp)', 'Todos los archivos (*.*)'))
+        if not elegido:
+            return {"exito": False, "cancelado": True}
+        return self.cloud.subir_banner(elegido[0])
+
     def seleccionar_foto_avatar(self):
         """Abre el selector nativo usando FileDialog.OPEN sin advertencias."""
         if not self.window:
@@ -212,13 +225,15 @@ class API:
             self.cloud.registrar_jugada(identificativo, titulo, consola)
 
     # Se llama cuando un emulador se cierra (desde el hilo que lo vigila).
-    def _al_cerrar_juego(self):
+    def _al_cerrar_juego(self, titulo, consola, segundos):
         # Solo se borra el aviso cuando ya no queda ningún emulador abierto
         with self._lock_juegos:
             self._juegos_activos = max(0, self._juegos_activos - 1)
             quedan = self._juegos_activos
         if quedan == 0:
             self.cloud.limpiar_jugando()
+        if db_local.obtener_config_usuario("compartir_historial", "1") == "1":
+            self.cloud.sumar_tiempo(db_local.obtener_identificativo_por_consola(consola), titulo, segundos)
         try:   # el tiempo ya se guardó: la biblioteca muestra la sesión sin tener que recargarla
             if self.window:
                 self.window.evaluate_js("alCerrarJuego()")
@@ -662,6 +677,18 @@ class API:
                    "ruta_rom": f"coleccion:{identificativo}:{titulo}"}
         threading.Thread(target=boxart.descargar_lote, args=([trabajo], db_local.actualizar_portada), daemon=True).start()
         return {"exito": True, "id": juego_id}
+
+    # Dónde quedaste: vista, consola y orden de la biblioteca. Solo estas claves, para no tocar otros ajustes.
+    RECUERDOS = {"vista": ("biblioteca", "social", "noticias", "catalogo"), "consola": None, "orden": ("alfabetico", "recientes", "tiempo")}
+
+    def obtener_recuerdos(self):
+        return {clave: db_local.obtener_config_usuario("recuerdo_" + clave) for clave in self.RECUERDOS}
+
+    def recordar(self, clave, valor):
+        permitidos = self.RECUERDOS.get(clave, ())
+        valor = str(valor)[:20]
+        if clave in self.RECUERDOS and (permitidos is None or valor in permitidos):
+            db_local.guardar_config_usuario("recuerdo_" + clave, valor)
 
     def catalogo_opiniones(self, identificativo, titulo):
         return self.cloud.obtener_opiniones(identificativo, titulo)
