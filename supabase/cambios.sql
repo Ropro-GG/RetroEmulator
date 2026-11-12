@@ -822,3 +822,19 @@ returns json language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function public.resumen_comunidad(text) from public, anon;
 grant execute on function public.resumen_comunidad(text) to authenticated;
+
+-- Editar guías (2026-11-12): solo título y texto, por su autor. listar_publicaciones devuelve además editado_en.
+alter table public.publicaciones add column if not exists editado_en timestamptz;
+create or replace function public.editar_guia(p_id bigint, p_titulo text, p_texto text)
+returns boolean language plpgsql security definer set search_path = '' as $$
+begin
+    if auth.uid() is null then raise exception 'Debes iniciar sesion'; end if;
+    update public.publicaciones
+       set titulo = btrim(p_titulo), texto = btrim(p_texto), editado_en = now()
+     where id = p_id and autor_id = auth.uid() and tipo = 'guia';
+    return found;
+end;
+$$;
+revoke all on function public.editar_guia(bigint, text, text) from public, anon;
+grant execute on function public.editar_guia(bigint, text, text) to authenticated;
+-- (listar_publicaciones se recreó igual que arriba, con "editado_en timestamptz" al final de la tabla devuelta y "p.editado_en" al final del select)

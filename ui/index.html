@@ -409,15 +409,15 @@
                         <div class="posts-pie"><button id="comunidad-guias-mas" class="btn-secondary-sm" style="display: none;" onclick="cargarComunidad('guia', false)">Ver más</button></div>
                     </div>
                     <div id="guia-form" class="detail-card guia-form" style="display: none;">
-                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-pencil"/></svg> Nueva guía</h3>
+                        <h3 id="guia-form-titulo"></h3>
                         <input id="guia-titulo" class="settings-input" type="text" maxlength="120" placeholder="Título (por ejemplo: Cómo conseguir todos los secretos)">
                         <textarea id="guia-texto" maxlength="20000" placeholder="Escribí tu guía..."></textarea>
                         <p class="settings-help">Formato: una línea que empieza con <code>## </code> es un subtítulo; con <code>- </code>, un punto de una lista; y <code>**así**</code> queda en negrita.</p>
-                        <div id="guia-imagenes" class="guia-imagenes"></div>
+                        <div id="guia-imagenes-zona"><div id="guia-imagenes" class="guia-imagenes"></div></div>
                         <div class="comunidad-escribir-pie">
-                            <button class="btn-secondary-sm" onclick="elegirImagenesGuia()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg> Imágenes (hasta 5)</button>
+                            <button id="guia-boton-imagenes" class="btn-secondary-sm" onclick="elegirImagenesGuia()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg> Imágenes (hasta 5)</button>
                             <button class="btn-secondary-sm" onclick="cerrarFormularioGuia()">Cancelar</button>
-                            <button class="btn-primary-sm" onclick="publicarGuia()">Publicar guía</button>
+                            <button id="guia-publicar" class="btn-primary-sm" onclick="publicarGuia()">Publicar guía</button>
                         </div>
                         <p id="guia-msg" class="settings-msg" role="status"></p>
                     </div>

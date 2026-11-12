@@ -566,6 +566,9 @@ class API:
         self._imagenes_guia = []
         return {"exito": True}
 
+    def editar_guia(self, pub_id, titulo, texto):
+        return self.cloud.editar_guia(pub_id, titulo, texto)
+
     def crear_guia(self, identificativo, titulo_juego, titulo, texto):
         problema = self.cloud.validar_guia(titulo, texto, len(self._imagenes_guia))
         if problema:
@@ -650,8 +653,8 @@ class API:
         return self.cloud.obtener_bloqueados()
 
     # Registra una denuncia, que se revisa en el panel de Supabase.
-    def denunciar_usuario(self, user_id, motivo, detalle="", mensajes_ids=None):
-        return self.cloud.denunciar_usuario(user_id, motivo, detalle, mensajes_ids)
+    def denunciar_usuario(self, user_id, motivo, detalle="", mensajes_ids=None, publicacion_id=None):
+        return self.cloud.denunciar_usuario(user_id, motivo, detalle, mensajes_ids, publicacion_id)
 
     # Mensajes con esa persona que se pueden adjuntar a una denuncia.
     def mensajes_para_denunciar(self, user_id):

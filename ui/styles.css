@@ -1997,3 +1997,6 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .guia-galeria { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 12px; }
 .guia-galeria img { max-height: 180px; max-width: 100%; border-radius: 6px; cursor: zoom-in; }
 .guia-form code { color: #66FCF1; }
+
+.guia-lector-arriba { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.post-denunciar:hover { color: #ff6b6b; border-color: #ff6b6b; }

@@ -98,6 +98,23 @@ class GuiasDeLaComunidad(unittest.TestCase):
         self.assertIn("5", validar(yo, "Título", "Texto", 6))
 
 
+class DenunciarPublicaciones(unittest.TestCase):
+    def test_se_adjunta_la_publicacion_solo_si_es_de_la_persona_denunciada(self):
+        from nucleo.cloud_client import CloudClient
+        yo = CloudClient.__new__(CloudClient)
+        fila = {"id": 5, "autor_id": "otro", "texto": "Paso 1", "tipo": "guia", "titulo": "Mi guía", "juego": "Super Metroid",
+                "imagenes": ["otro/a.png"], "tipo_media": None, "media": None, "creado_en": "2026-11-12"}
+        with mock.patch.object(CloudClient, "_consultar_publicaciones", return_value=[fila]), \
+             mock.patch.object(CloudClient, "_yo", return_value="yo"), \
+             mock.patch.object(CloudClient, "_url_imagen", side_effect=lambda r: "https://x/" + r), \
+             mock.patch.object(CloudClient, "_copiar_imagen_publica", return_value="yo/" + "a" * 32 + ".png"):
+            self.assertEqual(yo._adjuntos_de_publicacion("alguien-mas", 5), [])
+            adjuntos = yo._adjuntos_de_publicacion("otro", 5)
+        self.assertEqual([a["tipo"] for a in adjuntos], ["guia", "imagen"])
+        self.assertIn('Guía en Comunidad de "Super Metroid": Mi guía', adjuntos[0]["contenido"])
+        self.assertTrue(adjuntos[1]["archivo"].startswith("yo/"))
+
+
 class BannerDelPerfil(unittest.TestCase):
     def test_la_imagen_se_recorta_a_3_por_1_sin_metadatos(self):
         from nucleo import imagenes

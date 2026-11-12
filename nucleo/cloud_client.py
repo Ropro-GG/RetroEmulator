@@ -610,6 +610,41 @@ class CloudClient:
             path=copia, file=datos, file_options={"content-type": mime, "upsert": "false"})
         return copia
 
+    def _copiar_imagen_publica(self, url):
+        """Copia de una imagen de Publicaciones para la denuncia: la prueba queda aunque el autor la borre."""
+        respuesta = httpx.get(url, timeout=15)
+        respuesta.raise_for_status()
+        datos = respuesta.content
+        mime = imagenes.tipo_mime(datos) if len(datos) <= imagenes.MAX_SUBIDA else None
+        if not mime:
+            return None
+        copia = f"{self._yo()}/{uuid.uuid4().hex}.{mime.split('/')[1].replace('jpeg', 'jpg')}"
+        self.client.storage.from_(self.BUCKET_DENUNCIAS).upload(
+            path=copia, file=datos, file_options={"content-type": mime, "upsert": "false"})
+        return copia
+
+    def _adjuntos_de_publicacion(self, user_id, pub_id):
+        """La publicación o guía denunciada, con copia de sus imágenes. Solo si es de la persona denunciada."""
+        filas = self._consultar_publicaciones(pub_id=pub_id)
+        if not filas or filas[0]["autor_id"] != user_id:
+            return []
+        p = self._publicacion_para_ui(filas[0])
+        lugar = f'Comunidad de "{p["juego"]}"' if p["juego"] else "Social"
+        texto = (f'{"Guía" if p["tipo"] == "guia" else "Publicación"} en {lugar}' + (f': {p["titulo"]}' if p["titulo"] else "")
+                 + "\n\n" + p["texto"] + (f"\n\nGIF: {p['media_url']}" if p["tipo_media"] == "gif" else ""))
+        adjuntos = [{"autor": "denunciado", "tipo": "guia" if p["tipo"] == "guia" else "publicacion", "contenido": texto[:25000],
+                     "archivo": None, "creado_en": p["creado_en"], "llave_no_confirmada": False}]
+        urls = ([p["media_url"]] if p["tipo_media"] == "imagen" else []) + p["imagenes"]
+        for url in urls[:self.MAX_IMAGENES_GUIA + 1]:
+            try:
+                copia = self._copiar_imagen_publica(url)
+            except Exception as e:
+                print(f"[DENUNCIAS] No se pudo copiar una imagen: {e}")
+                copia = None
+            adjuntos.append({"autor": "denunciado", "tipo": "imagen", "contenido": None if copia else url,
+                             "archivo": copia, "creado_en": p["creado_en"], "llave_no_confirmada": False})
+        return adjuntos
+
     def _adjuntos_de_denuncia(self, user_id, ids):
         """Copia legible de los mensajes elegidos, y de sus imágenes y stickers."""
         filas = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
@@ -629,7 +664,7 @@ class CloudClient:
         return adjuntos
 
     # Registra una denuncia para revisarla en el panel de Supabase. No avisa a la persona denunciada.
-    def denunciar_usuario(self, user_id, motivo, detalle="", mensajes_ids=None):
+    def denunciar_usuario(self, user_id, motivo, detalle="", mensajes_ids=None, publicacion_id=None):
         error = self._requiere_sesion()
         if error:
             return error
@@ -645,6 +680,8 @@ class CloudClient:
             return {"exito": False, "error": f"Podés adjuntar hasta {self.LIMITE_ADJUNTOS_DENUNCIA} mensajes."}
         try:
             adjuntos = self._adjuntos_de_denuncia(user_id, mensajes_ids) if mensajes_ids else []
+            if publicacion_id:
+                adjuntos += self._adjuntos_de_publicacion(user_id, publicacion_id)
             nueva = self.client.rpc("denunciar_usuario", {
                 "p_usuario": user_id, "p_motivo": motivo, "p_detalle": detalle, "p_adjuntos": adjuntos}).execute().data
             return {"exito": True, "ya_existia": nueva is False}
@@ -1410,6 +1447,7 @@ class CloudClient:
             "titulo": f.get("titulo") or "",
             "juego": f.get("juego") or "",
             "imagenes": [u for u in map(self._url_imagen, f.get("imagenes") or []) if u],
+            "editado_en": f.get("editado_en"),
         }
 
     # Llama a la función listar_publicaciones de Supabase.
@@ -1540,6 +1578,21 @@ class CloudClient:
                     self.client.storage.from_(self.BUCKET_PUBLICACIONES).remove(subidas)
                 except Exception:
                     pass
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def editar_guia(self, pub_id, titulo, texto):
+        """Cambia el título y el texto de una guía propia. Las imágenes quedan como estaban."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        problema = self.validar_guia(titulo, texto, 0)
+        if problema:
+            return {"exito": False, "error": problema}
+        try:
+            if not self.client.rpc("editar_guia", {"p_id": int(pub_id), "p_titulo": titulo, "p_texto": texto}).execute().data:
+                return {"exito": False, "error": "No se encontró la guía (o no es tuya)."}
+            return self._devolver_publicacion(pub_id)
+        except Exception as e:
             return {"exito": False, "error": self._error_publicaciones(e)}
 
     def resumen_comunidad(self, identificativo, titulo):

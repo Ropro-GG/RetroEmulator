@@ -1469,9 +1469,11 @@ async function bloquearUsuario(userId, nombre) {
 let denunciaActual = null;   // { userId, nombre }
 
 // Abre el formulario de denuncia, siempre vacío.
-function abrirDenuncia(userId, nombre) {
-    denunciaActual = { userId, nombre };
-    document.getElementById('denuncia-titulo').textContent = `Denunciar a ${nombre}`;
+// Con "publicacion", la denuncia lleva adjunta esa publicación o guía (texto y copia de sus imágenes).
+function abrirDenuncia(userId, nombre, publicacion = null) {
+    denunciaActual = { userId, nombre, publicacion };
+    document.getElementById('denuncia-titulo').textContent = publicacion
+        ? `Denunciar ${publicacion.tipo === 'guia' ? 'la guía' : 'la publicación'} de ${nombre}` : `Denunciar a ${nombre}`;
     document.getElementById('denuncia-motivo').value = '';
     document.getElementById('denuncia-detalle').value = '';
     document.getElementById('denuncia-bloquear').checked = false;
@@ -1479,7 +1481,14 @@ function abrirDenuncia(userId, nombre) {
     document.getElementById('denuncia-enviar').disabled = false;
     document.getElementById('denuncia-modal').style.display = 'flex';
     document.getElementById('denuncia-motivo').focus();
-    cargarMensajesDenuncia(userId);
+    if (publicacion) {   // no hace falta elegir mensajes: va la publicación
+        const seccion = document.getElementById('denuncia-adjuntos');
+        seccion.style.display = 'none';
+        document.getElementById('denuncia-mensajes').replaceChildren();
+        document.getElementById('denuncia-motivo').value = 'contenido';
+    } else {
+        cargarMensajesDenuncia(userId);
+    }
 }
 
 // Lista los mensajes que se pueden adjuntar. Si no hay, la sección no aparece.
@@ -1533,7 +1542,8 @@ async function confirmarDenuncia() {
     let res;
     try {
         const ids = [...document.querySelectorAll('#denuncia-mensajes input:checked')].map(m => Number(m.value));
-        res = await window.pywebview.api.denunciar_usuario(userId, motivo, document.getElementById('denuncia-detalle').value, ids);
+        res = await window.pywebview.api.denunciar_usuario(userId, motivo, document.getElementById('denuncia-detalle').value, ids,
+            denunciaActual.publicacion ? denunciaActual.publicacion.id : null);
     } catch (e) {
         res = { exito: false, error: String(e) };
     }
@@ -3780,7 +3790,7 @@ function crearTarjetaPost(p) {
     avatar.onerror = () => { avatar.style.visibility = 'hidden'; };
     const info = nodo('div', 'post-cab-info');
     const autor = nodo('span', 'post-autor', p.username);
-    const fecha = nodo('span', 'post-fecha', fechaPublicacion(p.creado_en));
+    const fecha = nodo('span', 'post-fecha', fechaPublicacion(p.creado_en) + (p.editado_en ? ' · editada' : ''));
     info.append(autor, fecha);
     const irAlPerfil = () => (p.mia ? abrirPerfil() : irAPerfilAmigo(p.autor_id));
     avatar.onclick = autor.onclick = irAlPerfil;
@@ -3790,6 +3800,12 @@ function crearTarjetaPost(p) {
         borrar.title = 'Eliminar publicación';
         borrar.onclick = () => eliminarPost(p, tarjeta);
         cab.appendChild(borrar);
+    } else {
+        const denunciar = nodo('button', 'post-borrar post-denunciar', [icono('flag')]);
+        denunciar.title = p.tipo === 'guia' ? 'Denunciar esta guía' : 'Denunciar esta publicación';
+        denunciar.setAttribute('aria-label', denunciar.title);
+        denunciar.onclick = () => abrirDenuncia(p.autor_id, p.username, p);
+        cab.appendChild(denunciar);
     }
     tarjeta.appendChild(cab);
 
@@ -5212,6 +5228,7 @@ function abrirComunidad(j) {
     });
     ['comunidad-texto', 'guia-titulo', 'guia-texto'].forEach(id => { document.getElementById(id).value = ''; });
     quitarImagenComunidad();
+    guiaEditando = null;   // una edición a medias de otra comunidad no se retoma
     cerrarFormularioGuia();
     mostrarVista('comunidad', false);
     // La comunidad no tiene botón arriba: queda marcada la sección desde la que entraste
@@ -5364,7 +5381,10 @@ function abrirGuia(p) {
         });
         contenido.after(galeria);
     }
-    lector.replaceChildren(boton([icono('arrow-left'), ' Todas las guías'], 'btn-back', async () => volverAGuias()), tarjeta);
+    const arriba = nodo('div', 'guia-lector-arriba');
+    arriba.appendChild(boton([icono('arrow-left'), ' Todas las guías'], 'btn-back', async () => volverAGuias()));
+    if (p.mia) arriba.appendChild(boton([icono('pencil'), ' Editar'], 'btn-secondary-sm', async () => abrirFormularioGuia(p)));
+    lector.replaceChildren(arriba, tarjeta);
     document.getElementById('guias-inicio').style.display = 'none';
     lector.style.display = '';
     document.getElementById('view-comunidad').scrollTop = 0;
@@ -5408,15 +5428,36 @@ function contenidoGuia(texto) {
     return cont;
 }
 
-function abrirFormularioGuia() {
+let guiaEditando = null;   // la guía que se está editando, o null si es una nueva
+
+// Sin argumento, una guía nueva; con una guía propia, la edita (título y texto: las imágenes no cambian).
+function abrirFormularioGuia(guia = null) {
+    guiaEditando = guia;
     document.getElementById('guias-inicio').style.display = 'none';
     document.getElementById('guia-lector').style.display = 'none';
     document.getElementById('guia-form').style.display = '';
     document.getElementById('guia-msg').textContent = '';
+    document.getElementById('guia-form-titulo').replaceChildren(icono('pencil'), guia ? ' Editar guía' : ' Nueva guía');
+    document.getElementById('guia-publicar').textContent = guia ? 'Guardar cambios' : 'Publicar guía';
+    document.getElementById('guia-imagenes-zona').style.display = guia ? 'none' : '';
+    document.getElementById('guia-boton-imagenes').style.display = guia ? 'none' : '';
+    if (guia) {
+        document.getElementById('guia-titulo').value = guia.titulo;
+        document.getElementById('guia-texto').value = guia.texto;
+    }
     document.getElementById('guia-titulo').focus();
 }
 
 function cerrarFormularioGuia() {
+    if (guiaEditando) {   // al cancelar una edición se vuelve a leer la guía
+        const guia = guiaEditando;
+        guiaEditando = null;
+        document.getElementById('guia-form').style.display = 'none';
+        document.getElementById('guia-titulo').value = '';
+        document.getElementById('guia-texto').value = '';
+        abrirGuia(guia);
+        return;
+    }
     document.getElementById('guia-form').style.display = 'none';
     document.getElementById('guias-inicio').style.display = '';
     document.getElementById('guia-imagenes').innerHTML = '';
@@ -5455,12 +5496,15 @@ async function publicarGuia() {
     const j = comunidadJuego;
     const msg = document.getElementById('guia-msg');
     msg.textContent = 'Publicando…';
+    const titulo = document.getElementById('guia-titulo').value, texto = document.getElementById('guia-texto').value;
     let r;
     try {
-        r = await window.pywebview.api.crear_guia(j.identificativo, j.titulo,
-            document.getElementById('guia-titulo').value, document.getElementById('guia-texto').value);
+        r = guiaEditando
+            ? await window.pywebview.api.editar_guia(guiaEditando.id, titulo, texto)
+            : await window.pywebview.api.crear_guia(j.identificativo, j.titulo, titulo, texto);
     } catch (e) { r = null; }
-    if (!r || !r.exito) { msg.textContent = (r && r.error) || 'No se pudo publicar la guía.'; return; }
+    if (!r || !r.exito) { msg.textContent = (r && r.error) || 'No se pudo guardar la guía.'; return; }
+    guiaEditando = null;
     document.getElementById('guia-titulo').value = '';
     document.getElementById('guia-texto').value = '';
     document.getElementById('guia-imagenes').innerHTML = '';
