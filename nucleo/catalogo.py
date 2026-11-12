@@ -38,8 +38,9 @@ _NO_ES_UN_JUEGO = re.compile(r"franquicia|franchise|\bsaga\b|serie de videojuego
 _lock = threading.Lock()
 _listas = {}          # sistema -> juegos ya armados
 _descripciones = {}   # clave -> descripción (o None si no hay)
-_gratis = (0.0, [])   # (momento, portada de juegos gratis)
-_itch = {}            # (etiqueta, página) -> (momento, juegos)
+# shortcut: se guarda solo mientras la app está abierta; pasarlo a disco si al reabrirla siguen llegando avisos 429
+_respuestas = {}      # pedido -> (momento, respuesta)
+_pausa_hasta = {}     # sitio -> momento en que se le puede volver a pedir
 
 
 def es_enlace_de_itch(host):
@@ -290,9 +291,45 @@ def juego_gratis(entrada):
             "enlace": PAGINA_HOMEBREW + slug, "itch": itch, "agregado": str(entrada.get("firstadded_date") or "")}
 
 
+class SitioOcupado(Exception):
+    """El sitio pidió esperar (HTTP 429) y todavía no hay una respuesta guardada para mostrar."""
+
+
+def _espera(retry_after):
+    try:
+        return min(3600, max(60, int(retry_after)))
+    except (TypeError, ValueError):
+        return 600   # sin indicación, diez minutos
+
+
+def _con_cache(sitio, pedido, pedir):
+    """Cada pedido se repite como mucho una vez por hora. Si el sitio responde 429, se lo deja tranquilo
+    el tiempo que pida y mientras tanto se muestra la última respuesta, aunque sea vieja."""
+    momento, guardada = _respuestas.get(pedido, (0.0, None))
+    if guardada is not None and time.time() - momento < TTL_GRATIS:
+        return guardada
+    if time.time() < _pausa_hasta.get(sitio, 0):
+        if guardada is not None:
+            return guardada
+        raise SitioOcupado(sitio)
+    try:
+        respuesta = pedir()
+    except urllib.error.HTTPError as e:
+        if e.code != 429:
+            raise
+        _pausa_hasta[sitio] = time.time() + _espera(e.headers.get("Retry-After") if e.headers else None)
+        print(f"[CATALOGO] {sitio} pidió esperar: se le vuelve a consultar en unos minutos.")
+        if guardada is not None:
+            return guardada
+        raise SitioOcupado(sitio)
+    _respuestas[pedido] = (time.time(), respuesta)
+    return respuesta
+
+
 def _pedir_gratis(plataforma, pagina=1):
     parametros = urllib.parse.urlencode({"typetag": "game", "platform": plataforma, "page": int(pagina)})
-    datos = json.loads(_pedir(f"{URL_HOMEBREW}/api/search?{parametros}") or b"{}")
+    datos = _con_cache("Homebrew Hub", ("hh", plataforma, int(pagina)),
+                       lambda: json.loads(_pedir(f"{URL_HOMEBREW}/api/search?{parametros}") or b"{}"))
     return [j for j in map(juego_gratis, datos.get("entries") or []) if j], int(datos.get("page_total") or 1)
 
 
@@ -316,12 +353,8 @@ def leer_itch(datos):
 
 
 def _pedir_itch(plataforma, pagina=1):
-    pedido = (plataforma, int(pagina))
-    momento, juegos = _itch.get(pedido, (0.0, []))
-    if not juegos or time.time() - momento >= TTL_GRATIS:
-        juegos = leer_itch(_pedir(f"{URL_ITCH}{ETIQUETAS_ITCH[plataforma]}.xml?page={int(pagina)}") or b"<rss/>")
-        _itch[pedido] = (time.time(), juegos)
-    return juegos
+    url = f"{URL_ITCH}{ETIQUETAS_ITCH[plataforma]}.xml?page={int(pagina)}"
+    return _con_cache("itch.io", ("itch", plataforma, int(pagina)), lambda: leer_itch(_pedir(url) or b"<rss/>"))
 
 
 def gratis(plataforma, pagina=1):
@@ -334,23 +367,22 @@ def gratis(plataforma, pagina=1):
             return {"exito": True, "juegos": juegos, "hay_mas": len(juegos) >= JUEGOS_POR_LISTA_ITCH}
         juegos, total = _pedir_gratis(plataforma, pagina)
         return {"exito": True, "juegos": juegos, "hay_mas": int(pagina) < total}
+    except SitioOcupado as e:
+        return {"exito": False, "error": f"{e} pidió esperar unos minutos antes de volver a consultarlo. Probá más tarde."}
     except Exception as e:
         print(f"[CATALOGO] Sin juegos gratis: {e}")
         return {"exito": False, "error": "No se pudieron cargar los juegos gratis. Revisá tu conexión."}
 
 
 def gratis_recientes(limite=12):
-    """Los últimos agregados de todas las consolas, para la portada. Se guardan una hora."""
-    global _gratis
-    if _gratis[1] and time.time() - _gratis[0] < TTL_GRATIS:
-        return _gratis[1]
+    """Los últimos agregados de todas las consolas, para la portada. Usa las mismas respuestas guardadas que las listas."""
     juegos = []
     for plataforma in PLATAFORMAS_GRATIS:
         try:
             juegos += _pedir_gratis(plataforma)[0]
+        except SitioOcupado:
+            break   # si pidió esperar, no se insiste con las demás consolas
         except Exception as e:
             print(f"[CATALOGO] Sin juegos gratis de {plataforma}: {e}")
     juegos.sort(key=lambda j: j["agregado"], reverse=True)
-    if juegos:
-        _gratis = (time.time(), juegos[:limite])
     return juegos[:limite]

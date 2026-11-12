@@ -3,6 +3,7 @@
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -612,6 +613,32 @@ game (\n\tcomment "Legend of Zelda, The (USA)"\n\treleaseyear "1992"\n\trom ( cr
         datos = catalogo.leer_dat_completo(texto)
         self.assertEqual(datos["genre"], {"silent hill": "Horror", "otro": "RPG"})
         self.assertEqual((datos["developer"], datos["releaseyear"], datos["publisher"]), ({"silent hill": "Konami"}, {"silent hill": "1999"}, {}))
+
+    def test_si_un_sitio_pide_esperar_no_se_insiste(self):
+        import urllib.error
+        catalogo._respuestas.clear()
+        catalogo._pausa_hasta.clear()
+        pedidos = []
+
+        def pedir_429():
+            pedidos.append(1)
+            raise urllib.error.HTTPError("u", 429, "Too Many Requests", {"Retry-After": "120"}, None)
+
+        with self.assertRaises(catalogo.SitioOcupado):
+            catalogo._con_cache("sitio", "a", pedir_429)
+        with self.assertRaises(catalogo.SitioOcupado):
+            catalogo._con_cache("sitio", "b", pedir_429)   # durante la pausa ni se intenta
+        self.assertEqual(len(pedidos), 1)
+        self.assertAlmostEqual(catalogo._pausa_hasta["sitio"] - time.time(), 120, delta=5)
+        catalogo._pausa_hasta.clear()
+        self.assertEqual(catalogo._con_cache("sitio", "a", lambda: "datos"), "datos")
+        catalogo._respuestas["a"] = (0.0, "vieja")   # vencida: se vuelve a pedir, y con 429 se usa la vieja
+        self.assertEqual(catalogo._con_cache("sitio", "a", pedir_429), "vieja")
+        catalogo._pausa_hasta["itch.io"] = time.time() + 60
+        with mock.patch.object(catalogo, "_pedir", side_effect=AssertionError("no debe pedir")):
+            self.assertIn("pidió esperar", catalogo.gratis("itch-gb")["error"])   # pausa activa y sin respuesta guardada
+        catalogo._respuestas.clear()
+        catalogo._pausa_hasta.clear()
 
     def test_leer_itch_solo_acepta_juegos_gratis_de_itch(self):
         item = """<item><plainTitle>{t}</plainTitle><link>{l}</link><price>{p}</price><imageurl>{i}</imageurl>
