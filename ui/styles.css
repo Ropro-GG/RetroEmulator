@@ -539,12 +539,6 @@ body {
 .btn-secondary-sm { background: #141722; color: #66FCF1; border: 1px solid #45A29E; }
 .btn-secondary-sm:hover { background: #45A29E; color: white; box-shadow: 0 0 10px rgba(69, 162, 158, 0.45); }
 
-/* Las tarjetas aparecen de a poco al cargar */
-@keyframes tarjeta-aparece { from { opacity: 0; transform: translateY(8px); } }
-.game-card, .biblio-reciente, .steam-fila, .steam-categoria { animation: tarjeta-aparece 0.3s ease-out backwards; }
-@media (prefers-reduced-motion: reduce) {
-    .game-card, .biblio-reciente, .steam-fila, .steam-categoria { animation: none; }
-}
 
 .path-row {
     display: flex;
@@ -1076,7 +1070,8 @@ select.settings-input option { background-color: #141722; color: #FFFFFF; }
 .banner-acciones { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .banner-propio { display: flex; align-items: center; gap: 6px; color: #C5C6C7; font-size: 0.82em; }
 .banner-propio input { width: 36px; height: 30px; padding: 0; border: none; background: none; cursor: pointer; }
-.profile-header, .profile-body, .vitrina, .close-btn, .pa-avatar, .pa-main { position: relative; z-index: 1; }
+.profile-header, .profile-body, .vitrina, .pa-avatar, .pa-main { position: relative; z-index: 1; }
+.profile-card .close-btn { z-index: 2; }   /* sigue en su esquina (position: absolute), encima del banner */
 .vitrina { display: flex; flex-direction: column; gap: 12px; margin: 16px 0 6px; }
 .vitrina-nivel { display: flex; align-items: center; gap: 14px; }
 .nivel-circulo { display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; flex-shrink: 0; border-radius: 50%;
@@ -1729,14 +1724,27 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 
 /* NOTICIAS */
 .noticias-view { overflow-y: auto; padding: 24px; }
-.noticias-view .posts-wrap { margin: 0 auto; }
-.noticia { background: #1F2833; border: 1px solid #2a3544; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
-.noticia-aviso { border-color: #45A29E; }
-.noticia-imagen { display: block; width: 100%; max-height: 260px; object-fit: cover; border-radius: 6px; margin-bottom: 10px; background: #141722; }
-.noticia h3 { color: #FFFFFF; font-size: 1em; line-height: 1.35; margin-bottom: 6px; }
-.noticia-texto { color: #C5C6C7; font-size: 0.88em; line-height: 1.5; margin-bottom: 8px; white-space: pre-wrap; word-break: break-word; }
-.noticia-pie { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* Cuadrícula: las columnas se acomodan al ancho; los avisos oficiales ocupan toda la fila */
+.noticias-view .posts-wrap { margin: 0 auto; max-width: 1100px; }
+#noticias-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: stretch; }
+#noticias-lista > .empty-state, #noticias-lista > .cargador-lista { grid-column: 1 / -1; }
+.noticia { display: flex; flex-direction: column; overflow: hidden; background: #1F2833; border: 1px solid #2a3544; border-radius: 10px;
+    transition: border-color 0.2s, transform 0.2s; }
+.noticia:hover { border-color: #66FCF1; transform: translateY(-3px); }
+.noticia-aviso { grid-column: 1 / -1; border-color: #45A29E; }
+.noticia-imagen { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #141722; }
+.noticia-aviso .noticia-imagen { aspect-ratio: auto; max-height: 300px; }
+.noticia-sin-imagen { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1F2833, #0B0C10); }
+.noticia-sin-imagen .icono { width: 48px; height: 48px; opacity: 0.6; }
+.noticia-cuerpo { flex: 1; display: flex; flex-direction: column; padding: 12px 14px 14px; }
+.noticia h3 { color: #FFFFFF; font-size: 0.98em; line-height: 1.35; margin-bottom: 6px;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.noticia-texto { color: #C5C6C7; font-size: 0.85em; line-height: 1.5; margin-bottom: 10px; word-break: break-word;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.noticia-aviso h3, .noticia-aviso .noticia-texto { display: block; white-space: pre-wrap; }   /* tus avisos se leen completos */
+.noticia-pie { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; }
 .noticia-pie small { color: #7d8590; font-size: 0.78em; }
+@media (prefers-reduced-motion: reduce) { .noticia:hover { transform: none; } }
 
 /* CATÁLOGO */
 .catalogo-view { overflow-y: auto; padding: 24px; }
@@ -1891,3 +1899,53 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .game-cover-fallback .icono { width: 42%; height: 42%; }
 .mini-cover .icono { width: 60%; height: 60%; }
 .punto-en-linea { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 6px rgba(46, 204, 113, 0.7); }
+
+
+/* ANIMACIONES: cortas (0,15 a 0,3 s) para que acompañen sin estorbar.
+   Solo opacidad en las vistas: un transform en un contenedor movería lo que tiene posición fija adentro. */
+@keyframes aparecer { from { opacity: 0; } }
+@keyframes subir { from { opacity: 0; transform: translateY(10px); } }
+@keyframes emerger { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
+.vista-entra { animation: aparecer 0.22s ease-out; }
+#game-detail, #catalogo-ficha, #catalogo-lista, #social-perfil, .settings-section { animation: subir 0.28s ease-out; }
+.modal { animation: aparecer 0.2s ease-out; }
+.modal > * { animation: emerger 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* Las tarjetas entran en cascada: cada una un poco después de la anterior (hasta la 12; el resto, junto con ella) */
+.game-grid > *, .steam-carrusel > *, #noticias-lista > *, .steam-filas > *, .biblio-recientes-fila > *, .steam-categorias > * {
+    animation: subir 0.32s ease-out backwards; }
+.game-grid > :nth-child(2), .steam-carrusel > :nth-child(2), #noticias-lista > :nth-child(2), .steam-filas > :nth-child(2), .biblio-recientes-fila > :nth-child(2), .steam-categorias > :nth-child(2) { animation-delay: 0.03s; }
+.game-grid > :nth-child(3), .steam-carrusel > :nth-child(3), #noticias-lista > :nth-child(3), .steam-filas > :nth-child(3), .biblio-recientes-fila > :nth-child(3), .steam-categorias > :nth-child(3) { animation-delay: 0.06s; }
+.game-grid > :nth-child(4), .steam-carrusel > :nth-child(4), #noticias-lista > :nth-child(4), .steam-filas > :nth-child(4), .biblio-recientes-fila > :nth-child(4), .steam-categorias > :nth-child(4) { animation-delay: 0.09s; }
+.game-grid > :nth-child(5), .steam-carrusel > :nth-child(5), #noticias-lista > :nth-child(5), .steam-filas > :nth-child(5), .biblio-recientes-fila > :nth-child(5), .steam-categorias > :nth-child(5) { animation-delay: 0.12s; }
+.game-grid > :nth-child(6), .steam-carrusel > :nth-child(6), #noticias-lista > :nth-child(6), .steam-filas > :nth-child(6), .biblio-recientes-fila > :nth-child(6), .steam-categorias > :nth-child(6) { animation-delay: 0.15s; }
+.game-grid > :nth-child(7), .steam-carrusel > :nth-child(7), #noticias-lista > :nth-child(7), .steam-filas > :nth-child(7), .biblio-recientes-fila > :nth-child(7), .steam-categorias > :nth-child(7) { animation-delay: 0.18s; }
+.game-grid > :nth-child(8), .steam-carrusel > :nth-child(8), #noticias-lista > :nth-child(8), .steam-filas > :nth-child(8), .biblio-recientes-fila > :nth-child(8), .steam-categorias > :nth-child(8) { animation-delay: 0.21s; }
+.game-grid > :nth-child(9), .steam-carrusel > :nth-child(9), #noticias-lista > :nth-child(9), .steam-filas > :nth-child(9), .biblio-recientes-fila > :nth-child(9), .steam-categorias > :nth-child(9) { animation-delay: 0.24s; }
+.game-grid > :nth-child(10), .steam-carrusel > :nth-child(10), #noticias-lista > :nth-child(10), .steam-filas > :nth-child(10), .biblio-recientes-fila > :nth-child(10), .steam-categorias > :nth-child(10) { animation-delay: 0.27s; }
+.game-grid > :nth-child(11), .steam-carrusel > :nth-child(11), #noticias-lista > :nth-child(11), .steam-filas > :nth-child(11), .biblio-recientes-fila > :nth-child(11), .steam-categorias > :nth-child(11) { animation-delay: 0.30s; }
+.game-grid > :nth-child(n+12), .steam-carrusel > :nth-child(n+12), #noticias-lista > :nth-child(n+12), .steam-filas > :nth-child(n+12), .biblio-recientes-fila > :nth-child(n+12), .steam-categorias > :nth-child(n+12) { animation-delay: 0.33s; }
+
+/* La línea de la sección activa crece desde el centro */
+.nav-btn { position: relative; }
+.nav-btn.active { border-bottom-color: transparent; }
+.nav-btn::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #66FCF1;
+    transform: scaleX(0); transition: transform 0.25s ease-out; }
+.nav-btn.active::after { transform: scaleX(1); }
+
+/* Botones: cambian de color con suavidad y se hunden un poco al hacer clic */
+button { transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s; }
+button:active:not(:disabled) { transform: scale(0.97); }
+
+/* Listas laterales: el elemento bajo el mouse se corre un poco */
+.sidebar li, .social-nav li, .settings-nav li { transition: background-color 0.15s, color 0.15s, padding-left 0.15s; }
+.sidebar li:hover, .social-nav li:hover, .settings-nav li:hover { padding-left: 16px; }
+
+/* La pantalla de carga se va con un fundido */
+.pantalla-carga { transition: opacity 0.35s ease-out; }
+.pantalla-carga.saliendo { opacity: 0; pointer-events: none; }
+
+/* Con "reducir movimiento" del sistema no hay animaciones ni transiciones */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; }
+}

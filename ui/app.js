@@ -71,7 +71,15 @@ async function registrar() {
 
 // Muestra u oculta la pantalla de carga de toda la app.
 function mostrarPantallaCarga(visible) {
-    document.getElementById('pantalla-carga').style.display = visible ? 'flex' : 'none';
+    const pantalla = document.getElementById('pantalla-carga');
+    clearTimeout(pantalla.ocultar);
+    if (visible) {
+        pantalla.classList.remove('saliendo');
+        pantalla.style.display = 'flex';
+    } else if (pantalla.style.display !== 'none') {
+        pantalla.classList.add('saliendo');   // se va con un fundido (styles.css)
+        pantalla.ocultar = setTimeout(() => { pantalla.style.display = 'none'; }, 350);
+    }
 }
 
 // Por si Python no llega a responder: nunca dejar la app tapada para siempre.
@@ -1119,7 +1127,13 @@ function mostrarVista(nombre, recordar = true) {
     vistaActual = nombre;
     if (recordar) window.pywebview.api.recordar('vista', nombre).catch(() => {});
     document.querySelectorAll('.view').forEach(v => {
-        v.style.display = (v.id === 'view-' + nombre) ? '' : 'none';
+        const visible = v.id === 'view-' + nombre;
+        if (visible && v.style.display === 'none') {   // aparece con un fundido; se reinicia aunque ya se haya usado
+            v.classList.remove('vista-entra');
+            void v.offsetWidth;
+            v.classList.add('vista-entra');
+        }
+        v.style.display = visible ? '' : 'none';
     });
     document.querySelectorAll('.nav-btn').forEach(b => {
         b.classList.toggle('active', b.dataset.view === nombre);
@@ -4221,7 +4235,7 @@ function itemMenuAmigo(texto, clase, accion) {
 function menuAmigo(u) {
     const flecha = document.createElement('button');
     flecha.className = 'amigo-icono amigo-flecha';
-    flecha.textContent = '▾';
+    flecha.appendChild(icono('chevron-down'));
     flecha.title = 'Más opciones';
     flecha.setAttribute('aria-label', 'Más opciones');
     flecha.onclick = ev => {
@@ -4495,23 +4509,29 @@ async function grupoRevisarLlaves() {
 let noticiasToken = 0;
 
 // Tarjeta de un aviso oficial o de una nota de otro sitio.
+// En la cuadrícula, las notas sin imagen llevan un recuadro con el ícono para que todas las tarjetas tengan la misma forma.
 function tarjetaNoticia(titulo, texto, meta, enlace, imagen) {
     const tarjeta = nodo('article', 'noticia' + (enlace ? '' : ' noticia-aviso'));
+    const sinImagen = () => nodo('div', 'noticia-imagen noticia-sin-imagen', [icono('newspaper')]);
     if (imagen) {
         const img = nodo('img', 'noticia-imagen');
         img.alt = '';
         img.loading = 'lazy';
         img.referrerPolicy = 'no-referrer';
-        img.onerror = () => img.remove();
+        img.onerror = () => (enlace ? img.replaceWith(sinImagen()) : img.remove());
         img.src = imagen;
         tarjeta.appendChild(img);
+    } else if (enlace) {
+        tarjeta.appendChild(sinImagen());
     }
-    tarjeta.append(nodo('h3', '', [icono(enlace ? 'newspaper' : 'pin'), ' ' + titulo]));
-    if (texto) tarjeta.appendChild(nodo('p', 'noticia-texto', texto));
+    const cuerpo = nodo('div', 'noticia-cuerpo');
+    cuerpo.append(nodo('h3', '', [icono(enlace ? 'newspaper' : 'pin'), ' ' + titulo]));
+    if (texto) cuerpo.appendChild(nodo('p', 'noticia-texto', texto));
     const pie = nodo('div', 'noticia-pie');
     pie.appendChild(nodo('small', '', meta));
     if (enlace) pie.appendChild(boton(['Leer más ', icono('external-link')], 'btn-secondary-sm', async () => abrirEnlace(enlace)));
-    tarjeta.appendChild(pie);
+    cuerpo.appendChild(pie);
+    tarjeta.appendChild(cuerpo);
     return tarjeta;
 }
 
