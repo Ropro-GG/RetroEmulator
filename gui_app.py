@@ -18,7 +18,7 @@ import webbrowser
 from urllib.parse import urlparse
 
 from nucleo import boxart, catalogo, db_local, gifs, imagenes, launcher, noticias, ra_client, scanner
-from nucleo.cloud_client import CloudClient
+from nucleo.cloud_client import CloudClient, clave_juego
 from nucleo.db_local import LocalDB
 from nucleo.llamadas_cloud import Llamadas
 
@@ -64,6 +64,8 @@ class API:
         self._juegos_activos = 0          # emuladores abiertos desde el launcher
         self._imagen_elegida = ""         # archivo que elegiste para enviar o convertir en sticker
         self._imagen_publicacion = ""     # imagen elegida para la publicación que estás escribiendo
+        self._imagen_comunidad = ""       # imagen para una publicación en la comunidad de un juego
+        self._imagenes_guia = []          # imágenes elegidas para la guía que estás escribiendo
         self._lock_juegos = threading.Lock()
         self._hilo_logros = None          # vigía de logros nuevos mientras hay un juego abierto
 
@@ -504,6 +506,78 @@ class API:
         if resultado.get("exito"):
             self._imagen_publicacion = ""
         return resultado
+
+    # --- COMUNIDAD DE CADA JUEGO: publicaciones, guías y jugadores ---
+
+    def comunidad_resumen(self, identificativo, titulo):
+        """Números de la comunidad y tus amigos que jugaron (del resto, solo el total)."""
+        return {"exito": True, **self.cloud.resumen_comunidad(identificativo, titulo),
+                "amigos": self.cloud.obtener_amigos_que_jugaron(identificativo, titulo)}
+
+    def comunidad_publicaciones(self, identificativo, titulo, tipo="post", antes_id=None):
+        if tipo not in ("post", "guia"):
+            return {"exito": False, "error": "Tipo no válido."}
+        return self.cloud.obtener_publicaciones(antes_id, None, clave_juego(identificativo, titulo), tipo)
+
+    def seleccionar_imagen_comunidad(self):
+        ruta, vista, error = self._elegir_archivo_imagen()
+        if error:
+            return error
+        self._imagen_comunidad = ruta
+        return {"exito": True, "nombre": os.path.basename(ruta), "vista": vista}
+
+    def descartar_imagen_comunidad(self):
+        self._imagen_comunidad = ""
+        return {"exito": True}
+
+    def crear_publicacion_juego(self, identificativo, titulo_juego, texto):
+        imagen = None
+        if self._imagen_comunidad:
+            try:
+                imagen = imagenes.preparar_para_chat(self._imagen_comunidad)
+            except imagenes.ErrorImagen as e:
+                return {"exito": False, "error": str(e)}
+        res = self.cloud.crear_publicacion(texto, imagen, None, clave_juego(identificativo, titulo_juego), titulo_juego)
+        if res.get("exito"):
+            self._imagen_comunidad = ""
+        return res
+
+    def elegir_imagenes_guia(self):
+        """Suma imágenes a la guía (hasta 5). Devuelve las vistas previas de todas las elegidas."""
+        if not self.window:
+            return {"exito": False, "error": "Ventana no inicializada."}
+        elegidas = self.window.create_file_dialog(FileDialog.OPEN, allow_multiple=True,
+                                                  file_types=('Imágenes (*.png;*.jpg;*.jpeg;*.webp;*.bmp)', 'Todos los archivos (*.*)')) or []
+        lugar = self.cloud.MAX_IMAGENES_GUIA - len(self._imagenes_guia)
+        try:
+            for ruta in list(elegidas)[:max(0, lugar)]:
+                self._imagenes_guia.append((ruta, imagenes.miniatura_data_uri(ruta, 240)))
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        aviso = f"Solo entran {self.cloud.MAX_IMAGENES_GUIA} imágenes por guía." if len(elegidas) > lugar else ""
+        return {"exito": True, "vistas": [v for _, v in self._imagenes_guia], "aviso": aviso}
+
+    def quitar_imagen_guia(self, indice):
+        if 0 <= int(indice) < len(self._imagenes_guia):
+            del self._imagenes_guia[int(indice)]
+        return {"exito": True, "vistas": [v for _, v in self._imagenes_guia]}
+
+    def descartar_imagenes_guia(self):
+        self._imagenes_guia = []
+        return {"exito": True}
+
+    def crear_guia(self, identificativo, titulo_juego, titulo, texto):
+        problema = self.cloud.validar_guia(titulo, texto, len(self._imagenes_guia))
+        if problema:
+            return {"exito": False, "error": problema}
+        try:
+            preparadas = [imagenes.preparar_para_chat(ruta) for ruta, _ in self._imagenes_guia]
+        except imagenes.ErrorImagen as e:
+            return {"exito": False, "error": str(e)}
+        res = self.cloud.crear_guia(clave_juego(identificativo, titulo_juego), titulo_juego, titulo, texto, preparadas)
+        if res.get("exito"):
+            self._imagenes_guia = []
+        return res
 
     # Página del feed; "autor_id" filtra por autor.
     def obtener_publicaciones(self, antes_id=None, autor_id=None):

@@ -130,6 +130,7 @@
                     <div class="detail-stat detail-stat-logros"><span>Logros</span><strong id="detail-logros">—</strong>
                         <div class="ach-bar"><div id="detail-logros-barra" class="ach-bar-fill" style="width: 0%;"></div></div>
                     </div>
+                    <button class="btn-secondary-sm" onclick="abrirComunidadDesdeDetalle()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-users"/></svg> Comunidad</button>
                     <button id="detail-quitar" class="btn-secondary-sm" style="display: none;" onclick="quitarDeBiblioteca()">Quitar de la biblioteca</button>
                 </div>
 
@@ -363,6 +364,74 @@
                     <button class="btn-secondary-sm" title="Actualizar" onclick="cargarNoticias(true)"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-refresh-cw"/></svg> Actualizar</button>
                 </div>
                 <div id="noticias-lista"></div>
+            </div>
+        </div>
+
+        <!-- COMUNIDAD DE UN JUEGO: se abre desde la pantalla del juego o su ficha del Catálogo -->
+        <div id="view-comunidad" class="view comunidad-view" style="display: none;">
+            <div class="comunidad-wrap">
+                <button class="btn-back" onclick="cerrarComunidad()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-arrow-left"/></svg> Volver</button>
+                <div class="comunidad-cabecera">
+                    <div id="comunidad-fondo" class="comunidad-fondo"></div>
+                    <div class="comunidad-cab-contenido">
+                        <div id="comunidad-portada" class="comunidad-portada"></div>
+                        <div>
+                            <p class="comunidad-etiqueta"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-users"/></svg> Comunidad</p>
+                            <h1 id="comunidad-titulo"></h1>
+                            <p id="comunidad-consola" class="comunidad-consola"></p>
+                            <div id="comunidad-numeros" class="comunidad-numeros"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="comunidad-pestanas" role="tablist">
+                    <button class="comunidad-pestana activa" data-tab="publicaciones" role="tab" onclick="pestanaComunidad('publicaciones')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-message-circle"/></svg> Publicaciones</button>
+                    <button class="comunidad-pestana" data-tab="guias" role="tab" onclick="pestanaComunidad('guias')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-newspaper"/></svg> Guías</button>
+                    <button class="comunidad-pestana" data-tab="jugadores" role="tab" onclick="pestanaComunidad('jugadores')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-gamepad-2"/></svg> Jugadores</button>
+                </div>
+
+                <div id="comunidad-tab-publicaciones" class="comunidad-tab">
+                    <div class="detail-card comunidad-escribir">
+                        <textarea id="comunidad-texto" maxlength="2000" placeholder="Compartí algo sobre este juego: una captura, un truco, una pregunta..."></textarea>
+                        <div id="comunidad-adjunto" class="comunidad-adjunto" style="display: none;"></div>
+                        <div class="comunidad-escribir-pie">
+                            <button class="btn-secondary-sm" onclick="elegirImagenComunidad()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg> Imagen</button>
+                            <button class="btn-primary-sm" onclick="publicarEnComunidad()">Publicar</button>
+                        </div>
+                    </div>
+                    <div id="comunidad-posts"></div>
+                    <div class="posts-pie"><button id="comunidad-posts-mas" class="btn-secondary-sm" style="display: none;" onclick="cargarComunidad('post', false)">Ver más</button></div>
+                </div>
+
+                <div id="comunidad-tab-guias" class="comunidad-tab" style="display: none;">
+                    <div id="guias-inicio">
+                        <button class="btn-primary-sm" onclick="abrirFormularioGuia()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-pencil"/></svg> Escribir una guía</button>
+                        <div id="comunidad-guias-lista" class="guias-lista"></div>
+                        <div class="posts-pie"><button id="comunidad-guias-mas" class="btn-secondary-sm" style="display: none;" onclick="cargarComunidad('guia', false)">Ver más</button></div>
+                    </div>
+                    <div id="guia-form" class="detail-card guia-form" style="display: none;">
+                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-pencil"/></svg> Nueva guía</h3>
+                        <input id="guia-titulo" class="settings-input" type="text" maxlength="120" placeholder="Título (por ejemplo: Cómo conseguir todos los secretos)">
+                        <textarea id="guia-texto" maxlength="20000" placeholder="Escribí tu guía..."></textarea>
+                        <p class="settings-help">Formato: una línea que empieza con <code>## </code> es un subtítulo; con <code>- </code>, un punto de una lista; y <code>**así**</code> queda en negrita.</p>
+                        <div id="guia-imagenes" class="guia-imagenes"></div>
+                        <div class="comunidad-escribir-pie">
+                            <button class="btn-secondary-sm" onclick="elegirImagenesGuia()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg> Imágenes (hasta 5)</button>
+                            <button class="btn-secondary-sm" onclick="cerrarFormularioGuia()">Cancelar</button>
+                            <button class="btn-primary-sm" onclick="publicarGuia()">Publicar guía</button>
+                        </div>
+                        <p id="guia-msg" class="settings-msg" role="status"></p>
+                    </div>
+                    <div id="guia-lector" style="display: none;"></div>
+                </div>
+
+                <div id="comunidad-tab-jugadores" class="comunidad-tab" style="display: none;">
+                    <div class="detail-card">
+                        <p id="comunidad-total-jugadores" class="comunidad-total"></p>
+                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-users"/></svg> Tus amigos que lo jugaron</h3>
+                        <div id="comunidad-amigos"></div>
+                        <p class="settings-help">Por privacidad, de quienes no son tus amigos solo se muestra el total.</p>
+                    </div>
+                </div>
             </div>
         </div>
 

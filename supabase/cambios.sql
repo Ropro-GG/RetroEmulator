@@ -762,3 +762,63 @@ create policy banners_ver on storage.objects for select to authenticated
 -- Puntos de RetroAchievements de la cuenta conectada: suman experiencia al nivel del perfil (1 punto = 1 XP).
 alter table public.profiles add column if not exists ra_puntos integer not null default 0 check (ra_puntos between 0 and 10000000);
 grant update (ra_puntos) on public.profiles to authenticated;
+
+-- Comunidad de cada juego: publicaciones y guías con "clave" (el juego). Sin clave son las de Social.
+alter table public.publicaciones
+    add column if not exists clave text check (clave is null or char_length(clave) between 1 and 300),
+    add column if not exists juego text check (juego is null or char_length(juego) <= 200),
+    add column if not exists tipo text not null default 'post' check (tipo in ('post', 'guia')),
+    add column if not exists titulo text check (titulo is null or char_length(btrim(titulo)) between 1 and 120),
+    add column if not exists imagenes text[] check (imagenes is null or cardinality(imagenes) between 1 and 5);
+alter table public.publicaciones drop constraint if exists publicaciones_texto_check;
+alter table public.publicaciones add constraint publicaciones_texto_check
+    check ((tipo = 'post' and char_length(texto) <= 2000) or (tipo = 'guia' and char_length(texto) <= 20000));
+alter table public.publicaciones drop constraint if exists publicaciones_guia_completa;
+alter table public.publicaciones add constraint publicaciones_guia_completa
+    check (tipo <> 'guia' or (clave is not null and titulo is not null and btrim(texto) <> ''));
+grant insert (clave, juego, tipo, titulo, imagenes) on public.publicaciones to authenticated;
+create index if not exists publicaciones_clave_idx on public.publicaciones (clave, tipo, id desc) where clave is not null;
+drop policy if exists publicaciones_crear on public.publicaciones;
+create policy publicaciones_crear on public.publicaciones for insert to authenticated with check (
+    auth.uid() = autor_id
+    and (imagenes is null or not exists (select 1 from unnest(imagenes) i where i not like autor_id::text || '/%'))
+);
+drop function if exists public.listar_publicaciones(bigint, integer, uuid, bigint);
+create function public.listar_publicaciones(p_antes bigint default null, p_limite integer default 15, p_autor uuid default null,
+                                            p_id bigint default null, p_clave text default null, p_tipo text default null)
+returns table(id bigint, autor_id uuid, username text, avatar_url text, texto text, tipo_media text, media text,
+              creado_en timestamptz, likes integer, dislikes integer, compartidos integer, comentarios integer,
+              mi_like boolean, mi_dislike boolean, mi_compartido boolean,
+              clave text, juego text, tipo text, titulo text, imagenes text[])
+language sql stable set search_path to 'public' as $$
+    select p.id, p.autor_id, pr.username::text, pr.avatar_url::text, p.texto::text, p.tipo_media::text, p.media::text, p.creado_en,
+        (select count(*) from public.publicaciones_reacciones r where r.publicacion_id = p.id and r.tipo = 'like')::integer,
+        (select count(*) from public.publicaciones_reacciones r where r.publicacion_id = p.id and r.tipo = 'dislike')::integer,
+        (select count(*) from public.publicaciones_reacciones r where r.publicacion_id = p.id and r.tipo = 'compartir')::integer,
+        (select count(*) from public.publicaciones_comentarios c where c.publicacion_id = p.id)::integer,
+        exists (select 1 from public.publicaciones_reacciones r where r.publicacion_id = p.id and r.tipo = 'like' and r.user_id = auth.uid()),
+        exists (select 1 from public.publicaciones_reacciones r where r.publicacion_id = p.id and r.tipo = 'dislike' and r.user_id = auth.uid()),
+        exists (select 1 from public.publicaciones_reacciones r where r.publicacion_id = p.id and r.tipo = 'compartir' and r.user_id = auth.uid()),
+        p.clave, p.juego, p.tipo, p.titulo, p.imagenes
+    from public.publicaciones p
+    left join public.profiles pr on pr.id = p.autor_id
+    where (p_id is null or p.id = p_id)
+      and (p_autor is null or p.autor_id = p_autor)
+      and (p_antes is null or p.id < p_antes)
+      and (p_id is not null or (p_clave is null and p.clave is null) or p.clave = p_clave)
+      and (p_tipo is null or p.tipo = p_tipo)
+    order by p.id desc
+    limit least(greatest(coalesce(p_limite, 15), 1), 50)
+$$;
+grant execute on function public.listar_publicaciones(bigint, integer, uuid, bigint, text, text) to authenticated;
+create or replace function public.resumen_comunidad(p_clave text)
+returns json language sql stable security definer set search_path = '' as $$
+    select json_build_object(
+        'jugadores', (select count(*) from public.juegos_jugados j where j.clave = p_clave),
+        'publicaciones', (select count(*) from public.publicaciones p where p.clave = p_clave and p.tipo = 'post'
+                          and not public.hay_bloqueo(auth.uid(), p.autor_id)),
+        'guias', (select count(*) from public.publicaciones p where p.clave = p_clave and p.tipo = 'guia'
+                  and not public.hay_bloqueo(auth.uid(), p.autor_id)))
+$$;
+revoke all on function public.resumen_comunidad(text) from public, anon;
+grant execute on function public.resumen_comunidad(text) to authenticated;

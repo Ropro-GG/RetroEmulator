@@ -1347,6 +1347,9 @@ class CloudClient:
 
     BUCKET_PUBLICACIONES = "publicaciones"
     LIMITE_PUBLICACION = 2000
+    LIMITE_GUIA = 20000
+    LIMITE_TITULO_GUIA = 120
+    MAX_IMAGENES_GUIA = 5
     LIMITE_COMENTARIO = 500
     POR_PAGINA_PUBLICACIONES = 15
     REACCIONES = ("like", "dislike")
@@ -1372,10 +1375,16 @@ class CloudClient:
             return ""
         if tipo == "gif":
             return media if gifs.url_permitida(media) else ""
-        if tipo == "imagen" and SUPABASE_URL:
-            ruta = "/".join(quote(parte, safe="") for parte in media.split("/"))
-            return f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/{self.BUCKET_PUBLICACIONES}/{ruta}"
+        if tipo == "imagen":
+            return self._url_imagen(media)
         return ""
+
+    def _url_imagen(self, ruta):
+        """Dirección pública de una imagen del espacio de publicaciones."""
+        if not ruta or not SUPABASE_URL:
+            return ""
+        ruta = "/".join(quote(parte, safe="") for parte in ruta.split("/"))
+        return f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/{self.BUCKET_PUBLICACIONES}/{ruta}"
 
     # Da a una publicación el formato que espera la interfaz.
     def _publicacion_para_ui(self, f):
@@ -1397,15 +1406,21 @@ class CloudClient:
             "mi_like": bool(f.get("mi_like")),
             "mi_dislike": bool(f.get("mi_dislike")),
             "mi_compartido": bool(f.get("mi_compartido")),
+            "tipo": f.get("tipo") or "post",
+            "titulo": f.get("titulo") or "",
+            "juego": f.get("juego") or "",
+            "imagenes": [u for u in map(self._url_imagen, f.get("imagenes") or []) if u],
         }
 
     # Llama a la función listar_publicaciones de Supabase.
-    def _consultar_publicaciones(self, antes_id=None, autor_id=None, pub_id=None):
+    def _consultar_publicaciones(self, antes_id=None, autor_id=None, pub_id=None, clave=None, tipo=None):
         res = self.client.rpc("listar_publicaciones", {
             "p_antes": int(antes_id) if antes_id else None,
             "p_limite": self.POR_PAGINA_PUBLICACIONES,
             "p_autor": autor_id or None,
             "p_id": int(pub_id) if pub_id else None,
+            "p_clave": clave or None,   # sin juego: solo las de Social
+            "p_tipo": tipo or None,
         }).execute()
         return res.data or []
 
@@ -1416,13 +1431,14 @@ class CloudClient:
             return {"exito": False, "no_existe": True, "error": "Esa publicación ya no existe."}
         return {"exito": True, "publicacion": self._publicacion_para_ui(filas[0]), **extra}
 
-    def obtener_publicaciones(self, antes_id=None, autor_id=None):
-        """Publicaciones de todos, de la más nueva a la más vieja (o solo las de 'autor_id')."""
+    def obtener_publicaciones(self, antes_id=None, autor_id=None, clave=None, tipo=None):
+        """Publicaciones de todos, de la más nueva a la más vieja (o solo las de 'autor_id').
+        Con 'clave', las de la comunidad de ese juego; con 'tipo', solo publicaciones o solo guías."""
         error = self._requiere_sesion()
         if error:
             return error
         try:
-            filas = self._consultar_publicaciones(antes_id=antes_id, autor_id=autor_id)
+            filas = self._consultar_publicaciones(antes_id=antes_id, autor_id=autor_id, clave=clave, tipo=tipo)
             return {"exito": True,
                     "publicaciones": [self._publicacion_para_ui(f) for f in filas],
                     "hay_mas": len(filas) >= self.POR_PAGINA_PUBLICACIONES}
@@ -1439,7 +1455,7 @@ class CloudClient:
         except Exception as e:
             return {"exito": False, "error": self._error_publicaciones(e)}
 
-    def crear_publicacion(self, texto, imagen=None, gif_url=None):
+    def crear_publicacion(self, texto, imagen=None, gif_url=None, clave=None, juego=None):
         """'imagen' es (bytes, mime, extension) ya preparada; 'gif_url' una dirección de KLIPY.
         Una publicación lleva como máximo una imagen o un GIF."""
         error = self._requiere_sesion()
@@ -1464,9 +1480,10 @@ class CloudClient:
                     path=subida, file=datos, file_options={"content-type": mime, "upsert": "false"})
                 tipo_media, media = "imagen", subida
 
-            res = self.client.table("publicaciones").insert({
-                "autor_id": self._yo(), "texto": texto, "tipo_media": tipo_media, "media": media,
-            }).execute()
+            fila_nueva = {"autor_id": self._yo(), "texto": texto, "tipo_media": tipo_media, "media": media}
+            if clave:   # publicación de la comunidad de un juego
+                fila_nueva.update({"clave": clave, "juego": (juego or "")[:200]})
+            res = self.client.table("publicaciones").insert(fila_nueva).execute()
             fila = (res.data or [None])[0]
             if not fila:
                 raise RuntimeError("No se pudo publicar.")
@@ -1479,21 +1496,77 @@ class CloudClient:
                     pass
             return {"exito": False, "error": self._error_publicaciones(e)}
 
+    def validar_guia(self, titulo, texto, cantidad_imagenes):
+        """Mensaje de error, o None si la guía se puede publicar. La base comprueba lo mismo."""
+        titulo, texto = (titulo or "").strip(), (texto or "").strip()
+        if not titulo:
+            return "Escribí un título."
+        if len(titulo) > self.LIMITE_TITULO_GUIA:
+            return f"El título es demasiado largo (máximo {self.LIMITE_TITULO_GUIA} caracteres)."
+        if not texto:
+            return "Escribí el contenido de la guía."
+        if len(texto) > self.LIMITE_GUIA:
+            return f"La guía es demasiado larga (máximo {self.LIMITE_GUIA} caracteres)."
+        if cantidad_imagenes > self.MAX_IMAGENES_GUIA:
+            return f"Podés agregar hasta {self.MAX_IMAGENES_GUIA} imágenes."
+        return None
+
+    def crear_guia(self, clave, juego, titulo, texto, imagenes=()):
+        """Guía de la comunidad de un juego. 'imagenes' son (bytes, mime, extension) ya preparadas."""
+        error = self._requiere_sesion()
+        if error:
+            return error
+        problema = self.validar_guia(titulo, texto, len(imagenes))
+        if problema or not clave:
+            return {"exito": False, "error": problema or "Falta el juego de la guía."}
+        subidas = []
+        try:
+            for datos, mime, extension in imagenes:
+                ruta = f"{self._yo()}/{uuid.uuid4().hex}.{extension}"
+                self.client.storage.from_(self.BUCKET_PUBLICACIONES).upload(
+                    path=ruta, file=datos, file_options={"content-type": mime, "upsert": "false"})
+                subidas.append(ruta)
+            res = self.client.table("publicaciones").insert({
+                "autor_id": self._yo(), "tipo": "guia", "clave": clave, "juego": (juego or "")[:200],
+                "titulo": titulo.strip(), "texto": texto.strip(), "imagenes": subidas or None,
+            }).execute()
+            fila = (res.data or [None])[0]
+            if not fila:
+                raise RuntimeError("No se pudo publicar la guía.")
+            return self._devolver_publicacion(fila["id"])
+        except Exception as e:
+            if subidas:   # sin guía, las imágenes quedarían huérfanas
+                try:
+                    self.client.storage.from_(self.BUCKET_PUBLICACIONES).remove(subidas)
+                except Exception:
+                    pass
+            return {"exito": False, "error": self._error_publicaciones(e)}
+
+    def resumen_comunidad(self, identificativo, titulo):
+        """Cuántos jugaron (sin decir quiénes), cuántas publicaciones y guías tiene el juego."""
+        try:
+            datos = self.client.rpc("resumen_comunidad", {"p_clave": clave_juego(identificativo, titulo)}).execute().data or {}
+        except Exception as e:
+            print(f"[COMUNIDAD] Sin resumen: {self._error_publicaciones(e)}")
+            datos = {}
+        return {campo: int(datos.get(campo) or 0) for campo in ("jugadores", "publicaciones", "guias")}
+
     # Comprueba que sea tuya y borra también su imagen.
     def eliminar_publicacion(self, pub_id):
         error = self._requiere_sesion()
         if error:
             return error
         try:
-            res = self.client.table("publicaciones").select("id, tipo_media, media") \
+            res = self.client.table("publicaciones").select("id, tipo_media, media, imagenes") \
                 .eq("id", pub_id).eq("autor_id", self._yo()).execute()
             if not res.data:
                 return {"exito": False, "error": "No se encontró la publicación (o no es tuya)."}
             fila = res.data[0]
             self.client.table("publicaciones").delete().eq("id", pub_id).eq("autor_id", self._yo()).execute()
-            if fila.get("tipo_media") == "imagen" and fila.get("media"):
+            archivos = ([fila["media"]] if fila.get("tipo_media") == "imagen" and fila.get("media") else []) + (fila.get("imagenes") or [])
+            if archivos:
                 try:
-                    self.client.storage.from_(self.BUCKET_PUBLICACIONES).remove([fila["media"]])
+                    self.client.storage.from_(self.BUCKET_PUBLICACIONES).remove(archivos)
                 except Exception as e:
                     print(f"[PUBLICACIONES] No se pudo borrar la imagen: {self._error_publicaciones(e)}")
             return {"exito": True}

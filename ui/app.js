@@ -1925,7 +1925,7 @@ function reiniciarEstadoUI() {
     // Textos y listas que dependen de la cuenta
     ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
      'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun', 'pa-deseados',
-     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista', 'noticias-lista', 'biblio-recientes-fila', 'catalogo-inicio', 'catalogo-grilla', 'catalogo-ficha', 'catalogo-consola'].forEach(id => {
+     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista', 'noticias-lista', 'biblio-recientes-fila', 'comunidad-posts', 'comunidad-guias-lista', 'catalogo-inicio', 'catalogo-grilla', 'catalogo-ficha', 'catalogo-consola'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });
@@ -3857,9 +3857,10 @@ function aplicarPublicacion(p, nueva, tarjeta) {
 function quitarTarjetaPost(p, tarjeta) {
     postsCache.delete(p.id);
     if (pickerDestino && pickerDestino.id === 'comentario-' + p.id) cerrarPicker();
+    const lista = tarjeta.parentElement;   // la de Social o la de la comunidad de un juego
     tarjeta.remove();
-    const lista = document.getElementById('post-lista');
-    if (!lista.children.length) lista.appendChild(mensajeVacio('No hay publicaciones para mostrar.'));
+    if (lista && !lista.children.length) lista.appendChild(mensajeVacio('No hay publicaciones para mostrar.'));
+    if (p.tipo === 'guia' && comunidadJuego) volverAGuias();
 }
 
 // Pide confirmación y borra la publicación.
@@ -5027,7 +5028,9 @@ async function abrirFichaCatalogo(identificativo, titulo) {
     const ficha = armarFicha(j.titulo, j.portada, j.descripcion && j.descripcion.texto,
         [['Reseñas', resena()], ['Lanzamiento', j.anio], ['Desarrollador', j.desarrollador], ['Editor', j.editor], ['Consola', j.consola]],
         generosDe(j.genero),
-        [botonBiblioteca(), boton([icono('star'), ' Agregar a deseados'], 'btn-steam-sec', () => agregarDeseadoCatalogo(j))], j.imagenes);
+        [botonBiblioteca(), boton([icono('star'), ' Agregar a deseados'], 'btn-steam-sec', () => agregarDeseadoCatalogo(j)),
+         boton([icono('users'), ' Comunidad'], 'btn-steam-sec', async () => abrirComunidad({ identificativo, titulo: j.titulo, consola: j.consola }))],
+        j.imagenes);
 
     if (j.descripcion) {
         const texto = tarjetaFicha(ficha.principal, 'Acerca de este juego');
@@ -5171,4 +5174,298 @@ async function probarAvisoLogro(sobreElJuego = false) {
         const logro = await window.pywebview.api.probar_aviso_logro(sobreElJuego);
         if (logro) mostrarLogro(logro);
     } catch (e) { /* sin aviso */ }
+}
+
+
+// ============================================================================
+// COMUNIDAD DE UN JUEGO: publicaciones, guías y jugadores
+// ============================================================================
+
+let comunidadJuego = null;          // { identificativo, titulo, consola }
+let comunidadVolverA = 'biblioteca';
+let comunidadToken = 0;
+const comunidadUltimo = { post: null, guia: null };
+
+async function abrirComunidadDesdeDetalle() {
+    const j = juegoDetalleActual;
+    if (j) abrirComunidad({ identificativo: j.identificativo, titulo: j.titulo, consola: j.consola });
+}
+
+function abrirComunidad(j) {
+    comunidadVolverA = vistaActual === 'comunidad' ? comunidadVolverA : vistaActual;
+    comunidadJuego = j;
+    comunidadToken++;
+    document.getElementById('comunidad-titulo').textContent = j.titulo;
+    document.getElementById('comunidad-consola').textContent = j.consola || '';
+    document.getElementById('comunidad-numeros').innerHTML = '';
+    const portada = document.getElementById('comunidad-portada');
+    const fondo = document.getElementById('comunidad-fondo');
+    portada.replaceChildren(icono('gamepad-2'));
+    fondo.style.backgroundImage = 'none';
+    solicitarPortada(j.identificativo, j.titulo).then(info => {
+        if (!info || comunidadJuego !== j) return;
+        const img = nodo('img');
+        img.alt = '';
+        img.src = info.url;
+        portada.replaceChildren(img);
+        fondo.style.backgroundImage = `url("${info.url}")`;
+    });
+    ['comunidad-texto', 'guia-titulo', 'guia-texto'].forEach(id => { document.getElementById(id).value = ''; });
+    quitarImagenComunidad();
+    cerrarFormularioGuia();
+    mostrarVista('comunidad', false);
+    // La comunidad no tiene botón arriba: queda marcada la sección desde la que entraste
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === comunidadVolverA));
+    document.getElementById('view-comunidad').scrollTop = 0;
+    pestanaComunidad('publicaciones');
+    cargarResumenComunidad();
+}
+
+function cerrarComunidad() {
+    mostrarVista(comunidadVolverA || 'biblioteca', false);
+}
+
+function pestanaComunidad(tab) {
+    document.querySelectorAll('.comunidad-pestana').forEach(b => {
+        b.classList.toggle('activa', b.dataset.tab === tab);
+        b.setAttribute('aria-selected', b.dataset.tab === tab);
+    });
+    ['publicaciones', 'guias', 'jugadores'].forEach(t => {
+        document.getElementById('comunidad-tab-' + t).style.display = t === tab ? '' : 'none';
+    });
+    if (tab === 'publicaciones') cargarComunidad('post', true);
+    if (tab === 'guias') { volverAGuias(); cargarComunidad('guia', true); }
+}
+
+async function cargarResumenComunidad() {
+    const j = comunidadJuego;
+    let r;
+    try { r = await window.pywebview.api.comunidad_resumen(j.identificativo, j.titulo); } catch (e) { r = null; }
+    if (comunidadJuego !== j || !r || !r.exito) return;
+    const numeros = document.getElementById('comunidad-numeros');
+    numeros.innerHTML = '';
+    [['gamepad-2', r.jugadores, r.jugadores === 1 ? 'jugador' : 'jugadores'], ['message-circle', r.publicaciones, r.publicaciones === 1 ? 'publicación' : 'publicaciones'],
+     ['newspaper', r.guias, r.guias === 1 ? 'guía' : 'guías']].forEach(([i, n, texto]) => {
+        numeros.appendChild(nodo('span', 'comunidad-numero', [icono(i), ` ${n} ${texto}`]));
+    });
+    document.getElementById('comunidad-total-jugadores').textContent = r.jugadores
+        ? `${r.jugadores} ${r.jugadores === 1 ? 'persona lo jugó' : 'personas lo jugaron'} desde RetroEmulator.`
+        : 'Todavía nadie lo jugó desde RetroEmulator.';
+    pintarAmigos(document.getElementById('comunidad-amigos'), r.amigos, 'Ninguno de tus amigos lo jugó todavía.');
+}
+
+// Publicaciones o guías del juego; "reiniciar" vuelve a la primera página.
+async function cargarComunidad(tipo, reiniciar) {
+    const j = comunidadJuego;
+    const lista = document.getElementById(tipo === 'post' ? 'comunidad-posts' : 'comunidad-guias-lista');
+    const mas = document.getElementById(tipo === 'post' ? 'comunidad-posts-mas' : 'comunidad-guias-mas');
+    const token = comunidadToken;
+    if (reiniciar) {
+        comunidadUltimo[tipo] = null;
+        lista.replaceChildren(mensajeCargando());
+    }
+    mas.style.display = 'none';
+    let res;
+    try { res = await window.pywebview.api.comunidad_publicaciones(j.identificativo, j.titulo, tipo, comunidadUltimo[tipo]); } catch (e) { res = null; }
+    if (token !== comunidadToken || comunidadJuego !== j) return;
+    if (reiniciar) lista.innerHTML = '';
+    if (!res || !res.exito) {
+        lista.appendChild(mensajeVacio((res && res.error) || 'No se pudo cargar la comunidad.'));
+        return;
+    }
+    if (reiniciar && !res.publicaciones.length) {
+        lista.appendChild(mensajeVacio(tipo === 'post' ? 'Todavía no hay publicaciones. ¡Sé el primero!' : 'Todavía no hay guías de este juego.'));
+    }
+    res.publicaciones.forEach(p => lista.appendChild(tipo === 'post' ? crearTarjetaPost(p) : tarjetaGuia(p)));
+    if (res.publicaciones.length) comunidadUltimo[tipo] = res.publicaciones[res.publicaciones.length - 1].id;
+    mas.style.display = res.hay_mas ? '' : 'none';
+}
+
+async function elegirImagenComunidad() {
+    let r;
+    try { r = await window.pywebview.api.seleccionar_imagen_comunidad(); } catch (e) { r = null; }
+    if (!r || !r.exito) {
+        if (r && r.error && r.error !== 'cancelado') avisoPost(r.error, true);
+        return;
+    }
+    const adjunto = document.getElementById('comunidad-adjunto');
+    const img = nodo('img');
+    img.alt = r.nombre;
+    img.src = r.vista;
+    const quitar = nodo('button', 'post-adjunto-quitar', [icono('x')]);
+    quitar.title = 'Quitar';
+    quitar.onclick = quitarImagenComunidad;
+    adjunto.replaceChildren(img, quitar);
+    adjunto.style.display = '';
+}
+
+function quitarImagenComunidad() {
+    const adjunto = document.getElementById('comunidad-adjunto');
+    adjunto.innerHTML = '';
+    adjunto.style.display = 'none';
+    window.pywebview.api.descartar_imagen_comunidad().catch(() => {});
+}
+
+async function publicarEnComunidad() {
+    const j = comunidadJuego;
+    const caja = document.getElementById('comunidad-texto');
+    let r;
+    try { r = await window.pywebview.api.crear_publicacion_juego(j.identificativo, j.titulo, caja.value); } catch (e) { r = null; }
+    if (!r || !r.exito) { avisoPost((r && r.error) || 'No se pudo publicar.', true); return; }
+    caja.value = '';
+    quitarImagenComunidad();
+    const lista = document.getElementById('comunidad-posts');
+    lista.querySelectorAll('.empty-state').forEach(n => n.remove());
+    lista.prepend(crearTarjetaPost(r.publicacion));
+    cargarResumenComunidad();
+}
+
+// --- Guías ---
+
+// Tarjeta de la lista: título, autor, fecha, reacciones y la primera imagen.
+function tarjetaGuia(p) {
+    postsCache.set(p.id, p);
+    const tarjeta = nodo('button', 'guia-tarjeta');
+    tarjeta.type = 'button';
+    const miniatura = nodo('div', 'guia-miniatura', [icono('newspaper')]);
+    if (p.imagenes && p.imagenes[0]) {
+        const img = nodo('img');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onload = () => miniatura.replaceChildren(img);
+        img.src = p.imagenes[0];
+    }
+    const info = nodo('div', 'guia-info');
+    info.append(nodo('strong', '', p.titulo), nodo('small', '', `${p.username} · ${fechaPublicacion(p.creado_en)}`),
+        nodo('span', 'guia-cuentas', `${p.likes} me gusta · ${p.comentarios} ${p.comentarios === 1 ? 'comentario' : 'comentarios'}`));
+    tarjeta.append(miniatura, info);
+    tarjeta.onclick = () => abrirGuia(p);
+    return tarjeta;
+}
+
+// Lector: la misma tarjeta de una publicación (reacciones, comentarios, compartir), con el texto con formato y las imágenes.
+function abrirGuia(p) {
+    const lector = document.getElementById('guia-lector');
+    const tarjeta = crearTarjetaPost(p);
+    tarjeta.classList.add('guia-completa');
+    const texto = tarjeta.querySelector('.post-texto');
+    const contenido = contenidoGuia(p.texto);
+    if (texto) texto.replaceWith(contenido); else tarjeta.querySelector('.post-cab').after(contenido);
+    tarjeta.querySelector('.post-cab').after(nodo('h2', 'guia-titulo', p.titulo));
+    if (p.imagenes && p.imagenes.length) {
+        const galeria = nodo('div', 'guia-galeria');
+        p.imagenes.forEach(src => {
+            const img = nodo('img');
+            img.alt = '';
+            img.loading = 'lazy';
+            img.src = src;
+            img.onclick = () => abrirVisor(src);
+            galeria.appendChild(img);
+        });
+        contenido.after(galeria);
+    }
+    lector.replaceChildren(boton([icono('arrow-left'), ' Todas las guías'], 'btn-back', async () => volverAGuias()), tarjeta);
+    document.getElementById('guias-inicio').style.display = 'none';
+    lector.style.display = '';
+    document.getElementById('view-comunidad').scrollTop = 0;
+}
+
+function volverAGuias() {
+    document.getElementById('guia-lector').style.display = 'none';
+    document.getElementById('guias-inicio').style.display = '';
+}
+
+// Formato simple: "## " subtítulo, "- " o "* " lista, "1. " lista numerada, **negrita**. Siempre como texto, nunca como HTML.
+function contenidoGuia(texto) {
+    const cont = nodo('div', 'guia-contenido');
+    let lista = null, parrafo = [];
+    const enLinea = linea => linea.split(/(\*\*[^*]+\*\*)/).filter(Boolean)
+        .map(parte => /^\*\*[^*]+\*\*$/.test(parte) ? nodo('strong', '', parte.slice(2, -2)) : parte);
+    const cerrarParrafo = () => {
+        if (parrafo.length) cont.appendChild(nodo('p', '', parrafo.flatMap((l, i) => i ? ['\n', ...enLinea(l)] : enLinea(l))));
+        parrafo = [];
+    };
+    (texto || '').split('\n').forEach(linea => {
+        const sub = linea.match(/^#{1,3}\s+(.*)/);
+        const punto = linea.match(/^\s*[-*]\s+(.*)/);
+        const numero = linea.match(/^\s*\d+[.)]\s+(.*)/);
+        if (punto || numero) {
+            cerrarParrafo();
+            const tipoLista = punto ? 'ul' : 'ol';
+            if (!lista || lista.tagName.toLowerCase() !== tipoLista) {
+                lista = nodo(tipoLista);
+                cont.appendChild(lista);
+            }
+            lista.appendChild(nodo('li', '', enLinea((punto || numero)[1])));
+            return;
+        }
+        lista = null;
+        if (sub) { cerrarParrafo(); cont.appendChild(nodo('h3', '', enLinea(sub[1]))); return; }
+        if (!linea.trim()) { cerrarParrafo(); return; }
+        parrafo.push(linea);
+    });
+    cerrarParrafo();
+    return cont;
+}
+
+function abrirFormularioGuia() {
+    document.getElementById('guias-inicio').style.display = 'none';
+    document.getElementById('guia-lector').style.display = 'none';
+    document.getElementById('guia-form').style.display = '';
+    document.getElementById('guia-msg').textContent = '';
+    document.getElementById('guia-titulo').focus();
+}
+
+function cerrarFormularioGuia() {
+    document.getElementById('guia-form').style.display = 'none';
+    document.getElementById('guias-inicio').style.display = '';
+    document.getElementById('guia-imagenes').innerHTML = '';
+    window.pywebview.api.descartar_imagenes_guia().catch(() => {});
+}
+
+function pintarImagenesGuia(vistas) {
+    const cont = document.getElementById('guia-imagenes');
+    cont.innerHTML = '';
+    vistas.forEach((src, i) => {
+        const caja = nodo('div', 'guia-imagen-elegida');
+        const img = nodo('img');
+        img.alt = '';
+        img.src = src;
+        const quitar = nodo('button', 'post-adjunto-quitar', [icono('x')]);
+        quitar.title = 'Quitar';
+        quitar.onclick = async () => {
+            const r = await window.pywebview.api.quitar_imagen_guia(i);
+            if (r && r.exito) pintarImagenesGuia(r.vistas);
+        };
+        caja.append(img, quitar);
+        cont.appendChild(caja);
+    });
+}
+
+async function elegirImagenesGuia() {
+    let r;
+    try { r = await window.pywebview.api.elegir_imagenes_guia(); } catch (e) { r = null; }
+    const msg = document.getElementById('guia-msg');
+    if (!r || !r.exito) { msg.textContent = (r && r.error) || 'No se pudieron agregar las imágenes.'; return; }
+    msg.textContent = r.aviso || '';
+    pintarImagenesGuia(r.vistas);
+}
+
+async function publicarGuia() {
+    const j = comunidadJuego;
+    const msg = document.getElementById('guia-msg');
+    msg.textContent = 'Publicando…';
+    let r;
+    try {
+        r = await window.pywebview.api.crear_guia(j.identificativo, j.titulo,
+            document.getElementById('guia-titulo').value, document.getElementById('guia-texto').value);
+    } catch (e) { r = null; }
+    if (!r || !r.exito) { msg.textContent = (r && r.error) || 'No se pudo publicar la guía.'; return; }
+    document.getElementById('guia-titulo').value = '';
+    document.getElementById('guia-texto').value = '';
+    document.getElementById('guia-imagenes').innerHTML = '';
+    document.getElementById('guia-form').style.display = 'none';
+    cargarComunidad('guia', true);
+    cargarResumenComunidad();
+    abrirGuia(r.publicacion);
 }

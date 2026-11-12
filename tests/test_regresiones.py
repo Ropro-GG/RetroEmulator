@@ -85,6 +85,19 @@ class AvisoSobreElJuego(unittest.TestCase):
         self.assertEqual([(i["nombre"], i["grado"], i["detalle"]) for i in r["insignias"]], [("Cazador de logros", 2, "500+ puntos de logros")])
 
 
+class GuiasDeLaComunidad(unittest.TestCase):
+    def test_validar_guia(self):
+        from nucleo.cloud_client import CloudClient
+        validar = CloudClient.validar_guia
+        yo = CloudClient.__new__(CloudClient)
+        self.assertIsNone(validar(yo, "Título", "Paso 1", 5))
+        self.assertIn("título", validar(yo, "   ", "Texto", 0))
+        self.assertIn("contenido", validar(yo, "Título", "  ", 0))
+        self.assertIn("120", validar(yo, "x" * 121, "Texto", 0))
+        self.assertIn("20000", validar(yo, "Título", "x" * 20001, 0))
+        self.assertIn("5", validar(yo, "Título", "Texto", 6))
+
+
 class BannerDelPerfil(unittest.TestCase):
     def test_la_imagen_se_recorta_a_3_por_1_sin_metadatos(self):
         from nucleo import imagenes

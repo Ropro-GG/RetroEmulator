@@ -1949,3 +1949,51 @@ button:active:not(:disabled) { transform: scale(0.97); }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; }
 }
+
+/* COMUNIDAD DE UN JUEGO */
+.comunidad-view { overflow-y: auto; padding: 24px; }
+.comunidad-wrap { max-width: 860px; margin: 0 auto; }
+.comunidad-cabecera { position: relative; overflow: hidden; margin: 14px 0 16px; border-radius: 10px; border: 1px solid #2a3544; background: #1F2833; }
+.comunidad-fondo { position: absolute; inset: 0; background-size: cover; background-position: center; filter: blur(24px) brightness(0.35); transform: scale(1.2); }
+.comunidad-cab-contenido { position: relative; display: flex; gap: 20px; align-items: center; padding: 20px; }
+.comunidad-portada { display: flex; align-items: center; justify-content: center; width: 110px; height: 150px; flex-shrink: 0; border-radius: 8px;
+    overflow: hidden; background: #0B0C10; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }
+.comunidad-portada img { width: 100%; height: 100%; object-fit: contain; }
+.comunidad-portada .icono { width: 40%; height: 40%; }
+.comunidad-etiqueta { color: #66FCF1; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.08em; }
+.comunidad-cab-contenido h1 { color: #fff; font-size: 1.6em; margin: 4px 0 2px; }
+.comunidad-consola { color: #7d8590; font-size: 0.9em; }
+.comunidad-numeros { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.comunidad-numero { color: #C5C6C7; font-size: 0.88em; }
+.comunidad-pestanas { display: flex; gap: 4px; border-bottom: 1px solid #2a3544; margin-bottom: 16px; }
+.comunidad-pestana { padding: 10px 16px; border: none; border-bottom: 3px solid transparent; background: none; color: #7d8590; font-weight: bold; cursor: pointer; }
+.comunidad-pestana:hover { color: #fff; }
+.comunidad-pestana.activa { color: #66FCF1; border-bottom-color: #66FCF1; }
+.comunidad-escribir textarea, .guia-form textarea { width: 100%; min-height: 80px; box-sizing: border-box; resize: vertical; padding: 10px;
+    background: #0B0C10; color: #C5C6C7; border: 1px solid #45A29E; border-radius: 6px; font-family: inherit; }
+.guia-form textarea { min-height: 260px; }
+.guia-form .settings-input { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+.comunidad-escribir-pie { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.comunidad-adjunto, .guia-imagen-elegida { position: relative; display: inline-block; margin-top: 10px; }
+.comunidad-adjunto img, .guia-imagen-elegida img { max-height: 120px; border-radius: 6px; display: block; }
+.guia-imagenes { display: flex; gap: 10px; flex-wrap: wrap; }
+.comunidad-total { color: #C5C6C7; margin-bottom: 14px; }
+.guias-lista { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.guia-tarjeta { display: flex; gap: 14px; align-items: center; width: 100%; padding: 10px; text-align: left; cursor: pointer; color: inherit;
+    background: #1F2833; border: 1px solid #2a3544; border-radius: 8px; transition: border-color 0.2s; }
+.guia-tarjeta:hover, .guia-tarjeta:focus-visible { border-color: #66FCF1; outline: none; }
+.guia-miniatura { display: flex; align-items: center; justify-content: center; width: 96px; height: 64px; flex-shrink: 0; border-radius: 6px; overflow: hidden; background: #0B0C10; }
+.guia-miniatura img { width: 100%; height: 100%; object-fit: cover; }
+.guia-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.guia-info strong { color: #fff; }
+.guia-info small, .guia-cuentas { color: #7d8590; font-size: 0.8em; }
+.guia-titulo { color: #fff; font-size: 1.4em; margin: 6px 0 10px; }
+.guia-contenido { color: #C5C6C7; line-height: 1.65; }
+.guia-contenido p { margin: 0 0 12px; white-space: pre-wrap; }
+.guia-contenido h3 { color: #66FCF1; font-size: 1.1em; margin: 18px 0 8px; }
+.guia-contenido ul, .guia-contenido ol { margin: 0 0 12px 22px; }
+.guia-contenido li { margin-bottom: 4px; }
+.guia-contenido strong { color: #fff; }
+.guia-galeria { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 12px; }
+.guia-galeria img { max-height: 180px; max-width: 100%; border-radius: 6px; cursor: zoom-in; }
+.guia-form code { color: #66FCF1; }
