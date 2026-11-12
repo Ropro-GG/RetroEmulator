@@ -11,6 +11,7 @@ import os
 import re
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -118,6 +119,7 @@ def _armar_lista(indice, datos, url_base):
                  "portada": url_base + urllib.parse.quote(nombre) + ".png"}
         for campo, valores in datos.items():
             juego[campo] = valores.get(clave, "")
+        juego["genero"] = traducir_generos(juego["genero"])
         juegos.append(juego)
     juegos.sort(key=lambda j: j["titulo"].casefold())
     return juegos
@@ -141,8 +143,34 @@ def _clave_genero(genero):
 
 
 def generos_de(texto):
-    """Un juego puede tener varios géneros: "Board /Card, Shogi" -> Board, Card, Shogi."""
-    return [g.strip() for g in re.split(r"[,/]", texto or "") if _clave_genero(g)]
+    """Un juego puede tener varios géneros: "Board /Card, Shogi" -> Board, Card, Shogi. "N/A" es que no hay dato."""
+    return [g.strip() for g in re.split(r"[,/&]", (texto or "").replace("N/A", "")) if _clave_genero(g)]
+
+
+# Todos los géneros de libretro-database al 2026-11-11. Uno nuevo se muestra en inglés hasta sumarlo aquí.
+_GENEROS_ES = {
+    "Action": "Acción", "Sports": "Deportes", "Platform": "Plataformas", "Adventure": "Aventura", "Role-playing (RPG)": "Rol (RPG)",
+    "Racing": "Carreras", "Strategy": "Estrategia", "Puzzle": "Puzle", "Simulation": "Simulación", "Shooter": "Disparos",
+    "Board": "Juego de mesa", "Fighting": "Lucha", "Shoot'em Up": "Shoot 'em up", "Gambling": "Apuestas", "Beat'em Up": "Beat 'em up",
+    "Educational": "Educativo", "Compilation": "Recopilación", "Miscellaneous": "Varios", "Various": "Varios", "Quiz": "Preguntas",
+    "Music": "Música", "Mini Games": "Minijuegos", "Hunting and Fishing": "Caza y pesca", "Card": "Cartas", "Mahjong": "Mahjong",
+    "Pinball": "Pinball", "Dancing": "Baile", "Sports with Animals": "Deportes con animales", "Gun": "Pistola de luz",
+    "Lightgun Shooter": "Pistola de luz", "Basketball": "Básquet", "Shogi": "Shogi", "Casual Game": "Casual", "Data": "Datos",
+    "Football": "Fútbol", "Adult": "Adultos", "Tennis": "Tenis", "Pictures": "Imágenes", "Picture": "Imágenes", "Wrestling": "Lucha libre",
+    "Boxing": "Boxeo", "Survival Horror": "Survival horror", "Interactive Comic": "Cómic interactivo", "Party": "Fiesta", "Chess": "Ajedrez",
+    "Breakout": "Rompeladrillos", "Interactive Movie": "Película interactiva", "Demo": "Demo", "Constructing": "Construcción",
+    "Building": "Construcción", "Colouring Book": "Para colorear", "Colouring Game": "Para colorear", "Thinking": "Ingenio",
+    "Sound Novel": "Novela sonora", "Visual Novel": "Novela visual", "Sing": "Karaoke", "Rhythm": "Ritmo", "Dating": "Citas",
+    "Action role-playing": "Rol de acción", "hack and slash": "Hack and slash", "Flight Simulator": "Simulador de vuelo",
+    "Cooking": "Cocina", "Breeding": "Crianza", "Tetris": "Tetris", "Videos": "Videos", "Video": "Videos", "Go": "Go",
+    "Arcade": "Arcade", "Browser": "Navegador", "Email": "Correo", "PDA": "Agenda", "Utility": "Utilidad", "Tarot": "Tarot",
+}
+_GENEROS_ES = {_clave_genero(en): es for en, es in _GENEROS_ES.items()}
+
+
+def traducir_generos(texto):
+    """"Board /Card" -> "Juego de mesa, Cartas", sin repetir los que significan lo mismo."""
+    return ", ".join(dict.fromkeys(_GENEROS_ES.get(_clave_genero(g), g) for g in generos_de(texto)))
 
 
 def listar(identificativo, nombre_consola, texto="", genero="", pagina=1):
@@ -154,7 +182,7 @@ def listar(identificativo, nombre_consola, texto="", genero="", pagina=1):
     for j in juegos:
         for g in generos_de(j["genero"]):
             nombres.setdefault(_clave_genero(g), g)
-    generos = sorted(nombres.values(), key=str.casefold)
+    generos = sorted(nombres.values(), key=lambda g: unicodedata.normalize("NFD", g.casefold()))   # "Básquet" va antes que "Boxeo"
     buscado = _clave_genero(genero or "")
     hallados = [j for j in juegos if (not buscado or buscado in map(_clave_genero, generos_de(j["genero"])))
                 and all(p in j["clave"] for p in palabras)]

@@ -568,7 +568,7 @@ game (\n\tcomment "Legend of Zelda, The (USA)"\n\treleaseyear "1992"\n\trom ( cr
     def test_la_lista_oculta_hacks_y_betas_y_elige_una_version(self):
         indice = boxart._Indice("X", ["Juego (USA).png", "Juego (Beta).png", "Otro (Proto).png", "Abc (Japan).png"])
         juegos = catalogo._armar_lista(indice, {"genero": {"juego": "Action"}}, "https://x/")
-        self.assertEqual([(j["titulo"], j["genero"]) for j in juegos], [("Abc", ""), ("Juego", "Action")])
+        self.assertEqual([(j["titulo"], j["genero"]) for j in juegos], [("Abc", ""), ("Juego", "Acción")])   # se traduce al armar la lista
         self.assertEqual(juegos[1]["portada"], "https://x/Juego%20%28USA%29.png")
 
     def test_wikipedia_solo_vale_si_coincide_el_titulo_y_habla_de_un_videojuego(self):
@@ -600,6 +600,11 @@ game (\n\tcomment "Legend of Zelda, The (USA)"\n\treleaseyear "1992"\n\trom ( cr
             res = catalogo.listar("x", "x", genero="beat 'em up")
         self.assertEqual(res["generos"], ["Beat'em Up", "Fighting"])
         self.assertEqual([j["titulo"] for j in res["juegos"]], ["A", "B"])
+
+    def test_generos_en_espanol(self):
+        self.assertEqual(catalogo.traducir_generos("Board /Card, Gun, Lightgun Shooter"), "Juego de mesa, Cartas, Pistola de luz")
+        self.assertEqual(catalogo.traducir_generos("N/A"), "")
+        self.assertEqual(catalogo.traducir_generos("Mahjong & Puzzle, Nuevo"), "Mahjong, Puzle, Nuevo")   # uno desconocido queda igual
 
     def test_leer_dat_completo_toma_los_datos_de_cada_bloque(self):
         texto = 'clrmamepro (\n\tname "x"\n)\n\ngame (\n\tname "Silent Hill (USA)"\n\tdescription "a \\"b\\""\n\tdeveloper "Konami"\n\treleaseyear "1999"\n\tgenre "Horror"\n' \
