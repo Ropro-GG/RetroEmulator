@@ -114,6 +114,18 @@ def inicializar_db_local():
             );
         """)
 
+        # Tiempo de juego por cuenta, medido desde que el emulador abre hasta que se cierra
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tiempo_juego (
+                usuario_id TEXT NOT NULL,
+                consola_id INTEGER NOT NULL,
+                titulo TEXT NOT NULL,
+                segundos INTEGER NOT NULL DEFAULT 0,
+                ultima_vez TEXT,
+                PRIMARY KEY (usuario_id, consola_id, titulo)
+            );
+        """)
+
         # Coincidencias entre juegos locales y juegos de RetroAchievements
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS ra_juegos (
@@ -317,6 +329,27 @@ def obtener_juego_detalle(juego_id):
         "identificativo": fila[4], "portada_path": fila[5] or "", "total_variantes": fila[6], "sin_archivo": fila[7] == 0,
     }
 
+# --- TIEMPO DE JUEGO ---
+
+def sumar_tiempo(usuario, consola_id, titulo, segundos):
+    """Suma una sesión y la marca como la última. Con 0 segundos solo marca que se empezó a jugar."""
+    with obtener_conexion() as conn:
+        conn.execute("""
+            INSERT INTO tiempo_juego (usuario_id, consola_id, titulo, segundos, ultima_vez)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(usuario_id, consola_id, titulo) DO UPDATE SET
+                segundos = segundos + excluded.segundos, ultima_vez = excluded.ultima_vez;
+        """, (usuario or "", consola_id, titulo, max(0, int(segundos))))
+        conn.commit()
+
+
+def obtener_tiempo(consola_id, titulo):
+    with obtener_conexion() as conn:
+        fila = conn.execute("SELECT segundos, ultima_vez FROM tiempo_juego WHERE usuario_id = ? AND consola_id = ? AND titulo = ?;",
+                            (usuario_id() or "", consola_id, titulo)).fetchone()
+    return {"segundos": fila[0], "ultima_vez": fila[1]} if fila else {"segundos": 0, "ultima_vez": None}
+
+
 # --- COLECCIÓN: juegos agregados desde el Catálogo sin su archivo ---
 # Su ruta_rom es "coleccion:<consola>:<título>": no es un archivo, y ruta_rom debe ser única.
 
@@ -510,12 +543,14 @@ class LocalDB:
         cursor = conexion.cursor()
 
         query = """
-            SELECT MIN(j.id) as id, j.titulo, j.ruta_rom, j.consola_id, c.nombre AS nombre_consola, COUNT(j.id) as total_variantes, MAX(j.portada_path) as portada_path
+            SELECT MIN(j.id) as id, j.titulo, j.ruta_rom, j.consola_id, c.nombre AS nombre_consola, COUNT(j.id) as total_variantes, MAX(j.portada_path) as portada_path,
+                   t.segundos, t.ultima_vez
             FROM juegos j
             JOIN consolas c ON j.consola_id = c.id
+            LEFT JOIN tiempo_juego t ON t.usuario_id = ? AND t.consola_id = j.consola_id AND t.titulo = j.titulo
             WHERE 1=1
         """
-        parametros = []
+        parametros = [usuario_id() or ""]
 
         if consola_id and str(consola_id).lower() != "todas":
             query += " AND j.consola_id = ?"
@@ -541,7 +576,9 @@ class LocalDB:
                 "consola_id": fila[3],
                 "nombre_consola": fila[4],
                 "total_variantes": fila[5],
-                "portada_path": fila[6]
+                "portada_path": fila[6],
+                "segundos": fila[7] or 0,
+                "ultima_vez": fila[8],
             })
 
         return juegos

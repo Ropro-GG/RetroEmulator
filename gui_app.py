@@ -219,6 +219,11 @@ class API:
             quedan = self._juegos_activos
         if quedan == 0:
             self.cloud.limpiar_jugando()
+        try:   # el tiempo ya se guardó: la biblioteca muestra la sesión sin tener que recargarla
+            if self.window:
+                self.window.evaluate_js("alCerrarJuego()")
+        except Exception as e:
+            print(f"[LAUNCHER] No se pudo actualizar la biblioteca: {e}")
 
     # --- SOCIAL ---
 
@@ -707,6 +712,7 @@ class API:
         if not juego:
             return {"exito": False, "error": "No se encontró el juego."}
         juego["opinion"] = db_local.obtener_opinion(juego["consola_id"], juego["titulo"])
+        juego.update(db_local.obtener_tiempo(juego["consola_id"], juego["titulo"]))
         return {"exito": True, "juego": juego}
 
     def guardar_opinion(self, game_id, puntuacion, texto, publica=True, para_todos=False):

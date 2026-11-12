@@ -60,9 +60,12 @@ class ElegirVariante(unittest.TestCase):
         self.popen = launcher.subprocess.Popen
         self.lanzados = []
         launcher.subprocess.Popen = lambda args: self.lanzados.append(args)
+        self.vigilar = launcher._vigilar
+        launcher._vigilar = lambda *args: None   # sin proceso real no hay nada que vigilar ni medir
 
     def tearDown(self):
         launcher.subprocess.Popen = self.popen
+        launcher._vigilar = self.vigilar
         db_local.DB_NAME = self.db_original
         self.dir.cleanup()
 
@@ -667,6 +670,20 @@ game (\n\tcomment "Legend of Zelda, The (USA)"\n\treleaseyear "1992"\n\trom ( cr
             self.assertIsNone(buscar("Mega Man 10"))
             self.assertIsNone(buscar("Ms. Pac-Man"))   # con menos de tres palabras no se empareja por contención
         ra_client._indices.pop(12, None)
+
+    def test_tiempo_de_juego_por_cuenta(self):
+        with tempfile.TemporaryDirectory() as carpeta, mock.patch.object(db_local, "DB_NAME", os.path.join(carpeta, "x.db")):
+            db_local.inicializar_db_local()
+            consola = db_local.LocalDB().obtener_consolas()[0]["id"]
+            db_local.registrar_juego(consola, "Juego", os.path.join(carpeta, "a.bin"))
+            with mock.patch.object(db_local, "usuario_id", return_value="yo"):
+                db_local.sumar_tiempo("yo", consola, "Juego", 0)
+                db_local.sumar_tiempo("yo", consola, "Juego", 90.6)
+                db_local.sumar_tiempo("otro", consola, "Juego", 500)
+                self.assertEqual(db_local.obtener_tiempo(consola, "Juego")["segundos"], 90)
+                juego = db_local.LocalDB().obtener_juegos_filtrados("", consola)[0]
+                self.assertEqual(juego["segundos"], 90)
+                self.assertTrue(juego["ultima_vez"])
 
     def test_coleccion_sin_archivo(self):
         with tempfile.TemporaryDirectory() as carpeta, mock.patch.object(db_local, "DB_NAME", os.path.join(carpeta, "x.db")):

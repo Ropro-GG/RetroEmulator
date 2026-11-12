@@ -88,7 +88,20 @@
             </aside>
 
             <section class="game-grid-container">
-                <h2>Biblioteca de Juegos</h2>
+                <div id="biblio-recientes" class="biblio-estante" style="display: none;">
+                    <h3 class="biblio-titulo">Jugados recientemente</h3>
+                    <div id="biblio-recientes-fila" class="biblio-recientes-fila"></div>
+                </div>
+                <div class="biblio-cabecera">
+                    <h3 class="biblio-titulo">Todos los juegos <span id="biblio-total"></span></h3>
+                    <label class="biblio-orden">Ordenar por
+                        <select id="biblio-orden" onchange="filtrarCatalogo()">
+                            <option value="alfabetico">Alfabético</option>
+                            <option value="recientes">Jugados recientemente</option>
+                            <option value="tiempo">Tiempo de juego</option>
+                        </select>
+                    </label>
+                </div>
                 <div id="game-grid" class="game-grid">
                     <!-- Cards de juegos dinámicas -->
                 </div>
@@ -105,10 +118,19 @@
                         <div class="detail-main">
                             <h1 id="detail-title"></h1>
                             <p id="detail-console" class="detail-console"></p>
-                            <button class="btn-play" onclick="jugarDesdeDetalle()">▶ JUGAR</button>
-                            <button id="detail-quitar" class="btn-secondary-sm" style="display: none;" onclick="quitarDeBiblioteca()">Quitar de la biblioteca</button>
                         </div>
                     </div>
+                </div>
+
+                <!-- Barra de la biblioteca de Steam: Jugar y tus datos del juego -->
+                <div class="detail-barra">
+                    <button class="btn-play" onclick="jugarDesdeDetalle()">▶ JUGAR</button>
+                    <div class="detail-stat"><span>Última sesión</span><strong id="detail-ultima">—</strong></div>
+                    <div class="detail-stat"><span>Tiempo de juego</span><strong id="detail-tiempo">—</strong></div>
+                    <div class="detail-stat detail-stat-logros"><span>Logros</span><strong id="detail-logros">—</strong>
+                        <div class="ach-bar"><div id="detail-logros-barra" class="ach-bar-fill" style="width: 0%;"></div></div>
+                    </div>
+                    <button id="detail-quitar" class="btn-secondary-sm" style="display: none;" onclick="quitarDeBiblioteca()">Quitar de la biblioteca</button>
                 </div>
 
                 <div class="detail-body">

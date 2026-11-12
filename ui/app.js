@@ -241,7 +241,8 @@ async function filtrarCatalogo() {
     try {
         const textoBusqueda = document.getElementById('search-input').value;
         const juegos = await window.pywebview.api.obtener_juegos_filtrados(textoBusqueda, consolaSeleccionada);
-        renderizarJuegos(juegos);
+        renderizarJuegos(ordenarJuegos(juegos || []));
+        pintarRecientes(juegos || []);
     } catch (e) {
         console.error("Error al filtrar catálogo:", e);
     }
@@ -326,10 +327,60 @@ function crearPortada(juego, nombre) {
 }
 
 // Dibuja la grilla de juegos.
+// "Menos de un minuto", "45 minutos" o "3,5 horas", como en Steam.
+function formatearTiempo(segundos) {
+    if (!segundos) return '';
+    if (segundos < 60) return 'Menos de un minuto';
+    if (segundos < 3600) return `${Math.round(segundos / 60)} minutos`;
+    return `${(segundos / 3600).toLocaleString('es-AR', { maximumFractionDigits: 1 })} horas`;
+}
+
+// La base guarda la fecha en UTC sin zona: "2026-11-11 22:10:05".
+const fechaLocal = texto => texto ? formatearFecha(texto.replace(' ', 'T') + 'Z') : '';
+
+function ordenarJuegos(juegos) {
+    const orden = document.getElementById('biblio-orden').value;
+    if (orden === 'recientes') return [...juegos].sort((a, b) => (b.ultima_vez || '').localeCompare(a.ultima_vez || ''));
+    if (orden === 'tiempo') return [...juegos].sort((a, b) => (b.segundos || 0) - (a.segundos || 0));
+    return juegos;   // la base ya los da en orden alfabético
+}
+
+// Python avisa cuando se cierra un emulador: se actualizan el estante, el orden y la pantalla del juego abierto.
+async function alCerrarJuego() {
+    await filtrarCatalogo();
+    if (!juegoDetalleActual) return;
+    const id = juegoDetalleActual.id;
+    let res;
+    try { res = await window.pywebview.api.obtener_detalle_juego(id); } catch (e) { return; }
+    if (!res || !res.exito || !juegoDetalleActual || juegoDetalleActual.id !== id) return;
+    document.getElementById('detail-ultima').textContent = fechaLocal(res.juego.ultima_vez) || 'Nunca';
+    document.getElementById('detail-tiempo').textContent = formatearTiempo(res.juego.segundos) || 'Sin registrar';
+}
+
+// Estante de arriba: los últimos jugados de lo que se está mostrando.
+function pintarRecientes(juegos) {
+    const recientes = juegos.filter(j => j.ultima_vez).sort((a, b) => b.ultima_vez.localeCompare(a.ultima_vez)).slice(0, 8);
+    const fila = document.getElementById('biblio-recientes-fila');
+    fila.innerHTML = '';
+    document.getElementById('biblio-recientes').style.display = recientes.length ? '' : 'none';
+    recientes.forEach(j => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'biblio-reciente';
+        card.appendChild(crearPortada(j, j.titulo));
+        const info = nodo('div', 'biblio-reciente-info');
+        info.append(nodo('strong', '', j.titulo), nodo('span', '', [fechaLocal(j.ultima_vez), formatearTiempo(j.segundos)].filter(Boolean).join(' · ')));
+        card.appendChild(info);
+        card.onclick = () => abrirDetalle(j);
+        fila.appendChild(card);
+    });
+}
+
 function renderizarJuegos(juegos) {
     const grid = document.getElementById('game-grid');
     observadorPortadas.disconnect();   // las tarjetas anteriores ya no se muestran
     grid.innerHTML = '';
+    document.getElementById('biblio-total').textContent = juegos && juegos.length ? `(${juegos.length})` : '';
 
     if (!juegos || juegos.length === 0) {
         grid.innerHTML = '<p style="color: #a0a0a0;">No se encontraron juegos.</p>';
@@ -353,6 +404,7 @@ function renderizarJuegos(juegos) {
         consola.style.cssText = 'color: #45A29E; font-size: 0.82em;';
         consola.textContent = consolaJuego;
         info.append(titulo, consola);
+        if (juego.segundos) info.appendChild(nodo('p', 'game-tiempo', formatearTiempo(juego.segundos)));
         card.appendChild(info);
 
         card.onclick = () => abrirDetalle(juego);
@@ -765,6 +817,10 @@ function pintarDetalle(j) {
     document.getElementById('detail-console').textContent =
         j.consola + (j.sin_archivo ? ' · Sin archivo: al jugar lo elegís' : (j.total_variantes > 1 ? ` · ${j.total_variantes} versiones/discos` : ''));
     document.getElementById('detail-quitar').style.display = j.sin_archivo ? '' : 'none';
+    document.getElementById('detail-ultima').textContent = fechaLocal(j.ultima_vez) || 'Nunca';
+    document.getElementById('detail-tiempo').textContent = formatearTiempo(j.segundos) || 'Sin registrar';
+    document.getElementById('detail-logros').textContent = '—';
+    document.getElementById('detail-logros-barra').style.width = '0%';
 
     const cover = document.getElementById('detail-cover');
     cover.innerHTML = '';
@@ -877,6 +933,10 @@ async function cargarLogros(id) {
     }
     if (!juegoDetalleActual || juegoDetalleActual.id !== id) return;  // el usuario ya cambió de pantalla
     pintarLogros(cont, res);
+    if (res && res.exito) {
+        document.getElementById('detail-logros').textContent = `${res.obtenidos}/${res.total}`;
+        document.getElementById('detail-logros-barra').style.width = Math.round(res.obtenidos * 100 / (res.total || 1)) + '%';
+    }
 }
 
 // Dibuja los logros con la barra de progreso.
@@ -1793,7 +1853,7 @@ function reiniciarEstadoUI() {
     // Textos y listas que dependen de la cuenta
     ['friend-search-results', 'friend-lists', 'game-grid', 'friends-played', 'friends-wishlist',
      'achievements-content', 'paths-content', 'pa-acciones', 'pa-juegos', 'pa-comun', 'pa-deseados',
-     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista', 'noticias-lista', 'catalogo-inicio', 'catalogo-grilla', 'catalogo-ficha', 'catalogo-consola'].forEach(id => {
+     'wish-list', 'wish-sugerencias', 'friends-opiniones', 'mi-recientes', 'mi-deseados', 'bloqueados-lista', 'noticias-lista', 'biblio-recientes-fila', 'catalogo-inicio', 'catalogo-grilla', 'catalogo-ficha', 'catalogo-consola'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
     });

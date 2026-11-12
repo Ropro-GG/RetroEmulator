@@ -3,6 +3,7 @@
 import subprocess
 import os
 import threading
+import time
 from . import db_local
 
 def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
@@ -75,21 +76,23 @@ def ejecutar_juego(juego_id, al_iniciar=None, al_cerrar=None, variante=False):
     except Exception as e:
         return {"exito": False, "error": f"Falló la ejecución del emulador: {e}"}
 
-    # Se avisa cuando el juego arranca y cuando se cierra (para "jugando ahora")
-    if al_iniciar or al_cerrar:
-        threading.Thread(
-            target=_vigilar,
-            args=(proceso, titulo, nombre_consola, al_iniciar, al_cerrar),
-            daemon=True
-        ).start()
+    # Se avisa cuando el juego arranca y cuando se cierra ("jugando ahora"), y se mide el tiempo de juego
+    threading.Thread(
+        target=_vigilar,
+        args=(proceso, titulo, nombre_consola, consola_id, al_iniciar, al_cerrar),
+        daemon=True
+    ).start()
     return {"exito": True}
 
-# Hilo por juego: avisa al iniciar y espera a que el emulador se cierre.
-def _vigilar(proceso, titulo, consola, al_iniciar, al_cerrar):
+# Hilo por juego: avisa al iniciar, espera a que el emulador se cierre y guarda cuánto se jugó.
+def _vigilar(proceso, titulo, consola, consola_id, al_iniciar, al_cerrar):
+    usuario, inicio = db_local.usuario_id(), time.monotonic()   # la sesión es de quien abrió el juego
     try:
+        db_local.sumar_tiempo(usuario, consola_id, titulo, 0)
         if al_iniciar:
             al_iniciar(titulo, consola)
         proceso.wait()
+        db_local.sumar_tiempo(usuario, consola_id, titulo, time.monotonic() - inicio)
     except Exception as e:
         print(f"[LAUNCHER] Error vigilando el emulador: {e}")
     finally:

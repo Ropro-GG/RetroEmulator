@@ -650,6 +650,33 @@ body {
 }
 .btn-play:hover { transform: translateY(-2px); filter: brightness(1.1); }
 
+/* Biblioteca con la distribución de la de Steam y los colores de RetroEmulator */
+.detail-barra { display: flex; align-items: center; gap: 34px; flex-wrap: wrap; margin: 0 25px 20px; padding: 14px 20px;
+    background: linear-gradient(90deg, #1F2833, #0B0C10); border-bottom: 2px solid #45A29E; border-radius: 6px; }
+.detail-stat { display: flex; flex-direction: column; gap: 3px; }
+.detail-stat span { color: #7d8590; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.05em; }
+.detail-stat strong { color: #C5C6C7; font-size: 0.92em; font-weight: 400; }
+.detail-stat-logros { min-width: 140px; }
+.detail-stat-logros .ach-bar { margin: 4px 0 0; }
+.detail-barra #detail-quitar { margin-left: auto; }
+.biblio-titulo { color: #C5C6C7; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+.biblio-titulo span { color: #7d8590; }
+.biblio-estante { margin-bottom: 26px; }
+.biblio-recientes-fila { display: grid; grid-auto-flow: column; grid-auto-columns: 200px; gap: 16px; overflow-x: auto; padding-bottom: 8px; }
+.biblio-reciente { display: flex; flex-direction: column; padding: 0; border: 1px solid transparent; border-radius: 8px; overflow: hidden;
+    background: #1F2833; color: inherit; text-align: left; cursor: pointer; transition: border-color 0.2s, transform 0.2s; }
+.biblio-reciente:hover, .biblio-reciente:focus-visible { border-color: #66FCF1; transform: translateY(-3px); outline: none; }
+.biblio-reciente .game-cover-wrapper { height: 270px; }
+.biblio-reciente-info { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; }
+.biblio-reciente-info strong { color: #fff; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.biblio-reciente-info span { color: #45A29E; font-size: 0.78em; }
+.biblio-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.biblio-cabecera .biblio-titulo { margin: 0; }
+.biblio-orden { color: #7d8590; font-size: 0.82em; }
+.biblio-orden select { margin-left: 6px; padding: 5px 8px; border: 1px solid #45A29E; border-radius: 4px; background: #0B0C10; color: #C5C6C7; }
+.biblio-orden option { background: #0B0C10; color: #C5C6C7; }
+.game-tiempo { color: #7d8590; font-size: 0.75em; }
+
 .detail-body {
     display: grid;
     grid-template-columns: 1fr 300px;
@@ -1663,9 +1690,9 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 /* CATÁLOGO */
 .catalogo-view { overflow-y: auto; padding: 24px; }
 .catalogo-wrap { max-width: 1100px; margin: 0 auto; }
-/* Portada y lista del Catálogo con la distribución de la tienda de Steam */
+/* Portada y lista del Catálogo: distribución de la tienda de Steam con los colores de RetroEmulator */
 .steam-nav { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 22px; padding: 4px 6px; border-radius: 3px;
-    background: linear-gradient(90deg, rgba(62, 103, 150, 0.92) 11%, rgba(58, 120, 177, 0.8) 25%, #0f216e 100%); box-shadow: 0 0 3px #000; }
+    background: linear-gradient(90deg, #1F2833 30%, #0B0C10 100%); border-bottom: 2px solid #45A29E; }
 .steam-nav-btn { background: none; border: none; color: #e5e5e5; padding: 8px 14px; font-size: 0.9em; cursor: pointer; border-radius: 2px; }
 .steam-nav-btn:hover, .steam-nav-btn:focus-visible { background: rgba(255, 255, 255, 0.15); color: #fff; outline: none; }
 .steam-nav-select { margin-left: auto; background: rgba(0, 0, 0, 0.35); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; padding: 6px 10px; }
@@ -1675,45 +1702,45 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .steam-carrusel::-webkit-scrollbar { display: none; }
 .steam-carrusel > * { scroll-snap-align: start; }
 .steam-flecha { flex: 0 0 34px; border: none; border-radius: 3px; background: linear-gradient(to right, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.1)); color: #fff; font-size: 1.8em; cursor: pointer; }
-.steam-flecha:hover, .steam-flecha:focus-visible { background: rgba(103, 193, 245, 0.35); outline: none; }
-.steam-destacado { flex: 1; display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); min-height: 300px; background: #0f1922; box-shadow: 0 0 7px #000; cursor: pointer; }
-.steam-destacado:focus-visible { outline: 2px solid #66c0f4; }
+.steam-flecha:hover, .steam-flecha:focus-visible { background: rgba(102, 252, 241, 0.25); outline: none; }
+.steam-destacado { flex: 1; display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); min-height: 300px; background: #0B0C10; box-shadow: 0 0 7px #000; cursor: pointer; }
+.steam-destacado:focus-visible { outline: 2px solid #66FCF1; }
 .steam-destacado-img { width: 100%; height: 100%; max-height: 360px; object-fit: contain; background: #000; image-rendering: pixelated; }
-.steam-destacado-lado { display: flex; flex-direction: column; gap: 10px; padding: 14px; background: linear-gradient(to bottom, #213a4f, #0f1922); }
+.steam-destacado-lado { display: flex; flex-direction: column; gap: 10px; padding: 14px; background: linear-gradient(to bottom, #1F2833, #0B0C10); }
 .steam-destacado-lado h4 { color: #fff; font-size: 1.3em; font-weight: 400; }
 .steam-destacado-minis { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .steam-destacado-minis img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; image-rendering: pixelated; opacity: 0.75; }
 .steam-destacado-minis img:hover { opacity: 1; }
-.steam-destacado-sub { color: #8f98a0; font-size: 0.82em; margin-top: auto; }
-.steam-precio { align-self: flex-start; background: #4c6b22; color: #beee11; padding: 3px 8px; border-radius: 2px; font-size: 0.85em; }
+.steam-destacado-sub { color: #7d8590; font-size: 0.82em; margin-top: auto; }
+.steam-precio { align-self: flex-start; background: rgba(102, 252, 241, 0.15); color: #66FCF1; padding: 3px 8px; border-radius: 2px; font-size: 0.85em; }
 .steam-puntos { display: flex; justify-content: center; gap: 4px; margin-top: 10px; }
 .steam-puntos button { width: 15px; height: 9px; border: none; border-radius: 2px; background: rgba(255, 255, 255, 0.2); cursor: pointer; }
 .steam-puntos button.activo { background: rgba(255, 255, 255, 0.5); }
-.steam-empresa { color: #8f98a0; font-size: 0.8em; font-weight: 400; margin: 14px 0 8px; }
+.steam-empresa { color: #7d8590; font-size: 0.8em; font-weight: 400; margin: 14px 0 8px; }
 .steam-categorias { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 .steam-categoria { min-height: 70px; border: none; border-radius: 4px; color: #fff; font-size: 0.95em; text-shadow: 0 1px 3px #000; cursor: pointer;
     background: linear-gradient(135deg, hsl(var(--tono), 55%, 38%), hsl(calc(var(--tono) + 40), 60%, 18%)); transition: filter 0.15s; }
 .steam-categoria:hover, .steam-categoria:focus-visible { filter: brightness(1.3); outline: none; }
 .steam-busqueda { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
-.steam-total { color: #8f98a0; font-size: 0.85em; margin-bottom: 8px; }
+.steam-total { color: #7d8590; font-size: 0.85em; margin-bottom: 8px; }
 .steam-filas { display: flex; flex-direction: column; gap: 4px; }
 .steam-fila { display: grid; grid-template-columns: 60px minmax(0, 1fr) 90px 70px; align-items: center; gap: 12px; width: 100%; padding: 4px 10px 4px 4px;
     border: none; border-radius: 2px; background: rgba(0, 0, 0, 0.2); color: inherit; text-align: left; cursor: pointer; }
 .steam-fila:nth-child(even) { background: rgba(0, 0, 0, 0.32); }
-.steam-fila:hover, .steam-fila:focus-visible { background: linear-gradient(to right, rgba(103, 193, 245, 0.2), rgba(0, 0, 0, 0.2)); outline: none; }
+.steam-fila:hover, .steam-fila:focus-visible { background: linear-gradient(to right, rgba(102, 252, 241, 0.12), rgba(0, 0, 0, 0.2)); outline: none; }
 .steam-fila-img { width: 60px; height: 60px; background: #000; display: flex; align-items: center; justify-content: center; }
 .steam-fila-img img { max-width: 100%; max-height: 100%; }
 .steam-fila-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.steam-fila-titulo { color: #c7d5e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.steam-fila-titulo { color: #C5C6C7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .steam-fila:hover .steam-fila-titulo { color: #fff; }
 .steam-fila-etiquetas { display: flex; gap: 4px; flex-wrap: wrap; }
-.steam-fila-fecha { color: #8f98a0; font-size: 0.8em; }
+.steam-fila-fecha { color: #7d8590; font-size: 0.8em; }
 .steam-fila .steam-precio { justify-self: end; }
-.steam-filtros { position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: 3px; background: #316282; }
+.steam-filtros { position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: 3px; background: #1F2833; }
 .steam-filtro { display: flex; flex-direction: column; gap: 6px; color: #fff; font-size: 0.82em; text-transform: uppercase; }
 /* La lista desplegable usa el color de cada opción: sin esto el texto claro queda sobre fondo blanco */
-.steam-filtro option, .steam-nav-select option { background: #1b2838; color: #c7d5e0; }
-.steam-filtro input, .steam-filtro select { text-transform: none; padding: 7px 8px; border: none; border-radius: 3px; background: #1b2838; color: #c7d5e0; font-size: 1.1em; }
+.steam-filtro option, .steam-nav-select option { background: #1F2833; color: #C5C6C7; }
+.steam-filtro input, .steam-filtro select { text-transform: none; padding: 7px 8px; border: none; border-radius: 3px; background: #1F2833; color: #C5C6C7; font-size: 1.1em; }
 @media (max-width: 800px) {
     .steam-busqueda, .steam-destacado { grid-template-columns: 1fr; }
     .steam-filtros { position: static; order: -1; }
@@ -1734,37 +1761,37 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .opinion-visible { display: block; }
 .opinion-visible select { display: inline-block; width: auto; margin: 0 0 0 6px; }
 .tienda-texto { color: #C5C6C7; font-size: 0.92em; line-height: 1.6; margin-bottom: 10px; white-space: pre-wrap; }
-/* Ficha del Catálogo con los colores y la distribución de la tienda de Steam */
+/* Ficha del Catálogo: distribución de la tienda de Steam con los colores de RetroEmulator */
 .steam-titulo { color: #fff; font-size: 1.8em; font-weight: 400; margin: 12px 0 14px; }
 .steam-arriba, .steam-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
-.steam-arriba { background: linear-gradient(to bottom, #1b2838, #16202d); padding: 16px; border-radius: 4px; }
+.steam-arriba { background: linear-gradient(to bottom, #1F2833, #1F2833); padding: 16px; border-radius: 4px; }
 .steam-medios { min-width: 0; }
 .steam-visor { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; cursor: zoom-in; image-rendering: pixelated; }
-.steam-leyenda { color: #8f98a0; font-size: 0.75em; margin: 5px 0 6px; }
+.steam-leyenda { color: #7d8590; font-size: 0.75em; margin: 5px 0 6px; }
 .steam-miniaturas { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
 .steam-mini { flex: 0 0 auto; padding: 0; border: 2px solid transparent; background: #000; cursor: pointer; }
 .steam-mini img { display: block; height: 64px; image-rendering: pixelated; }
-.steam-mini.activa, .steam-mini:focus-visible { border-color: #66c0f4; outline: none; }
+.steam-mini.activa, .steam-mini:focus-visible { border-color: #66FCF1; outline: none; }
 .steam-portada { display: block; width: 100%; max-height: 280px; object-fit: contain; background: #000; margin-bottom: 12px; }
-.steam-corta { color: #c6d4df; font-size: 0.85em; line-height: 1.5; margin-bottom: 12px; }
+.steam-corta { color: #C5C6C7; font-size: 0.85em; line-height: 1.5; margin-bottom: 12px; }
 .steam-dato { display: flex; gap: 10px; font-size: 0.78em; line-height: 1.9; }
-.steam-dato span { color: #556772; text-transform: uppercase; width: 110px; flex-shrink: 0; }
-.steam-dato strong { color: #66c0f4; font-weight: 400; }
+.steam-dato span { color: #7d8590; text-transform: uppercase; width: 110px; flex-shrink: 0; }
+.steam-dato strong { color: #66FCF1; font-weight: 400; }
 .steam-etiquetas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
-.steam-etiqueta { background: rgba(103, 193, 245, 0.2); color: #67c1f5; padding: 2px 7px; border-radius: 2px; font-size: 0.75em; }
+.steam-etiqueta { background: rgba(102, 252, 241, 0.12); color: #66FCF1; padding: 2px 7px; border-radius: 2px; font-size: 0.75em; }
 .steam-compra { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0; padding: 16px 18px; border-radius: 4px;
-    background: linear-gradient(-60deg, rgba(226, 244, 255, 0.3) 5%, rgba(84, 107, 115, 0.3) 95%); }
+    background: linear-gradient(-60deg, rgba(102, 252, 241, 0.14) 5%, rgba(69, 162, 158, 0.06) 95%); }
 .steam-compra h2 { color: #fff; font-size: 1.1em; font-weight: 400; margin-right: auto; }
 .steam-compra .settings-msg { flex-basis: 100%; margin: 0; }
 .steam-compra .settings-msg:empty { display: none; }
 .steam-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
 .btn-steam, .btn-steam-sec { border: none; border-radius: 2px; padding: 9px 16px; font-size: 0.9em; cursor: pointer; }
-.btn-steam { background: linear-gradient(to right, #75b022 5%, #588a1b 95%); color: #d2efa9; }
-.btn-steam:hover { background: linear-gradient(to right, #8ed629 5%, #6aa621 95%); color: #fff; }
-.btn-steam-sec { background: rgba(103, 193, 245, 0.2); color: #67c1f5; }
-.btn-steam-sec:hover { background: #67c1f5; color: #fff; }
+.btn-steam { background: linear-gradient(to right, #66FCF1 5%, #45A29E 95%); color: #0B0C10; font-weight: bold; }
+.btn-steam:hover { filter: brightness(1.12); }
+.btn-steam-sec { background: rgba(102, 252, 241, 0.12); color: #66FCF1; }
+.btn-steam-sec:hover { background: #66FCF1; color: #0B0C10; }
 .btn-steam:focus-visible, .btn-steam-sec:focus-visible { outline: 2px solid #fff; }
-.steam-cuerpo .detail-card { background: #16202d; border-color: #2a475e; }
+.steam-cuerpo .detail-card { background: #1F2833; border-color: #2a3544; }
 .steam-columna .ach-summary { flex-wrap: wrap; gap: 8px; }
 .steam-columna .ach-item { flex-wrap: wrap; }
 .steam-columna .ach-info { flex: 1; min-width: 0; }
