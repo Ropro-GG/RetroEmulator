@@ -4401,6 +4401,13 @@ function tarjetaTienda(titulo, detalle, portada, accion) {
     return card;
 }
 
+// Casi todas las consolas empiezan con el nombre de su empresa; estas no.
+const EMPRESA_CONSOLA = { '3do': 'Panasonic', apf1000: 'APF', colecovision: 'Coleco', fds: 'Nintendo', intellivision: 'Mattel',
+    snes: 'Nintendo', pcengine: 'NEC', vectrex: 'GCE' };
+const EMPRESAS_PRIMERO = ['Nintendo', 'Sega', 'Sony', 'Microsoft', 'NEC', 'SNK', 'Atari', 'Bandai'];
+const empresaDeConsola = c => EMPRESA_CONSOLA[c.identificativo] || c.nombre.split(' ')[0];
+const ordenEmpresa = e => (EMPRESAS_PRIMERO.indexOf(e) + 1) || EMPRESAS_PRIMERO.length + 1;
+
 // Entra al catálogo; la primera vez arma las secciones y la portada.
 async function abrirCatalogo() {
     if (catalogoListo) return;
@@ -4411,7 +4418,15 @@ async function abrirCatalogo() {
     sel.add(new Option('🎁 Juegos gratis', 'gratis'));
     let consolas = [];
     try { consolas = await window.pywebview.api.obtener_consolas_catalogo(); } catch (e) { /* queda Inicio y Juegos gratis */ }
-    (consolas || []).forEach(c => sel.add(new Option(c.nombre, c.identificativo)));
+    const grupos = {};
+    (consolas || []).forEach(c => (grupos[empresaDeConsola(c)] ??= []).push(c));
+    const orden = Object.keys(grupos).sort((a, b) => ordenEmpresa(a) - ordenEmpresa(b) || a.localeCompare(b));
+    orden.forEach(empresa => {
+        const grupo = document.createElement('optgroup');
+        grupo.label = empresa;
+        grupos[empresa].sort((a, b) => a.nombre.localeCompare(b.nombre)).forEach(c => grupo.appendChild(new Option(c.nombre, c.identificativo)));
+        sel.appendChild(grupo);
+    });
     cambiarSeccionCatalogo();
 }
 
@@ -4419,18 +4434,18 @@ async function abrirCatalogo() {
 function cambiarSeccionCatalogo() {
     const seccion = document.getElementById('catalogo-consola').value;
     const esConsola = seccion !== '' && seccion !== 'gratis';
-    document.getElementById('catalogo-busqueda').style.display = esConsola ? '' : 'none';
+    document.getElementById('catalogo-filtro-busqueda').style.display = esConsola ? '' : 'none';
     document.getElementById('catalogo-busqueda').value = '';
-    document.getElementById('catalogo-genero').style.display = seccion ? '' : 'none';
     const genero = document.getElementById('catalogo-genero');
     genero.innerHTML = '';
     if (seccion === 'gratis') {
         Object.entries(CATALOGO_PLATAFORMAS_GRATIS).forEach(([v, n]) => genero.add(new Option(n, v)));
-        genero.setAttribute('aria-label', 'Consola');
+        document.getElementById('catalogo-genero-titulo').textContent = 'Consola o tienda';
     } else {
         genero.add(new Option('Todos los géneros', ''));
-        genero.setAttribute('aria-label', 'Género');
+        document.getElementById('catalogo-genero-titulo').textContent = 'Filtrar por género';
     }
+    genero.disabled = false;
     catalogoAnterior = seccion ? 'lista' : 'inicio';
     if (seccion) cargarListaCatalogo(true);
     else cargarInicioCatalogo();
@@ -4442,16 +4457,107 @@ function irAConsolaCatalogo(valor) {
     cambiarSeccionCatalogo();
 }
 
-// Sección con título y una grilla.
+// Sección con título y una fila que se desplaza con flechas, como los carruseles de Steam.
 function seccionCatalogo(titulo, tarjetas, accionVerTodo) {
     const sec = nodo('section', 'tienda-seccion');
     const cab = nodo('div', 'tienda-seccion-cab');
     cab.appendChild(nodo('h3', '', titulo));
-    if (accionVerTodo) cab.appendChild(boton('Ver todos', 'btn-secondary-sm', async () => accionVerTodo()));
-    const grilla = nodo('div', 'game-grid');
-    tarjetas.forEach(t => grilla.appendChild(t));
-    sec.append(cab, grilla);
+    if (accionVerTodo) cab.appendChild(boton('Ver todos', 'btn-steam-sec', async () => accionVerTodo()));
+    const fila = nodo('div', 'steam-carrusel');
+    tarjetas.forEach(t => fila.appendChild(t));
+    const flecha = (texto, sentido) => {
+        const b = nodo('button', 'steam-flecha', texto);
+        b.type = 'button';
+        b.setAttribute('aria-label', sentido < 0 ? 'Anteriores' : 'Siguientes');
+        b.onclick = () => fila.scrollBy({ left: sentido * fila.clientWidth * 0.9, behavior: 'smooth' });
+        return b;
+    };
+    const marco = nodo('div', 'steam-carrusel-marco');
+    marco.append(flecha('‹', -1), fila, flecha('›', 1));
+    sec.append(cab, marco);
     return sec;
+}
+
+// Destacados: imagen grande, miniaturas al costado y puntos para pasar de uno a otro.
+function destacadosCatalogo(juegos) {
+    const sec = nodo('section', 'tienda-seccion');
+    sec.appendChild(nodo('h3', 'steam-seccion-titulo', 'Destacados y recomendados'));
+    const marco = nodo('div', 'steam-carrusel-marco');
+    const tarjeta = nodo('div', 'steam-destacado');
+    const puntos = nodo('div', 'steam-puntos');
+    let actual = 0;
+    const mostrar = i => {
+        actual = (i + juegos.length) % juegos.length;
+        const j = juegos[actual];
+        const grande = nodo('img', 'steam-destacado-img');
+        grande.alt = '';
+        grande.src = j.capturas[0] || j.portada;
+        const lado = nodo('div', 'steam-destacado-lado');
+        const minis = nodo('div', 'steam-destacado-minis');
+        j.capturas.slice(0, 4).forEach(src => {
+            const m = nodo('img');
+            m.alt = '';
+            m.onerror = () => m.remove();
+            m.onmouseenter = () => { grande.src = src; };
+            m.src = src;
+            minis.appendChild(m);
+        });
+        lado.append(nodo('h4', '', j.titulo), minis, nodo('p', 'steam-destacado-sub', plataformaGratis(j)), nodo('span', 'steam-precio', 'Gratis'));
+        tarjeta.replaceChildren(grande, lado);
+        tarjeta.onclick = () => abrirFichaGratis(j);
+        tarjeta.setAttribute('aria-label', j.titulo);
+        puntos.querySelectorAll('button').forEach((p, k) => p.classList.toggle('activo', k === actual));
+    };
+    juegos.forEach((j, k) => {
+        const p = nodo('button');
+        p.type = 'button';
+        p.setAttribute('aria-label', `Destacado ${k + 1}: ${j.titulo}`);
+        p.onclick = () => mostrar(k);
+        puntos.appendChild(p);
+    });
+    const flecha = (texto, sentido) => {
+        const b = nodo('button', 'steam-flecha', texto);
+        b.type = 'button';
+        b.setAttribute('aria-label', sentido < 0 ? 'Destacado anterior' : 'Destacado siguiente');
+        b.onclick = () => mostrar(actual + sentido);
+        return b;
+    };
+    tarjeta.tabIndex = 0;
+    tarjeta.onkeydown = ev => { if (ev.key === 'Enter') tarjeta.click(); };
+    marco.append(flecha('‹', -1), tarjeta, flecha('›', 1));
+    sec.append(marco, puntos);
+    mostrar(0);
+    // Pasa solo cada 7 s, salvo con el mouse encima o si el sistema pide menos movimiento
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const reloj = setInterval(() => {
+            if (!sec.isConnected) return clearInterval(reloj);
+            if (!sec.matches(':hover') && sec.offsetParent) mostrar(actual + 1);
+        }, 7000);
+    }
+    return sec;
+}
+
+// Fila de resultados como la búsqueda de Steam: carátula, título, fecha, etiquetas y precio.
+function filaTienda(titulo, portada, fecha, etiquetas, precio, accion) {
+    const fila = nodo('button', 'steam-fila');
+    fila.type = 'button';
+    const caja = nodo('div', 'steam-fila-img');
+    if (portada) {
+        const img = nodo('img');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = () => img.remove();
+        img.src = portada;
+        caja.appendChild(img);
+    }
+    const info = nodo('div', 'steam-fila-info');
+    info.appendChild(nodo('span', 'steam-fila-titulo', titulo));
+    const tags = nodo('div', 'steam-fila-etiquetas');
+    etiquetas.filter(Boolean).slice(0, 4).forEach(t => tags.appendChild(nodo('span', 'steam-etiqueta', t)));
+    info.appendChild(tags);
+    fila.append(caja, info, nodo('span', 'steam-fila-fecha', fecha || ''), nodo('span', precio ? 'steam-precio' : 'steam-fila-precio', precio || ''));
+    fila.onclick = accion;
+    return fila;
 }
 
 // El Catálogo usa los tres puntos en lugar del cubo.
@@ -4473,6 +4579,8 @@ async function cargarInicioCatalogo() {
     try { res = await window.pywebview.api.catalogo_inicio(); } catch (e) { res = null; }
     if (token !== catalogoToken) return;
     cont.innerHTML = '';
+    const destacados = [...((res && res.gratis) || []), ...((res && res.itch) || [])].filter(j => j.capturas && j.capturas.length).slice(0, 8);
+    if (destacados.length) cont.appendChild(destacadosCatalogo(destacados));
     if (res && res.gratis && res.gratis.length) {
         cont.appendChild(seccionCatalogo('🎁 Juegos gratis recién agregados', res.gratis.map(tarjetaGratis), () => irAConsolaCatalogo('gratis')));
     }
@@ -4486,12 +4594,17 @@ async function cargarInicioCatalogo() {
     }
     const sel = document.getElementById('catalogo-consola');
     const consolas = nodo('section', 'tienda-seccion');
-    consolas.appendChild(nodo('h3', '', '🕹️ Explorar por consola'));
-    const chips = nodo('div', 'tienda-consolas');
-    Array.from(sel.options).filter(o => o.value && o.value !== 'gratis').forEach(o => {
-        chips.appendChild(boton(o.textContent, 'btn-secondary-sm', async () => irAConsolaCatalogo(o.value)));
+    consolas.appendChild(nodo('h3', 'steam-seccion-titulo', 'Explorar por consola'));
+    sel.querySelectorAll('optgroup').forEach((grupo, i) => {
+        consolas.appendChild(nodo('h4', 'steam-empresa', grupo.label));
+        const chips = nodo('div', 'steam-categorias');
+        Array.from(grupo.children).forEach(o => {
+            const tile = boton(o.textContent, 'steam-categoria', async () => irAConsolaCatalogo(o.value));
+            tile.style.setProperty('--tono', (i * 47) % 360);   // un color por empresa, como las categorías de Steam
+            chips.appendChild(tile);
+        });
+        consolas.appendChild(chips);
     });
-    consolas.appendChild(chips);
     cont.appendChild(consolas);
 }
 
@@ -4538,18 +4651,25 @@ async function cargarListaCatalogo(reiniciar) {
     }
     if (seccion !== 'gratis' && res.generos && genero.options.length === 1) {
         res.generos.forEach(g => genero.add(new Option(g, g)));
+        // Las consolas de disco (PS1, Saturn...) no tienen géneros en libretro-database
+        if (!res.generos.length) genero.options[0].textContent = 'Sin géneros para esta consola';
+        genero.disabled = !res.generos.length;
     }
     if (seccion === 'gratis') {
         total.textContent = 'Juegos creados por la comunidad, gratis. Se consiguen en su página original.';
-        res.juegos.forEach(j => grilla.appendChild(tarjetaGratis(j)));
+        res.juegos.forEach(j => grilla.appendChild(filaTienda(j.titulo, j.portada, j.fecha, [plataformaGratis(j), ...(j.generos || [])],
+            'Gratis', () => abrirFichaGratis(j))));
     } else {
-        total.textContent = `${res.total} ${res.total === 1 ? 'juego' : 'juegos'}`;
-        res.juegos.forEach(j => grilla.appendChild(tarjetaTienda(j.titulo, [j.anio, j.genero].filter(Boolean).join(' · '), j.portada,
+        total.textContent = `${res.total} ${res.total === 1 ? 'resultado' : 'resultados'}`;
+        res.juegos.forEach(j => grilla.appendChild(filaTienda(j.titulo, j.portada, j.anio, [...generosDe(j.genero), j.desarrollador], '',
             () => abrirFichaCatalogo(seccion, j.titulo))));
     }
     if (!res.juegos.length && reiniciar) grilla.appendChild(mensajeVacio('No se encontraron juegos.'));
     mas.style.display = res.hay_mas ? '' : 'none';
 }
+
+// Igual que generos_de en catalogo.py: "Board /Card, Shogi" son tres géneros.
+const generosDe = texto => (texto || '').split(/[,/]/).map(g => g.trim()).filter(Boolean);
 
 function plataformaGratis(j) {
     return j.plataforma === 'itch' ? 'itch.io' : (CATALOGO_PLATAFORMAS_GRATIS[j.plataforma] || j.plataforma);
@@ -4706,7 +4826,7 @@ async function abrirFichaCatalogo(identificativo, titulo) {
     const resena = () => resumenOpiniones(j.opiniones) || 'Sin opiniones todavía';
     const ficha = armarFicha(j.titulo, j.portada, j.descripcion && j.descripcion.texto,
         [['Reseñas', resena()], ['Lanzamiento', j.anio], ['Desarrollador', j.desarrollador], ['Editor', j.editor], ['Consola', j.consola]],
-        [j.genero].filter(Boolean),
+        generosDe(j.genero),
         [botonBiblioteca(), boton('⭐ Agregar a deseados', 'btn-steam-sec', () => agregarDeseadoCatalogo(j))], j.imagenes);
 
     if (j.descripcion) {

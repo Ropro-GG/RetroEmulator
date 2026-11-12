@@ -30,6 +30,8 @@ ETIQUETAS_ITCH = {"itch-homebrew": "tag-homebrew", "itch-gb": "tag-gb-studio", "
 JUEGOS_POR_LISTA_ITCH = 30
 HOSTS = {"hh.gbdev.io", "es.wikipedia.org", "en.wikipedia.org"}
 _CAMPOS = {"genre": "genero", "developer": "desarrollador", "publisher": "editor", "releaseyear": "anio"}
+# Sin carpeta genre/: libretro tiene un archivo aparte con todos los datos de cada juego
+DATS_COMPLETOS = ("Sony - PlayStation", "Sony - PlayStation 2")
 _AGENTE = "RetroEmulator/1.0 (https://github.com/Ropro-GG/RetroEmulator)"   # Wikipedia exige identificarse
 _NO_ES_UN_JUEGO = re.compile(r"franquicia|franchise|\bsaga\b|serie de videojuegos|video game series")
 _lock = threading.Lock()
@@ -53,6 +55,32 @@ def leer_dat(texto, campo):
     return datos
 
 
+def leer_dat_completo(texto):
+    """Archivo con un bloque por juego (name, genre, developer...). Devuelve {campo: {título normalizado: valor}}."""
+    datos = {campo: {} for campo in _CAMPOS}
+    for nombre, cuerpo in re.findall(r'^game \(\s*name "([^"\n]+)"(.*?)^\)', texto, flags=re.M | re.S):
+        clave = boxart.analizar_titulo(nombre)[0]
+        for campo, valor in re.findall(r'^\t(' + "|".join(_CAMPOS) + r') "?([^"\n]+)"?$', cuerpo, flags=re.M):
+            if clave:
+                datos[campo].setdefault(clave, valor.strip())
+    return datos
+
+
+def _datos_completos(sistema):
+    ruta = os.path.join(boxart.CARPETA_CACHE, "datos_" + boxart._archivo_seguro(sistema) + "_completo.json")
+    if os.path.isfile(ruta) and time.time() - os.path.getmtime(ruta) < TTL_DATOS:
+        return boxart._leer_json(ruta) or {}
+    try:
+        crudo = boxart._http_get(f"{URL_DATOS}/{urllib.parse.quote(sistema)}.dat", timeout=60, reintentos=2)
+        datos = leer_dat_completo(crudo.decode("utf-8", errors="ignore")) if crudo else {}
+        os.makedirs(boxart.CARPETA_CACHE, exist_ok=True)
+        boxart._guardar_json(ruta, datos)
+        return datos
+    except Exception as e:
+        print(f"[CATALOGO] Sin datos completos para {sistema}: {e}")
+        return {}
+
+
 def _datos_de(sistema):
     """Año, género, desarrollador y editor. Si no se pueden bajar, el catálogo sigue funcionando sin ellos."""
     salida = {}
@@ -71,6 +99,10 @@ def _datos_de(sistema):
                 print(f"[CATALOGO] Sin datos de {campo} para {sistema}: {e}")
                 datos = {}
         salida[nombre] = datos
+    if sistema in DATS_COMPLETOS:
+        for campo, valores in _datos_completos(sistema).items():
+            for clave, valor in valores.items():
+                salida[_CAMPOS[campo]].setdefault(clave, valor)
     return salida
 
 
@@ -104,13 +136,28 @@ def _lista(identificativo, nombre_consola):
     return None, None
 
 
+def _clave_genero(genero):
+    return re.sub(r"\W", "", genero.casefold())   # "Beat 'em up" y "Beat'em Up" son el mismo
+
+
+def generos_de(texto):
+    """Un juego puede tener varios géneros: "Board /Card, Shogi" -> Board, Card, Shogi."""
+    return [g.strip() for g in re.split(r"[,/]", texto or "") if _clave_genero(g)]
+
+
 def listar(identificativo, nombre_consola, texto="", genero="", pagina=1):
     _, juegos = _lista(identificativo, nombre_consola)
     if juegos is None:
         return {"exito": False, "error": "No se pudo cargar el catálogo de esta consola. Revisá tu conexión."}
     palabras = boxart.analizar_titulo(texto or "")[0].split()
-    generos = sorted({j["genero"] for j in juegos if j["genero"]}, key=str.casefold)
-    hallados = [j for j in juegos if (not genero or j["genero"] == genero) and all(p in j["clave"] for p in palabras)]
+    nombres = {}
+    for j in juegos:
+        for g in generos_de(j["genero"]):
+            nombres.setdefault(_clave_genero(g), g)
+    generos = sorted(nombres.values(), key=str.casefold)
+    buscado = _clave_genero(genero or "")
+    hallados = [j for j in juegos if (not buscado or buscado in map(_clave_genero, generos_de(j["genero"])))
+                and all(p in j["clave"] for p in palabras)]
     pagina = max(1, int(pagina or 1))
     corte = hallados[(pagina - 1) * POR_PAGINA:pagina * POR_PAGINA]
     return {"exito": True, "juegos": corte, "total": len(hallados), "generos": generos, "hay_mas": pagina * POR_PAGINA < len(hallados)}

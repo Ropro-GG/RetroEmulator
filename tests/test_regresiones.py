@@ -593,6 +593,21 @@ game (\n\tcomment "Legend of Zelda, The (USA)"\n\treleaseyear "1992"\n\trom ( cr
         self.assertIsNone(catalogo.juego_gratis({**base, "slug": "../malo"}))
         self.assertIsNone(catalogo.juego_gratis({**base, "basepath": "x/y"}))
 
+    def test_generos_compuestos_se_separan_y_unifican(self):
+        self.assertEqual(catalogo.generos_de("Board /Card, Shogi"), ["Board", "Card", "Shogi"])
+        juegos = [{"titulo": t, "clave": t.lower(), "genero": g} for t, g in (("A", "Beat'em Up, Fighting"), ("B", "Beat 'em up"), ("C", ""))]
+        with mock.patch.object(catalogo, "_lista", return_value=("s", juegos)):
+            res = catalogo.listar("x", "x", genero="beat 'em up")
+        self.assertEqual(res["generos"], ["Beat'em Up", "Fighting"])
+        self.assertEqual([j["titulo"] for j in res["juegos"]], ["A", "B"])
+
+    def test_leer_dat_completo_toma_los_datos_de_cada_bloque(self):
+        texto = 'clrmamepro (\n\tname "x"\n)\n\ngame (\n\tname "Silent Hill (USA)"\n\tdescription "a \\"b\\""\n\tdeveloper "Konami"\n\treleaseyear "1999"\n\tgenre "Horror"\n' \
+                '\trom (\n\t\tname "Silent Hill (USA).cue"\n\t)\n)\n\ngame (\n\tname "Otro (Japan)"\n\tgenre "RPG"\n)\n'
+        datos = catalogo.leer_dat_completo(texto)
+        self.assertEqual(datos["genre"], {"silent hill": "Horror", "otro": "RPG"})
+        self.assertEqual((datos["developer"], datos["releaseyear"], datos["publisher"]), ({"silent hill": "Konami"}, {"silent hill": "1999"}, {}))
+
     def test_leer_itch_solo_acepta_juegos_gratis_de_itch(self):
         item = """<item><plainTitle>{t}</plainTitle><link>{l}</link><price>{p}</price><imageurl>{i}</imageurl>
                   <description>Hecho para &lt;b&gt;NES&lt;/b&gt;</description><pubDate>Tue, 15 Nov 2016 16:17:31 GMT</pubDate></item>"""

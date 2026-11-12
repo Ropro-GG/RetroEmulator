@@ -345,17 +345,26 @@
         <!-- CATÁLOGO: tienda para descubrir juegos. No vende ni descarga nada. -->
         <div id="view-catalogo" class="view catalogo-view" style="display: none;">
             <div class="catalogo-wrap">
-                <div class="catalogo-head">
-                    <h2>Catálogo</h2>
-                    <select id="catalogo-consola" class="settings-input" aria-label="Sección del catálogo" onchange="cambiarSeccionCatalogo()"></select>
-                    <input id="catalogo-busqueda" class="settings-input" type="text" placeholder="🔍 Buscar en esta consola..." aria-label="Buscar en esta consola" oninput="buscarCatalogoConRetraso()" autocomplete="off" style="display: none;">
-                    <select id="catalogo-genero" class="settings-input" aria-label="Género" onchange="cargarListaCatalogo(true)" style="display: none;"></select>
-                </div>
+                <nav class="steam-nav" aria-label="Catálogo">
+                    <button class="steam-nav-btn" onclick="irAConsolaCatalogo('')">Tu tienda</button>
+                    <button class="steam-nav-btn" onclick="irAConsolaCatalogo('gratis')">🎁 Gratis</button>
+                    <select id="catalogo-consola" class="steam-nav-select" aria-label="Explorar por consola" onchange="cambiarSeccionCatalogo()"></select>
+                </nav>
                 <div id="catalogo-inicio"></div>
-                <div id="catalogo-lista" style="display: none;">
-                    <p id="catalogo-total" class="settings-help"></p>
-                    <div id="catalogo-grilla" class="game-grid"></div>
-                    <div class="posts-pie"><button id="catalogo-mas" class="btn-secondary-sm" style="display: none;" onclick="cargarMasCatalogo()">Ver más</button></div>
+                <div id="catalogo-lista" class="steam-busqueda" style="display: none;">
+                    <div class="steam-resultados">
+                        <p id="catalogo-total" class="steam-total"></p>
+                        <div id="catalogo-grilla" class="steam-filas"></div>
+                        <div class="posts-pie"><button id="catalogo-mas" class="btn-steam-sec" style="display: none;" onclick="cargarMasCatalogo()">Ver más</button></div>
+                    </div>
+                    <aside class="steam-filtros">
+                        <label id="catalogo-filtro-busqueda" class="steam-filtro">Buscar por nombre
+                            <input id="catalogo-busqueda" type="text" placeholder="Nombre del juego" oninput="buscarCatalogoConRetraso()" autocomplete="off">
+                        </label>
+                        <label class="steam-filtro"><span id="catalogo-genero-titulo">Filtrar por género</span>
+                            <select id="catalogo-genero" onchange="cargarListaCatalogo(true)"></select>
+                        </label>
+                    </aside>
                 </div>
                 <div id="catalogo-ficha" style="display: none;"></div>
                 <p class="catalogo-creditos">Datos y carátulas: <a href="#" onclick="abrirEnlace('https://github.com/libretro/libretro-database'); return false;">libretro</a> (CC BY-SA 4.0) · Juegos gratis: <a href="#" onclick="abrirEnlace('https://hh.gbdev.io/game/'); return false;">Homebrew Hub</a> · Descripciones: Wikipedia (CC BY-SA)</p>
