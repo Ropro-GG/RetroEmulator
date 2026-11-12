@@ -535,12 +535,18 @@ async function seguirEscaneo() {
 // ============================================================================
 
 // Al abrir la app, entra solo si había una sesión recordada.
+// Modo medición (RETRO_TIEMPOS=1): sin él, Python no escribe nada.
+const marcarArranque = etapa => window.pywebview.api.marcar_arranque(etapa).catch(() => {});
+
 async function intentarRestaurarSesion() {
+    marcarArranque('ventana lista');
     try {
         const res = await window.pywebview.api.restaurar_sesion();
+        marcarArranque(res && res.exito ? 'sesión restaurada' : 'sin sesión guardada');
         if (res && res.exito) {
             usuarioActual = res.usuario;
             await cargarPantallaPrincipal();
+            marcarArranque('biblioteca visible');
         }
     } catch (e) {
         console.error("Error al restaurar sesión:", e);

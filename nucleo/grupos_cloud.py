@@ -4,6 +4,8 @@ grupos_cloud.py - Grupos de amigos: miembros, invitaciones y chat cifrado.
 Para reutilizar el chat existente, un grupo se identifica en él como 'grupo:<id>', en lugar del id de un amigo.
 Las reglas de quién puede hacer qué están en la base (supabase/cambios.sql).
 """
+from concurrent.futures import ThreadPoolExecutor
+
 from . import cifrado
 
 PREFIJO = "grupo:"
@@ -72,8 +74,10 @@ class Grupos:
     def resumen(self):
         """Invitaciones pendientes y mensajes sin leer, para las insignias."""
         filas = self._mis_filas()
-        return {"invitaciones": sum(1 for f in filas if f["estado"] == "invitado"),
-                "mensajes": sum(self._sin_leer(f["grupo_id"], f["leido_hasta"]) for f in filas if f["estado"] == "miembro")}
+        miembro = [f for f in filas if f["estado"] == "miembro"]
+        with ThreadPoolExecutor(max_workers=8) as hilos:   # una consulta por grupo, todas a la vez
+            sin_leer = list(hilos.map(lambda f: self._sin_leer(f["grupo_id"], f["leido_hasta"]), miembro))
+        return {"invitaciones": sum(1 for f in filas if f["estado"] == "invitado"), "mensajes": sum(sin_leer)}
 
     def listar(self):
         """Mis grupos y mis invitaciones."""
@@ -143,17 +147,17 @@ class Grupos:
         """Un renglón por grupo, con el mismo formato que los chats con amigos."""
         filas = [f for f in self._mis_filas() if f["estado"] == "miembro"]
         datos = self._nombres({f["grupo_id"] for f in filas})
-        salida = []
-        for f in filas:
-            d = datos.get(f["grupo_id"])
-            if not d:
-                continue
+        def renglon(f):
+            d = datos[f["grupo_id"]]
             ultimo = self._tabla("mensajes_grupo").select(_COLUMNAS).eq("grupo_id", d["id"]).order("id", desc=True).limit(1).execute().data
-            salida.append({
+            return {
                 "user_id": PREFIJO + d["id"], "es_grupo": True, "username": d["nombre"], "avatar_url": "",
                 "jugando": None, "en_llamada": False, "no_leidos": self._sin_leer(d["id"], f["leido_hasta"]),
                 "ultimo": self._resumen(ultimo[0]) if ultimo else None,
-            })
+            }
+
+        with ThreadPoolExecutor(max_workers=8) as hilos:   # cada grupo a la vez
+            salida = list(hilos.map(renglon, [f for f in filas if f["grupo_id"] in datos]))
         salida.sort(key=lambda c: (c["ultimo"] is None, -(c["ultimo"]["id"] if c["ultimo"] else 0), c["username"].lower()))
         return salida
 

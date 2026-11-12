@@ -8,6 +8,7 @@ import re
 import time
 import uuid
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import httpx
@@ -731,14 +732,20 @@ class CloudClient:
         """Datos livianos para las insignias: solicitudes pendientes y mensajes sin leer de amigos."""
         if not self.client or not self.usuario_actual:
             return {"exito": False, "solicitudes": 0, "mensajes": 0}
-        solicitudes = self.contar_solicitudes().get("solicitudes", 0)
+        # Las cuatro consultas no dependen entre sí: van a la vez
+        with ThreadPoolExecutor(max_workers=4) as hilos:
+            f_solicitudes = hilos.submit(self.contar_solicitudes)
+            f_amigos = hilos.submit(self._amigos_aceptados)
+            f_mensajes = hilos.submit(lambda: self.client.table("mensajes").select("de")
+                                      .eq("para", self._yo()).is_("leido_en", "null").limit(1000).execute())
+            f_grupos = hilos.submit(self.grupos.resumen)
+        solicitudes = f_solicitudes.result().get("solicitudes", 0)
         mensajes = 0
         try:
-            amigos = set(self._amigos_aceptados())
-            res = self.client.table("mensajes").select("de") \
-                .eq("para", self._yo()).is_("leido_en", "null").limit(1000).execute()
+            amigos = set(f_amigos.result())
+            res = f_mensajes.result()
             mensajes = sum(1 for r in (res.data or []) if r["de"] in amigos)
-            resumen_grupos = self.grupos.resumen()
+            resumen_grupos = f_grupos.result()
             solicitudes += resumen_grupos["invitaciones"]
             mensajes += resumen_grupos["mensajes"]
         except Exception as e:
@@ -753,20 +760,25 @@ class CloudClient:
         try:
             yo = self._yo()
             amigos = self._amigos_aceptados()
-            perfiles = self._perfiles_por_id(amigos)
-            presencias = self._presencias(amigos)
-            en_llamada = self._en_llamada(amigos)
-
-            res = self.client.table("mensajes").select(self._COLUMNAS_MENSAJE) \
-                .or_(f"de.eq.{yo},para.eq.{yo}").order("id", desc=True).limit(300).execute()
+            # Lo demás no depende entre sí: todo a la vez
+            with ThreadPoolExecutor(max_workers=6) as hilos:
+                f_perfiles = hilos.submit(self._perfiles_por_id, amigos)
+                f_presencias = hilos.submit(self._presencias, amigos)
+                f_llamada = hilos.submit(self._en_llamada, amigos)
+                f_ultimos = hilos.submit(lambda: self.client.table("mensajes").select(self._COLUMNAS_MENSAJE)
+                                         .or_(f"de.eq.{yo},para.eq.{yo}").order("id", desc=True).limit(300).execute())
+                f_sin_leer = hilos.submit(lambda: self.client.table("mensajes").select("de")
+                                          .eq("para", yo).is_("leido_en", "null").limit(1000).execute())
+                f_grupos = hilos.submit(self.grupos.conversaciones)
+            perfiles, presencias, en_llamada = f_perfiles.result(), f_presencias.result(), f_llamada.result()
+            res = f_ultimos.result()
             ultimos = {}
             for m in res.data or []:                       # vienen del más nuevo al más viejo
                 otro = m["para"] if m["de"] == yo else m["de"]
                 ultimos.setdefault(otro, m)
 
             sin_leer = Counter()
-            res2 = self.client.table("mensajes").select("de") \
-                .eq("para", yo).is_("leido_en", "null").limit(1000).execute()
+            res2 = f_sin_leer.result()
             for r in res2.data or []:
                 sin_leer[r["de"]] += 1
 
@@ -787,7 +799,7 @@ class CloudClient:
             conversaciones.sort(key=lambda c: (c["ultimo"] is None, -(c["ultimo"]["id"] if c["ultimo"] else 0),
                                                c["username"].lower()))
             # Los grupos numeran sus mensajes aparte: van primero, ordenados entre sí
-            conversaciones = self.grupos.conversaciones() + conversaciones
+            conversaciones = f_grupos.result() + conversaciones
             return {"exito": True, "conversaciones": conversaciones}
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}

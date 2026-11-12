@@ -15,6 +15,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 from . import boxart, noticias
 
@@ -84,28 +85,34 @@ def _datos_completos(sistema):
 
 
 def _datos_de(sistema):
-    """Año, género, desarrollador y editor. Si no se pueden bajar, el catálogo sigue funcionando sin ellos."""
-    salida = {}
-    for campo, nombre in _CAMPOS.items():
-        ruta = os.path.join(boxart.CARPETA_CACHE, "datos_" + boxart._archivo_seguro(f"{sistema}_{campo}") + ".json")
-        datos = None
-        if os.path.isfile(ruta) and time.time() - os.path.getmtime(ruta) < TTL_DATOS:
-            datos = boxart._leer_json(ruta)
-        if datos is None:
-            try:
-                crudo = boxart._http_get(f"{URL_DATOS}/{campo}/{urllib.parse.quote(sistema)}.dat", timeout=30, reintentos=2)
-                datos = leer_dat(crudo.decode("utf-8", errors="ignore"), campo) if crudo else {}
-                os.makedirs(boxart.CARPETA_CACHE, exist_ok=True)
-                boxart._guardar_json(ruta, datos)
-            except Exception as e:
-                print(f"[CATALOGO] Sin datos de {campo} para {sistema}: {e}")
-                datos = {}
-        salida[nombre] = datos
-    if sistema in DATS_COMPLETOS:
-        for campo, valores in _datos_completos(sistema).items():
+    """Año, género, desarrollador y editor. Si no se pueden bajar, el catálogo sigue funcionando sin ellos.
+    Los cuatro archivos (y el completo de PS1/PS2) se bajan a la vez."""
+    with ThreadPoolExecutor(max_workers=5) as hilos:
+        completos = hilos.submit(_datos_completos, sistema) if sistema in DATS_COMPLETOS else None
+        por_campo = dict(zip(_CAMPOS.values(), hilos.map(lambda campo: _dato(sistema, campo), _CAMPOS)))
+    if completos:
+        for campo, valores in completos.result().items():
             for clave, valor in valores.items():
-                salida[_CAMPOS[campo]].setdefault(clave, valor)
-    return salida
+                por_campo[_CAMPOS[campo]].setdefault(clave, valor)
+    return por_campo
+
+
+def _dato(sistema, campo):
+    """Un archivo de libretro-database (genre, developer...), guardado 14 días."""
+    ruta = os.path.join(boxart.CARPETA_CACHE, "datos_" + boxart._archivo_seguro(f"{sistema}_{campo}") + ".json")
+    if os.path.isfile(ruta) and time.time() - os.path.getmtime(ruta) < TTL_DATOS:
+        datos = boxart._leer_json(ruta)
+        if datos is not None:
+            return datos
+    try:
+        crudo = boxart._http_get(f"{URL_DATOS}/{campo}/{urllib.parse.quote(sistema)}.dat", timeout=30, reintentos=2)
+        datos = leer_dat(crudo.decode("utf-8", errors="ignore"), campo) if crudo else {}
+        os.makedirs(boxart.CARPETA_CACHE, exist_ok=True)
+        boxart._guardar_json(ruta, datos)
+        return datos
+    except Exception as e:
+        print(f"[CATALOGO] Sin datos de {campo} para {sistema}: {e}")
+        return {}
 
 
 def _armar_lista(indice, datos, url_base):
@@ -193,10 +200,15 @@ def listar(identificativo, nombre_consola, texto="", genero="", pagina=1):
 
 
 def portada(identificativo, nombre_consola, titulo):
-    """Dirección de la carátula de un juego, o '' si no está en el catálogo."""
-    _, juegos = _lista(identificativo, nombre_consola)
+    """Dirección de la carátula de un juego, o '' si no está en el catálogo.
+    Usa solo el listado de carátulas: armar la lista completa baja también año, género y editor, y tarda mucho más."""
     clave = boxart.analizar_titulo(titulo or "")[0]
-    return next((j["portada"] for j in juegos or [] if j["clave"] == clave), "")
+    for sistema in boxart.SISTEMAS.get(identificativo) or [nombre_consola]:
+        indice = boxart._indice_para_ui(sistema)
+        buenas = [o for o in (indice.por_clave.get(clave) or []) if not (o[1] & boxart._TAGS_MALOS)] if indice else []
+        if buenas:   # la misma elección que _armar_lista
+            return boxart._url_sistema(sistema) + urllib.parse.quote(indice._mejor(buenas, set())) + ".png"
+    return ""
 
 
 def _articulo(texto):
@@ -376,13 +388,16 @@ def gratis(plataforma, pagina=1):
 
 def gratis_recientes(limite=12):
     """Los últimos agregados de todas las consolas, para la portada. Usa las mismas respuestas guardadas que las listas."""
-    juegos = []
-    for plataforma in PLATAFORMAS_GRATIS:
+    def de(plataforma):
         try:
-            juegos += _pedir_gratis(plataforma)[0]
+            return _pedir_gratis(plataforma)[0]
         except SitioOcupado:
-            break   # si pidió esperar, no se insiste con las demás consolas
+            return []   # pidió esperar: la pausa evita insistir
         except Exception as e:
             print(f"[CATALOGO] Sin juegos gratis de {plataforma}: {e}")
+            return []
+
+    with ThreadPoolExecutor(max_workers=len(PLATAFORMAS_GRATIS)) as hilos:   # cada consulta tarda 1-2 s: van a la vez
+        juegos = [j for lista in hilos.map(de, PLATAFORMAS_GRATIS) for j in lista]
     juegos.sort(key=lambda j: j["agregado"], reverse=True)
     return juegos[:limite]

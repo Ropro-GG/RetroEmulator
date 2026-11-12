@@ -3,12 +3,15 @@
 # Cada método público de API se puede llamar desde JavaScript como
 # window.pywebview.api.nombre_del_metodo(...), y su resultado vuelve como una promesa.
 # Esta clase casi no tiene lógica: valida lo básico y delega en los módulos de nucleo/.
+import time
+_INICIO = time.monotonic()   # para el modo medición (RETRO_TIEMPOS=1): cuenta desde antes de cargar las librerías
 import html
 import webview
 from webview import FileDialog
 import json
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 import sys
 import webbrowser
@@ -724,10 +727,15 @@ class API:
 
     def catalogo_inicio(self):
         """Portada de la tienda: juegos gratis y lo que juegan tus amigos."""
-        amigos = self.cloud.juegos_de_amigos()
-        for j in amigos:
-            j["portada"] = catalogo.portada(j["identificativo"], j["consola"], j["titulo"])
-        return {"exito": True, "gratis": catalogo.gratis_recientes(), "itch": catalogo.gratis("itch-homebrew").get("juegos", [])[:12], "amigos": amigos}
+        # Homebrew Hub, itch.io y lo de tus amigos vienen de lugares distintos: se piden a la vez
+        with ThreadPoolExecutor(max_workers=3) as hilos:
+            f_gratis = hilos.submit(catalogo.gratis_recientes)
+            f_itch = hilos.submit(lambda: catalogo.gratis("itch-homebrew").get("juegos", [])[:12])
+            amigos = self.cloud.juegos_de_amigos()
+            with ThreadPoolExecutor(max_workers=6) as portadas:
+                for j, url in zip(amigos, portadas.map(lambda j: catalogo.portada(j["identificativo"], j["consola"], j["titulo"]), amigos)):
+                    j["portada"] = url
+        return {"exito": True, "gratis": f_gratis.result(), "itch": f_itch.result(), "amigos": amigos}
 
     def catalogo_listar(self, identificativo, texto="", genero="", pagina=1):
         return catalogo.listar(identificativo, db_local.obtener_nombre_consola(identificativo), texto, genero, pagina)
@@ -771,6 +779,11 @@ class API:
 
     # Dónde quedaste: vista, consola y orden de la biblioteca. Solo estas claves, para no tocar otros ajustes.
     RECUERDOS = {"vista": ("biblioteca", "social", "noticias", "catalogo"), "consola": None, "orden": ("alfabetico", "recientes", "tiempo")}
+
+    def marcar_arranque(self, etapa):
+        """Modo medición: la página avisa cada etapa del arranque."""
+        if MEDIR:
+            print(f"[ARRANQUE] {time.monotonic() - _INICIO:6.2f} s  {str(etapa)[:60]}")
 
     def obtener_recuerdos(self):
         return {clave: db_local.obtener_config_usuario("recuerdo_" + clave) for clave in self.RECUERDOS}
@@ -988,11 +1001,38 @@ def _elegir_motor():
     return None
 
 
+MEDIR = os.environ.get("RETRO_TIEMPOS") == "1"
+
+
+def _medir_llamadas():
+    """Modo medición: cada función que la página llama a Python escribe cuánto tardó (si pasa de 50 ms)."""
+    import functools
+
+    def envolver(nombre, funcion):
+        @functools.wraps(funcion)
+        def medida(*args, **kwargs):
+            inicio = time.monotonic()
+            try:
+                return funcion(*args, **kwargs)
+            finally:
+                dur = time.monotonic() - inicio
+                if dur >= 0.05:
+                    print(f"[ARRANQUE] {time.monotonic() - _INICIO:6.2f} s  {nombre} tardó {dur:.2f} s")
+        return medida
+
+    for nombre, funcion in list(vars(API).items()):
+        if callable(funcion) and not nombre.startswith("_") and nombre != "marcar_arranque":
+            setattr(API, nombre, envolver(nombre, funcion))
+
+
 # Prepara la carpeta de trabajo, crea la ventana y deja la app funcionando hasta que se cierre.
 def main():
     # La base local, las ROMs y la caché usan rutas relativas: desde otra carpeta aparecerían vacías
     raiz = os.path.dirname(os.path.abspath(__file__))
     os.chdir(raiz)
+    if MEDIR:
+        _medir_llamadas()
+        print(f"[ARRANQUE] {time.monotonic() - _INICIO:6.2f} s  librerías cargadas")
     api = API()
     html_path = os.path.join(raiz, 'ui', 'index.html')
 
