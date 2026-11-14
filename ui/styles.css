@@ -5,7 +5,8 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* Se aplica a cada elemento, también botones y campos. DejaVu Sans pone los símbolos que Oxanium no tiene, como las estrellas ★ */
+    font-family: 'Oxanium', 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-serif;
 }
 
 body {
@@ -523,7 +524,7 @@ body {
     outline: none;
 }
 .settings-input:focus { border-color: #66FCF1; }
-.settings-actions { display: flex; gap: 8px; margin-top: 14px; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 
 .btn-primary-sm, .btn-secondary-sm {
     border-radius: 6px;
@@ -712,6 +713,7 @@ body {
 /* Logros */
 .ach-summary {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     gap: 10px;
@@ -728,7 +730,7 @@ body {
 .ach-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ach-info strong { font-size: 0.92em; color: #FFFFFF; }
 .ach-info small { color: #a0a0a0; font-size: 0.8em; }
-.ach-meta { text-align: right; font-size: 0.78em; color: #C5C6C7; flex-shrink: 0; }
+.ach-meta { text-align: right; font-size: 0.78em; line-height: 1.5; color: #C5C6C7; flex-shrink: 0; max-width: 150px; white-space: pre-line; }
 
 
 /* ============================================================
@@ -1490,7 +1492,6 @@ select.settings-input option { background-color: #141722; color: #FFFFFF; }
    que como se veía con WebKit: misma tipografía y barras de desplazamiento finas del tema. */
 
 /* WebKit sustituía Verdana/Tahoma por 'DejaVu Sans' a través de fontconfig; Chromium no. */
-body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-serif; }
 
 /* Barras finas y oscuras con el color de acento (estándar, Chromium 121+) */
 * { scrollbar-width: thin; scrollbar-color: #45A29E transparent; }
@@ -1854,7 +1855,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, 'DejaVu Sans', sans-ser
 .steam-columna .ach-summary { flex-wrap: wrap; gap: 8px; }
 .steam-columna .ach-item { flex-wrap: wrap; }
 .steam-columna .ach-info { flex: 1; min-width: 0; }
-.steam-columna .ach-meta { flex-basis: 100%; padding-left: 60px; }
+.steam-columna .ach-meta { flex-basis: 100%; max-width: none; padding-left: 60px; text-align: left; }
 .opinion-estrellas button { font-size: 1.6em; padding: 0 1px; border: none; background: none; color: #3a4656; cursor: pointer; }
 .opinion-estrellas button.on { color: #f5c518; }
 @media (max-width: 900px) {
@@ -2000,3 +2001,14 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 .guia-lector-arriba { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .post-denunciar:hover { color: #ff6b6b; border-color: #ff6b6b; }
+
+/* FUENTES: Orbitron (títulos) y Oxanium (texto), guardadas en ui/fonts. Licencia SIL Open Font License: ui/fonts/OFL-*.txt */
+@font-face { font-family: 'Orbitron'; font-style: normal; font-weight: 400 900; font-display: swap;
+    src: url('fonts/orbitron-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Oxanium'; font-style: normal; font-weight: 200 800; font-display: swap;
+    src: url('fonts/oxanium-latin-ext.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Oxanium'; font-style: normal; font-weight: 200 800; font-display: swap;
+    src: url('fonts/oxanium-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+/* Títulos, menú de arriba, botón Jugar y números grandes en Orbitron */
+h1, h2, .nav-btn, .btn-play, .steam-titulo, .nivel-circulo, .vitrina-stat strong, .biblio-titulo,
+.detail-card > h3, .tienda-seccion h3, .steam-seccion-titulo, .settings-nav h3, .comunidad-etiqueta, .guia-titulo { font-family: 'Orbitron', 'Oxanium', sans-serif; }

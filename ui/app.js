@@ -1050,8 +1050,9 @@ function pintarLogros(cont, res) {
 
         const meta = document.createElement('div');
         meta.className = 'ach-meta';
-        meta.textContent = `${l.puntos} pts` + (l.obtenido ? ` · ${l.fecha}` : '')
-            + (l.porcentaje === null || l.porcentaje === undefined ? '' : ` · ${l.porcentaje}% de los jugadores`);
+        // Un dato por línea (styles.css: white-space: pre-line) para que la columna no aplaste el nombre del logro
+        meta.textContent = [`${l.puntos} pts`, l.obtenido ? (l.fecha || '').slice(0, 10) : '',
+            l.porcentaje === null || l.porcentaje === undefined ? '' : `${l.porcentaje}% de los jugadores`].filter(Boolean).join('\n');
         if (l.obtenido && l.hardcore) meta.prepend(icono('flame', 'icono-fuego'), ' ');
 
         item.append(info, meta);
