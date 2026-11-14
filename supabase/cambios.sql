@@ -838,3 +838,30 @@ $$;
 revoke all on function public.editar_guia(bigint, text, text) from public, anon;
 grant execute on function public.editar_guia(bigint, text, text) to authenticated;
 -- (listar_publicaciones se recreó igual que arriba, con "editado_en timestamptz" al final de la tabla devuelta y "p.editado_en" al final del select)
+
+-- Estado de conexión (2026-11-14): en línea, ausente, no molestar o desconectado. La app avisa cada 2 minutos (visto_en).
+-- Solo lo ven tus amigos; con "desconectado" ni ellos pueden leer la fila.
+create table if not exists public.conexion (
+    user_id uuid primary key references auth.users(id) on delete cascade,
+    estado text not null default 'en_linea' check (estado in ('en_linea', 'ausente', 'no_molestar', 'desconectado')),
+    visto_en timestamptz
+);
+alter table public.conexion enable row level security;
+revoke all on public.conexion from anon, authenticated;
+grant select, insert, update, delete on public.conexion to authenticated;
+create policy conexion_ver on public.conexion for select to authenticated using (
+    auth.uid() = user_id
+    or (estado <> 'desconectado' and exists (
+        select 1 from public.friendships f
+        where f.status = 'accepted'
+          and ((f.requester_id = auth.uid() and f.addressee_id = conexion.user_id)
+            or (f.addressee_id = auth.uid() and f.requester_id = conexion.user_id))))
+);
+create policy conexion_crear on public.conexion for insert to authenticated with check (auth.uid() = user_id);
+create policy conexion_cambiar on public.conexion for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy conexion_borrar on public.conexion for delete to authenticated using (auth.uid() = user_id);
+-- Los cambios de estado llegan al instante a los amigos (Realtime respeta las reglas de lectura de la tabla)
+alter publication supabase_realtime add table public.conexion;
+-- Corrección (2026-11-14): la app ya no guarda 'desconectado' en la nube. Ocultar la fila hacía que Realtime descartara el aviso
+-- y los amigos no se enteraban. "Desconectado" es solo visto_en vacío; el estado elegido se guarda en el equipo.
+update public.conexion set estado = 'en_linea', visto_en = null where estado = 'desconectado';

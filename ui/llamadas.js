@@ -61,6 +61,9 @@ async function llamadasIniciar() {
             p => llAlCambioLlamada(p.new))
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'llamada_participantes' },
             p => llAlCambioParticipante(p.new))
+        // Estado de conexión de tus amigos: la base solo manda los cambios que tenés permiso de ver
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conexion' },
+            p => { if (!p.new || p.new.user_id !== llYo) alCambioConexion(p.new); })
         .subscribe(estado => {
             // supabase-js reintenta solo: hasta que conecte no llegan los timbres
             if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT') {
@@ -166,7 +169,7 @@ function llEstadoBarra(nombre, estado) {
 // Tono de timbre generado por código (no hace falta ningún archivo de sonido)
 function llTimbre(activo) {
     llDetenerTimbre();
-    if (!activo) return;
+    if (!activo || !puedeSonar()) return;   // en "No molestar" o "Desconectado" la llamada aparece, pero sin sonar
     try {
         llTimbreCtx = llTimbreCtx || new AudioContext();
         if (llTimbreCtx.state === 'suspended') llTimbreCtx.resume();

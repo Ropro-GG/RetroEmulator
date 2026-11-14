@@ -68,6 +68,8 @@ class API:
         self._imagenes_guia = []          # imágenes elegidas para la guía que estás escribiendo
         self._lock_juegos = threading.Lock()
         self._hilo_logros = None          # vigía de logros nuevos mientras hay un juego abierto
+        self._hilo_latido = None          # avisa "sigo conectado" cada minuto
+        self._estado_elegido = "en_linea" # el que elegiste; el publicado puede ser "ausente" si estás inactivo
 
     # Guarda la ventana: hace falta para abrir los selectores de archivos.
     def set_window(self, window):
@@ -862,6 +864,46 @@ class API:
         if MEDIR:
             print(f"[ARRANQUE] {time.monotonic() - _INICIO:6.2f} s  {str(etapa)[:60]}")
 
+    # --- ESTADO DE CONEXIÓN: en línea, ausente, no molestar, desconectado ---
+
+    INTERVALO_LATIDO = 60   # segundos. Lo manda Python: la página frena sus temporizadores con la ventana minimizada
+
+    def obtener_mi_estado(self):
+        """El estado que elegiste la última vez (se guarda en este equipo, por cuenta). Arranca el aviso de conexión."""
+        estado = db_local.obtener_config_usuario("estado_conexion", "en_linea")
+        self._estado_elegido = self.cloud.estado_conexion = estado if estado in self.cloud.ESTADOS else "en_linea"
+        if self._hilo_latido and self._hilo_latido.is_alive():
+            self.cloud.latido_conexion(None)   # otra cuenta en la misma sesión de la app: que la vean ya
+        else:
+            self._hilo_latido = threading.Thread(target=self._latir, daemon=True)   # avisa enseguida y después cada minuto
+            self._hilo_latido.start()
+        return {"exito": True, "estado": self._estado_elegido}
+
+    def _latir(self):
+        while True:
+            if self.cloud.usuario_actual:
+                self.cloud.latido_conexion(None)
+            time.sleep(self.INTERVALO_LATIDO)
+
+    def latido_conexion(self, estado=None):
+        """Elegir un estado a mano."""
+        res = self.cloud.latido_conexion(estado)
+        if estado and res.get("exito"):
+            self._estado_elegido = estado
+            db_local.guardar_config_usuario("estado_conexion", estado)
+        return res
+
+    def marcar_inactividad(self, inactivo):
+        """Ausente automático: solo si elegiste "En línea" y no estás jugando. Al volver, de nuevo "En línea"."""
+        with self._lock_juegos:
+            jugando = self._juegos_activos > 0
+        if self._estado_elegido != "en_linea":
+            return {"exito": True, "estado": self._estado_elegido}
+        publicado = "ausente" if inactivo and not jugando else "en_linea"
+        if publicado != self.cloud.estado_conexion:
+            self.cloud.latido_conexion(publicado)
+        return {"exito": True, "estado": publicado}
+
     def obtener_recuerdos(self):
         return {clave: db_local.obtener_config_usuario("recuerdo_" + clave) for clave in self.RECUERDOS}
 
@@ -1123,9 +1165,12 @@ def main():
     )
     api.set_window(window)
     # RETRO_DEBUG=1 abre las herramientas de desarrollo (en Qt abre una ventana extra)
-    webview.start(debug=os.environ.get("RETRO_DEBUG") == "1", gui=_elegir_motor(), http_server=True)
-    api._llamadas.salir_activa()  # ni una llamada abierta
-    api.cloud.limpiar_jugando()   # ni un "jugando ahora" publicado
+    try:
+        webview.start(debug=os.environ.get("RETRO_DEBUG") == "1", gui=_elegir_motor(), http_server=True)
+    finally:   # también al cerrar con Ctrl+C en la terminal
+        api._llamadas.salir_activa()  # ni una llamada abierta
+        api.cloud.limpiar_jugando()   # ni un "jugando ahora" publicado
+        api.cloud.salir_de_conexion() # ni un "en línea" de una app cerrada
 
 if __name__ == '__main__':
     main()

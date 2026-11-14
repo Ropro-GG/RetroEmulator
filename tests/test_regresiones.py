@@ -3,6 +3,7 @@
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -113,6 +114,54 @@ class DenunciarPublicaciones(unittest.TestCase):
         self.assertEqual([a["tipo"] for a in adjuntos], ["guia", "imagen"])
         self.assertIn('Guía en Comunidad de "Super Metroid": Mi guía', adjuntos[0]["contenido"])
         self.assertTrue(adjuntos[1]["archivo"].startswith("yo/"))
+
+
+class EstadoDeConexion(unittest.TestCase):
+    def test_solo_cuenta_como_conectado_quien_aviso_hace_poco(self):
+        from datetime import datetime, timedelta, timezone
+        from nucleo.cloud_client import CloudClient
+        yo = CloudClient.__new__(CloudClient)
+        ahora = datetime.now(timezone.utc)
+        filas = [{"user_id": "a", "estado": "ausente", "visto_en": (ahora - timedelta(minutes=1)).isoformat()},
+                 {"user_id": "b", "estado": "en_linea", "visto_en": (ahora - timedelta(minutes=4)).isoformat()},   # la app se cerró de golpe
+                 {"user_id": "c", "estado": "no_molestar", "visto_en": None},
+                 {"user_id": "d", "estado": "raro", "visto_en": ahora.isoformat()}]
+        yo.client = mock.MagicMock()
+        yo.client.table.return_value.select.return_value.in_.return_value.execute.return_value.data = filas
+        self.assertEqual(yo._conexiones(["a", "b", "c", "d"]), {"a": "ausente"})
+
+
+class AusenteAutomatico(unittest.TestCase):
+    def test_solo_desde_en_linea_y_no_jugando(self):
+        import gui_app
+        api = gui_app.API.__new__(gui_app.API)
+        api._lock_juegos, api._juegos_activos = threading.Lock(), 0
+        api.cloud = mock.MagicMock(estado_conexion="en_linea")
+        api._estado_elegido = "en_linea"
+        self.assertEqual(api.marcar_inactividad(True)["estado"], "ausente")
+        api.cloud.latido_conexion.assert_called_with("ausente")
+        api.cloud.estado_conexion = "ausente"
+        self.assertEqual(api.marcar_inactividad(False)["estado"], "en_linea")   # volviste
+        api.cloud.estado_conexion = "en_linea"
+        api._juegos_activos = 1
+        self.assertEqual(api.marcar_inactividad(True)["estado"], "en_linea")    # jugando no estás ausente
+        api._juegos_activos, api._estado_elegido = 0, "no_molestar"
+        api.cloud.latido_conexion.reset_mock()
+        self.assertEqual(api.marcar_inactividad(True)["estado"], "no_molestar")  # se respeta lo elegido
+        api.cloud.latido_conexion.assert_not_called()
+
+
+class DesconectadoAvisaAlInstante(unittest.TestCase):
+    def test_desconectado_es_un_solo_cambio_visible(self):
+        from nucleo.cloud_client import CloudClient
+        yo = CloudClient.__new__(CloudClient)
+        yo.client, yo.usuario_actual = mock.MagicMock(), object()
+        with mock.patch.object(CloudClient, "_yo", return_value="yo"), mock.patch.object(CloudClient, "limpiar_jugando") as limpiar:
+            self.assertTrue(yo.latido_conexion("desconectado")["exito"])
+        filas = [llamada.args[0] for llamada in yo.client.table.return_value.upsert.call_args_list]
+        self.assertEqual(filas, [{"user_id": "yo", "estado": "en_linea", "visto_en": None}])   # nunca "desconectado": ocultaría el aviso
+        limpiar.assert_called_once()
+        self.assertEqual(yo.latido_conexion("raro")["exito"], False)
 
 
 class BannerDelPerfil(unittest.TestCase):

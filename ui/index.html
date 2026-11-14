@@ -66,6 +66,7 @@
                 <div class="user-pill" onclick="abrirPerfil()">
                     <div class="user-avatar-wrapper">
                         <img id="header-avatar" src="https://via.placeholder.com/40" alt="Avatar">
+                        <span id="header-estado" class="punto-estado estado-en_linea" aria-hidden="true"></span>
                     </div>
                     <span id="header-username" class="user-pill-name">Cargando...</span>
                 </div>
@@ -240,7 +241,7 @@
                                     <div id="picker-stickers" class="picker-body" style="display: none;">
                                         <div class="sticker-tray-head">
                                             <strong>Mis stickers</strong>
-                                            <button class="btn-secondary-sm" onclick="crearStickerNuevo()">＋ Crear sticker</button>
+                                            <button class="btn-secondary-sm" onclick="crearStickerNuevo()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-plus"/></svg> Crear sticker</button>
                                         </div>
                                         <div id="sticker-grid" class="sticker-grid"></div>
                                     </div>
@@ -281,36 +282,47 @@
                     <div id="wish-list"></div>
                 </div>
 
-                <!-- PERFIL DE OTRO USUARIO -->
+                <!-- PERFIL DE OTRO USUARIO: mismo diseño que el tuyo -->
                 <div id="social-perfil" style="display: none;">
                     <button class="btn-back" onclick="cerrarPerfilAjeno()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-arrow-left"/></svg> Amigos</button>
-
-                    <div class="profile-hero">
-                        <div id="pa-fondo" class="perfil-fondo"></div>
-                        <img id="pa-avatar" class="pa-avatar" alt="">
-                        <div class="pa-main">
-                            <h2 id="pa-nombre"></h2>
-                            <p id="pa-estado" class="pa-estado"></p>
-                            <div id="pa-acciones" class="pa-acciones"></div>
+                    <div class="perfil-discord perfil-ajeno">
+                        <div class="perfil-izq">
+                            <div id="pa-fondo" class="perfil-fondo"></div>
+                            <div class="perfil-identidad">
+                                <img id="pa-avatar" class="perfil-avatar" alt="">
+                                <h2 id="pa-nombre"></h2>
+                                <p id="pa-estado" class="pa-estado"></p>
+                                <div id="pa-acciones" class="pa-acciones perfil-botones"></div>
+                            </div>
+                            <div id="pa-nivel" class="perfil-bloque"></div>
+                            <div class="perfil-bloque">
+                                <h4 class="vitrina-titulo">Información</h4>
+                                <p id="pa-bio" class="pa-bio"></p>
+                            </div>
                         </div>
-                    </div>
-
-                    <div id="pa-vitrina" class="vitrina detail-card" style="display: none;"></div>
-                    <div class="detail-card">
-                        <h3>Biografía</h3>
-                        <p id="pa-bio" class="pa-bio"></p>
-                    </div>
-                    <div class="detail-card">
-                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-gamepad-2"/></svg> Juegos jugados recientemente</h3>
-                        <div id="pa-juegos"></div>
-                    </div>
-                    <div class="detail-card">
-                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-handshake"/></svg> Juegos en común</h3>
-                        <div id="pa-comun"></div>
-                    </div>
-                    <div class="detail-card">
-                        <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-star"/></svg> Lista de deseados</h3>
-                        <div id="pa-deseados"></div>
+                        <div class="perfil-der">
+                            <div class="perfil-pestanas" role="tablist">
+                                <button class="perfil-pestana activa" data-tab="tablero" role="tab" onclick="pestanaPerfil(this)">Tablero</button>
+                                <button class="perfil-pestana" data-tab="comun" role="tab" onclick="pestanaPerfil(this)">En común</button>
+                                <button class="perfil-pestana" data-tab="deseados" role="tab" onclick="pestanaPerfil(this)">Lista de deseados</button>
+                            </div>
+                            <div class="perfil-panel" data-panel="tablero">
+                                <div id="pa-estadisticas"></div>
+                                <div class="perfil-tarjeta">
+                                    <h4 class="vitrina-titulo">Jugados recientemente</h4>
+                                    <div id="pa-juegos" class="perfil-juegos"></div>
+                                </div>
+                                <div id="pa-vitrina" class="vitrina"></div>
+                            </div>
+                            <div class="perfil-panel" data-panel="comun" style="display: none;">
+                                <h4 class="vitrina-titulo">Juegos en común</h4>
+                                <div id="pa-comun" class="perfil-juegos"></div>
+                            </div>
+                            <div class="perfil-panel" data-panel="deseados" style="display: none;">
+                                <h4 class="vitrina-titulo">Lista de deseados</h4>
+                                <div id="pa-deseados" class="perfil-juegos"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -465,53 +477,52 @@
         </div>
     </div>
 
-    <!-- MODAL DE PERFIL DE USUARIO -->
+    <!-- SELECTOR DE ESTADO: se abre al hacer clic en tu estado, en tu perfil -->
+    <div id="estado-modal" class="modal" style="display: none;" onclick="if (event.target === this) cerrarSelectorEstado()">
+        <div class="dialog-card estado-card" role="dialog" aria-labelledby="estado-titulo">
+            <h2 id="estado-titulo">Tu estado</h2>
+            <div id="estado-opciones" class="estado-opciones"></div>
+            <button class="btn-secondary-sm" onclick="cerrarSelectorEstado()">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- MODAL DE PERFIL DE USUARIO: dos columnas, como los perfiles nuevos de Discord -->
     <div id="profile-modal" class="modal" style="display: none;">
-        <div class="modal-content profile-card">
-            <div id="mi-fondo" class="perfil-fondo"></div>
+        <div class="modal-content profile-card perfil-discord">
             <span class="close-btn" onclick="cerrarPerfil()">&times;</span>
-            
-            <div class="profile-header">
-                <div class="profile-avatar-container">
-                    <img id="profile-avatar" src="https://via.placeholder.com/100" alt="Foto de Perfil">
-                    <div class="avatar-buttons">
-                        <button class="change-avatar-btn" onclick="subirNuevaFoto()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-camera"/></svg> Foto</button>
-                        <button class="change-avatar-btn" onclick="cambiarNombreUsuario()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-pencil"/></svg> Nombre</button>
-                        <button class="change-avatar-btn" onclick="abrirEditorBanner()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-palette"/></svg> Banner</button>
-                    </div>
-                </div>
-                <div class="profile-info">
+            <div class="perfil-izq">
+                <button class="perfil-ajustes-btn" title="Ajustes del perfil" aria-label="Ajustes del perfil" onclick="abrirAjustesDePerfil()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-settings"/></svg></button>
+                <div id="mi-fondo" class="perfil-fondo"></div>
+                <div class="perfil-identidad">
+                    <button class="perfil-avatar-editar" title="Cambiar foto de perfil" aria-label="Cambiar foto de perfil" onclick="subirNuevaFoto()">
+                        <img id="profile-avatar" class="perfil-avatar" src="https://via.placeholder.com/100" alt="Foto de Perfil">
+                        <span class="perfil-avatar-capa"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-camera"/></svg></span>
+                    </button>
                     <h2 id="profile-username">NombreUsuario</h2>
-                    <span class="user-status"><span class="punto-en-linea"></span> En línea</span>
+                    <button id="mi-estado" class="user-status estado-boton" title="Cambiar tu estado" onclick="abrirSelectorEstado()"></button>
+                </div>
+                <div id="mi-nivel" class="perfil-bloque"></div>
+                <div class="perfil-bloque">
+                    <h4 class="vitrina-titulo">Información</h4>
+                    <p id="mi-bio" class="pa-bio"></p>
                 </div>
             </div>
-
-            <div id="banner-editor" class="banner-editor" style="display: none;">
-                <h4 class="vitrina-titulo">Banner del perfil</h4>
-                <div id="banner-colores" class="banner-colores"></div>
-                <div class="banner-acciones">
-                    <label class="banner-propio">Otro color <input type="color" id="banner-color" value="#45a29e" onchange="guardarBannerColor(this.value)"></label>
-                    <button class="btn-secondary-sm" onclick="subirBannerImagen()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg> Imagen de tu equipo</button>
-                    <button class="btn-secondary-sm" onclick="guardarBannerColor(null)">Quitar</button>
+            <div class="perfil-der">
+                <div class="perfil-pestanas" role="tablist">
+                    <button class="perfil-pestana activa" data-tab="tablero" role="tab" onclick="pestanaPerfil(this)">Tablero</button>
+                    <button class="perfil-pestana" data-tab="deseados" role="tab" onclick="pestanaPerfil(this)">Lista de deseados</button>
                 </div>
-                <p class="settings-help">La imagen se recorta al formato del banner (3:1). La ven todos los que abran tu perfil.</p>
-                <p id="banner-msg" class="settings-msg" role="status"></p>
-            </div>
-
-            <div id="mi-vitrina" class="vitrina"></div>
-
-            <div class="profile-body">
-                <h3>Biografía</h3>
-                <textarea id="profile-bio" placeholder="Escribí algo sobre vos..."></textarea>
-                <button class="btn-save-bio" onclick="guardarPerfil()">Guardar Cambios</button>
-
-                <div class="profile-section">
-                    <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-gamepad-2"/></svg> Jugados recientemente</h3>
-                    <div id="mi-recientes"></div>
+                <div class="perfil-panel" data-panel="tablero">
+                    <div id="mi-estadisticas"></div>
+                    <div class="perfil-tarjeta">
+                        <h4 class="vitrina-titulo">Jugados recientemente</h4>
+                        <div id="mi-recientes" class="perfil-juegos"></div>
+                    </div>
+                    <div id="mi-vitrina" class="vitrina"></div>
                 </div>
-                <div class="profile-section">
-                    <h3><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-star"/></svg> Lista de deseados</h3>
-                    <div id="mi-deseados"></div>
+                <div class="perfil-panel" data-panel="deseados" style="display: none;">
+                    <h4 class="vitrina-titulo">Lista de deseados</h4>
+                    <div id="mi-deseados" class="perfil-juegos"></div>
                 </div>
             </div>
         </div>
@@ -734,6 +745,7 @@
             <aside class="settings-nav">
                 <h3>Parámetros</h3>
                 <ul>
+                    <li data-section="perfil" onclick="seleccionarSeccionConfig('perfil')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-user"/></svg> Perfil</li>
                     <li class="active" data-section="paths" onclick="seleccionarSeccionConfig('paths')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-folder"/></svg> Rutas y Emuladores</li>
                     <li data-section="audio" onclick="seleccionarSeccionConfig('audio')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-headphones"/></svg> Audio de llamadas</li>
                     <li data-section="ra" onclick="seleccionarSeccionConfig('ra')"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-trophy"/></svg> RetroAchievements</li>
@@ -766,6 +778,51 @@
                     <p id="audio-altavoz-aviso" class="settings-help" style="display: none;">Este equipo no permite elegir el altavoz desde la app: se usa el del sistema.</p>
                     <p id="audio-msg" class="settings-msg" role="status"></p>
                     <p class="settings-help">Se guardan en este equipo y también se aplican durante una llamada. El timbre suena siempre por el altavoz del sistema.</p>
+                </section>
+
+                <section id="settings-perfil" class="settings-section" style="display: none;">
+                    <h2>Perfil</h2>
+                    <div class="perfil-config">
+                        <div class="perfil-config-campos">
+                            <label class="settings-label">Foto</label>
+                            <button class="btn-secondary-sm" onclick="subirNuevaFoto()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-camera"/></svg> Cambiar foto</button>
+                            <label class="settings-label" for="perfil-nombre">Nombre de usuario</label>
+                            <div class="perfil-config-fila">
+                                <input id="perfil-nombre" class="settings-input" type="text" maxlength="30" autocomplete="off" oninput="actualizarVistaPerfil()">
+                                <button class="btn-primary-sm" onclick="guardarNombrePerfil()">Guardar</button>
+                            </div>
+                            <label class="settings-label">Banner</label>
+                            <div id="banner-editor" class="banner-editor">
+                                <div id="banner-colores" class="banner-colores"></div>
+                                <div class="banner-acciones">
+                                    <label class="banner-propio">Otro color <input type="color" id="banner-color" value="#45a29e" onchange="guardarBannerColor(this.value)"></label>
+                                    <button class="btn-secondary-sm" onclick="subirBannerImagen()"><svg class="icono" aria-hidden="true"><use href="iconos.svg#i-image"/></svg> Imagen de tu equipo</button>
+                                    <button class="btn-secondary-sm" onclick="guardarBannerColor(null)">Quitar</button>
+                                </div>
+                                <p class="settings-help">La imagen se recorta al formato del banner (3:1). La ven todos los que abran tu perfil.</p>
+                                <p id="banner-msg" class="settings-msg" role="status"></p>
+                            </div>
+                            <label class="settings-label" for="profile-bio">Biografía</label>
+                            <textarea id="profile-bio" class="settings-input" rows="4" placeholder="Escribí algo sobre vos..." oninput="actualizarVistaPerfil()"></textarea>
+                            <button class="btn-primary-sm" onclick="guardarPerfil()">Guardar biografía</button>
+                            <p id="perfil-config-msg" class="settings-msg" role="status"></p>
+                        </div>
+                        <div class="perfil-config-vista">
+                            <span class="settings-label">Vista previa</span>
+                            <div class="perfil-izq perfil-vista">
+                                <div id="vista-fondo" class="perfil-fondo"></div>
+                                <div class="perfil-identidad">
+                                    <img id="vista-avatar" class="perfil-avatar" alt="">
+                                    <h2 id="vista-nombre"></h2>
+                                    <span id="vista-estado" class="user-status"></span>
+                                </div>
+                                <div class="perfil-bloque">
+                                    <h4 class="vitrina-titulo">Información</h4>
+                                    <p id="vista-bio" class="pa-bio"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <section id="settings-ra" class="settings-section" style="display: none;">

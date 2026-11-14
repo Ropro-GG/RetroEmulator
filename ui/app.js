@@ -105,6 +105,7 @@ async function cargarPantallaPrincipal() {
     }
     if (recuerdos.vista && recuerdos.vista !== 'biblioteca') mostrarVista(recuerdos.vista);
     iniciarInsignias();
+    iniciarEstado();
     llamadasIniciar();
     llavesIniciar();
 }
@@ -130,6 +131,7 @@ async function cargarPerfilUsuario() {
             document.getElementById('header-username').innerText = username;
             document.getElementById('profile-username').innerText = username;
             document.getElementById('profile-bio').value = perfilActual.bio || '';
+            pintarMiBio(perfilActual.bio);
 
             const avatarUrl = (perfilActual.avatar_url && perfilActual.avatar_url.trim() !== "") 
                 ? perfilActual.avatar_url 
@@ -146,7 +148,7 @@ async function cargarPerfilUsuario() {
 // Abre tu perfil.
 function abrirPerfil() {
     document.getElementById('profile-modal').style.display = 'flex';
-    document.getElementById('banner-editor').style.display = 'none';
+    pestanaPerfil(document.querySelector('#profile-modal .perfil-pestana'));
     pintarBanner(document.getElementById('mi-fondo'), perfilActual && perfilActual.banner);
     cargarMiActividad();
 }
@@ -160,21 +162,6 @@ function pintarBanner(el, banner) {
 
 const COLORES_BANNER = ['#45A29E', '#66FCF1', '#1F6FEB', '#8957E5', '#DB2777', '#E5534B', '#F0883E', '#D4A72C', '#2DA44E'];
 
-function abrirEditorBanner() {
-    const editor = document.getElementById('banner-editor');
-    editor.style.display = editor.style.display === 'none' ? '' : 'none';
-    const colores = document.getElementById('banner-colores');
-    if (colores.children.length) return;
-    COLORES_BANNER.forEach(color => {
-        const b = nodo('button', 'banner-muestra');
-        b.type = 'button';
-        b.style.background = color;
-        b.title = color;
-        b.setAttribute('aria-label', 'Banner de color ' + color);
-        b.onclick = () => guardarBannerColor(color);
-        colores.appendChild(b);
-    });
-}
 
 async function aplicarBanner(promesa) {
     const msg = document.getElementById('banner-msg');
@@ -185,6 +172,7 @@ async function aplicarBanner(promesa) {
     if (!res || !res.exito) { msg.textContent = (res && res.error) || 'No se pudo guardar el banner.'; return; }
     if (perfilActual) perfilActual.banner = res.banner;
     pintarBanner(document.getElementById('mi-fondo'), res.banner);
+    pintarBanner(document.getElementById('vista-fondo'), res.banner);
     mensajeOk(msg, 'Banner guardado');
 }
 
@@ -196,41 +184,80 @@ function cerrarPerfil() {
     document.getElementById('profile-modal').style.display = 'none';
 }
 
+// La biografía se lee como texto en "Información"; se edita desde los ajustes del perfil.
+function pintarMiBio(bio) {
+    const p = document.getElementById('mi-bio');
+    p.textContent = (bio || '').trim() || 'Todavía no escribiste una biografía. Podés hacerlo desde los ajustes (el engranaje).';
+    p.className = (bio || '').trim() ? 'pa-bio' : 'empty-state';
+}
+
+// Engranaje del perfil: lleva a Parámetros → Perfil (foto, nombre, banner y biografía).
+function abrirAjustesDePerfil() {
+    cerrarPerfil();
+    abrirConfiguracion('perfil');
+}
+
+// Parámetros → Perfil: carga los campos y la vista previa.
+function cargarSeccionPerfil() {
+    const colores = document.getElementById('banner-colores');
+    if (!colores.children.length) {
+        COLORES_BANNER.forEach(color => {
+            const b = nodo('button', 'banner-muestra');
+            b.type = 'button';
+            b.style.background = color;
+            b.title = color;
+            b.setAttribute('aria-label', 'Banner de color ' + color);
+            b.onclick = () => guardarBannerColor(color);
+            colores.appendChild(b);
+        });
+    }
+    document.getElementById('perfil-nombre').value = (perfilActual && perfilActual.username) || '';
+    document.getElementById('profile-bio').value = (perfilActual && perfilActual.bio) || '';
+    ['banner-msg', 'perfil-config-msg'].forEach(id => { document.getElementById(id).textContent = ''; });
+    actualizarVistaPerfil();
+}
+
+// Vista previa de la columna izquierda del perfil, al día con lo que vas escribiendo.
+function actualizarVistaPerfil() {
+    const p = perfilActual || {};
+    const avatar = document.getElementById('vista-avatar');
+    avatar.onerror = () => { avatar.onerror = null; avatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.username || '?')}&background=45A29E&color=fff`; };
+    avatar.src = avatarDe(p);
+    document.getElementById('vista-nombre').textContent = document.getElementById('perfil-nombre').value.trim() || p.username || 'Usuario';
+    const bio = document.getElementById('profile-bio').value.trim();
+    const vistaBio = document.getElementById('vista-bio');
+    vistaBio.textContent = bio || 'Todavía no escribiste una biografía.';
+    vistaBio.className = bio ? 'pa-bio' : 'empty-state';
+    pintarBanner(document.getElementById('vista-fondo'), p.banner);
+}
+
+async function guardarNombrePerfil() {
+    const msg = document.getElementById('perfil-config-msg');
+    const nuevo = document.getElementById('perfil-nombre').value.trim();
+    if (!nuevo || (perfilActual && nuevo === perfilActual.username)) return;
+    let res;
+    try { res = await window.pywebview.api.cambiar_username(nuevo); } catch (e) { res = { exito: false, error: String(e) }; }
+    if (!res || !res.exito) { msg.textContent = 'No se pudo cambiar el nombre: ' + ((res && res.error) || 'error desconocido'); return; }
+    if (res.perfil) perfilActual = res.perfil;
+    await cargarPerfilUsuario();
+    mensajeOk(msg, 'Nombre guardado');
+    actualizarVistaPerfil();
+}
+
 // Guarda la biografía.
 async function guardarPerfil() {
     const nuevaBio = document.getElementById('profile-bio').value;
     const res = await window.pywebview.api.actualizar_perfil(nuevaBio);
     if (res && res.exito) {
-        alert("Perfil actualizado correctamente.");
         if (res.perfil) perfilActual = res.perfil;
-        cerrarPerfil();
+        pintarMiBio(nuevaBio);
+        mensajeOk(document.getElementById('perfil-config-msg'), 'Biografía guardada');
         await cargarPerfilUsuario();
     } else {
         alert("Error al actualizar biografía: " + (res ? res.error : "error desconocido"));
     }
 }
 
-// Pide un nombre nuevo y lo guarda.
-async function cambiarNombreUsuario() {
-    const nombreActual = perfilActual ? (perfilActual.username || "") : "";
-    const nuevoUsername = prompt("Ingresá tu nuevo nombre de usuario:", nombreActual);
-
-    if (nuevoUsername === null) return;
-    if (nuevoUsername.trim() === "" || nuevoUsername === nombreActual) return;
-
-    try {
-        const res = await window.pywebview.api.cambiar_username(nuevoUsername.trim());
-        if (res && res.exito) {
-            alert("¡Nombre de usuario actualizado con éxito!");
-            if (res.perfil) perfilActual = res.perfil;
-            await cargarPerfilUsuario();
-        } else {
-            alert("No se pudo cambiar el nombre: " + (res ? res.error : "Error desconocido"));
-        }
-    } catch (e) {
-        alert("Error al comunicarse con el servidor: " + e);
-    }
-}
 
 // Abre el selector de archivos y actualiza la foto.
 async function subirNuevaFoto() {
@@ -246,7 +273,8 @@ async function subirNuevaFoto() {
             
             document.getElementById('header-avatar').src = res.avatar_url;
             document.getElementById('profile-avatar').src = res.avatar_url;
-            alert("Foto de perfil actualizada.");
+            document.getElementById('vista-avatar').src = res.avatar_url;
+            avisoPost('Foto de perfil actualizada.');
         } else if (res && res.error && res.error !== "No se seleccionó ninguna imagen.") {
             alert("Error al subir foto: " + res.error);
         }
@@ -624,6 +652,7 @@ async function cerrarSesion() {
     cerrarConfiguracion();
     volverABiblioteca();
     detenerInsignias();
+    detenerLatido();
     reiniciarEstadoUI();
     mostrarVista('biblioteca', false);
     document.getElementById('app-screen').style.display = 'none';
@@ -664,7 +693,8 @@ function seleccionarSeccionConfig(nombre) {
         li.classList.toggle('active', li.dataset.section === nombre);
     });
 
-    if (nombre === 'paths') cargarRutasConfig();
+    if (nombre === 'perfil') cargarSeccionPerfil();
+    else if (nombre === 'paths') cargarRutasConfig();
     else if (nombre === 'audio') cargarConfigAudio();
     else if (nombre === 'ra') cargarEstadoRA();
     else if (nombre === 'privacy') cargarPrivacidad();
@@ -1219,9 +1249,10 @@ function boton(texto, clase, accion) {
 }
 
 // "En llamada · Jugando a X · PS1" (cualquiera de las dos partes puede faltar)
-function textoActividad(enLlamada, jugando) {
+// Lo que está haciendo; si no está jugando ni en llamada, su estado (solo se conoce el de tus amigos).
+function textoActividad(enLlamada, jugando, estado) {
     const juego = jugando ? `Jugando a ${jugando.titulo}` + (jugando.consola ? ` · ${jugando.consola}` : '') : '';
-    return [enLlamada ? 'En llamada' : '', juego].filter(Boolean).join(' · ');
+    return [enLlamada ? 'En llamada' : '', juego].filter(Boolean).join(' · ') || (ESTADOS[estado] ? ESTADOS[estado].texto : '');
 }
 
 // Fila de un usuario: foto, nombre, estado y acciones.
@@ -1251,7 +1282,13 @@ function filaUsuario(u, subtitulo, jugando, acciones) {
     if (u.user_id) {
         img.onclick = info.onclick = () => abrirPerfilAjeno(u.user_id);
     }
-    fila.append(img, info, cont);
+    // Amigos: punto de color con su estado sobre la foto
+    let foto = img;
+    if (u.estado) {
+        foto = nodo('span', 'avatar-con-estado');
+        foto.append(img, puntoEstado(u.estado));
+    }
+    fila.append(foto, info, cont);
     return fila;
 }
 
@@ -1311,6 +1348,7 @@ async function cargarSocial() {
         return;
     }
     actualizarInsignias();   // también cuenta las invitaciones a grupos
+    res.amigos.forEach(a => { estadosConocidos[a.user_id] = a.estado; });
     let grupos;
     try { grupos = await window.pywebview.api.obtener_grupos(); } catch (e) { grupos = null; }
     cont.innerHTML = '';
@@ -1333,7 +1371,7 @@ async function cargarSocial() {
         cont.appendChild(mensajeVacio('Todavía no tenés amigos agregados. Buscá a alguien por su nombre de usuario en el cuadro de arriba.'));
     }
     res.amigos.forEach(u => {
-        cont.appendChild(filaUsuario(u, textoActividad(u.en_llamada, u.jugando), !!u.jugando || u.en_llamada, [
+        cont.appendChild(filaUsuario(u, textoActividad(u.en_llamada, u.jugando, u.estado), !!u.jugando || u.en_llamada, [
             botonIcono('message-circle', 'Enviar mensaje', () => irAlChat(u.user_id)),
             botonIcono('phone', 'Llamada de voz', () => llamarAmigo(u.user_id, u.username)),
             botonIcono('video', 'Videollamada', () => llamarAmigo(u.user_id, u.username, true)),
@@ -1634,7 +1672,10 @@ async function abrirPerfilAjeno(userId) {
     document.getElementById('pa-juegos').innerHTML = '';
     document.getElementById('pa-comun').innerHTML = '';
     document.getElementById('pa-deseados').innerHTML = '';
-    document.getElementById('pa-vitrina').style.display = 'none';
+    document.getElementById('pa-vitrina').innerHTML = '';
+    document.getElementById('pa-nivel').innerHTML = '';
+    document.getElementById('pa-estadisticas').innerHTML = '';
+    pestanaPerfil(document.querySelector('#social-perfil .perfil-pestana'));
     pintarBanner(document.getElementById('pa-fondo'), null);
     document.getElementById('pa-avatar').removeAttribute('src');
     await cargarPerfilAjeno();
@@ -1679,13 +1720,9 @@ async function cargarPerfilAjeno() {
     document.getElementById('pa-nombre').textContent = p.username || 'Usuario';
 
     const estado = document.getElementById('pa-estado');
-    if (res.jugando || res.en_llamada) {
-        estado.textContent = textoActividad(res.en_llamada, res.jugando);
-        estado.className = 'pa-estado playing';
-    } else {
-        estado.textContent = res.relacion === 'amigos' ? 'No está jugando ahora' : '';
-        estado.className = 'pa-estado';
-    }
+    estado.textContent = res.relacion === 'amigos' ? textoActividad(res.en_llamada, res.jugando, res.estado) : '';
+    estado.className = 'pa-estado' + (res.jugando || res.en_llamada ? ' playing' : '');
+    if (res.relacion === 'amigos' && !res.jugando && !res.en_llamada) estado.prepend(puntoEstado(res.estado || 'desconectado'), ' ');
 
     const bio = document.getElementById('pa-bio');
     if (p.bio && p.bio.trim() !== '') {
@@ -1883,17 +1920,23 @@ function pintarInsignias(solicitudes, mensajes) {
     });
 }
 
-// Pide esos contadores al servidor.
+// Pide esos contadores al servidor. Si subieron, suena (salvo en "No molestar" o "Desconectado").
+let insigniasPrimeraVez = true;
 async function actualizarInsignias() {
     try {
         const r = await window.pywebview.api.obtener_resumen_social();
-        if (r && r.exito) pintarInsignias(r.solicitudes, r.mensajes);
+        if (!r || !r.exito) return;
+        const subio = r.solicitudes > insignias.solicitudes || r.mensajes > insignias.mensajes;
+        if (subio && !insigniasPrimeraVez) sonarNotificacion();   // al abrir la app no suena por lo que ya estaba
+        insigniasPrimeraVez = false;
+        pintarInsignias(r.solicitudes, r.mensajes);
     } catch (e) { /* sin conexión: se deja como estaba */ }
 }
 
 // Consulta los contadores cada 20 s.
 function iniciarInsignias() {
     detenerInsignias();
+    insigniasPrimeraVez = true;
     actualizarInsignias();
     insigniaTimer = setInterval(actualizarInsignias, 20000);
 }
@@ -1990,27 +2033,22 @@ function formatearFecha(iso) {
     return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// Fila de un juego con mini carátula.
-function filaJuego(titulo, subtitulo, identificativo) {
-    const fila = document.createElement('div');
-    fila.className = 'game-row';
-    if (identificativo) fila.appendChild(crearMiniPortada(identificativo, titulo));
-
-    const info = document.createElement('div');
-    info.className = 'game-row-info';
-    const t = document.createElement('strong');
-    t.textContent = titulo;
-    const sub = document.createElement('small');
-    sub.textContent = subtitulo;
-    info.append(t, sub);
-    fila.appendChild(info);
-    return fila;
+// Tarjeta de un juego en el perfil (cuadrícula, como los perfiles nuevos de Discord): carátula, nombre y un dato.
+function tarjetaJuegoPerfil(titulo, subtitulo, identificativo) {
+    const tarjeta = nodo('div', 'perfil-juego');
+    tarjeta.title = titulo;
+    tarjeta.append(crearMiniPortada(identificativo, titulo), nodo('strong', '', titulo), nodo('small', '', subtitulo || ''));
+    return tarjeta;
 }
 
 // Vitrina del perfil, como la de Steam: nivel, números, insignias y juegos más jugados.
-function pintarVitrina(cont, r) {
+// izq: nivel e insignias. est: estadísticas (arriba del tablero). cont: juegos más jugados (abajo del tablero).
+function pintarVitrina(cont, r, izq, est) {
     cont.innerHTML = '';
+    izq.innerHTML = '';
+    est.innerHTML = '';
     if (!r) return;
+    // Columna izquierda: nivel e insignias, como las insignias junto al nombre en Discord
     const nivel = nodo('div', 'vitrina-nivel');
     const circulo = nodo('span', 'nivel-circulo', String(r.nivel));
     circulo.setAttribute('aria-hidden', 'true');
@@ -2022,13 +2060,7 @@ function pintarVitrina(cont, r) {
     barra.appendChild(relleno);
     datos.append(nodo('strong', '', `Nivel ${r.nivel}`), nodo('small', '', `${r.xp} XP · faltan ${r.xp_siguiente - r.xp} para el nivel ${r.nivel + 1}`), barra);
     nivel.append(circulo, datos);
-    const numeros = nodo('div', 'vitrina-stats');
-    [['Juegos', r.juegos], ['Horas', r.horas], ['Sesiones', r.sesiones], ['Opiniones', r.opiniones], ['Pts. logros', r.puntos_ra]].forEach(([e, v]) => {
-        const s = nodo('div', 'vitrina-stat');
-        s.append(nodo('strong', '', String(v)), nodo('span', '', e));
-        numeros.appendChild(s);
-    });
-    cont.append(nivel, numeros);
+    izq.appendChild(nivel);
     if (r.insignias.length) {
         const lista = nodo('div', 'vitrina-insignias');
         r.insignias.forEach(i => {
@@ -2037,13 +2069,43 @@ function pintarVitrina(cont, r) {
             b.append(nodo('span', 'insignia-icono', [icono(i.icono)]), nodo('small', '', i.nombre));
             lista.appendChild(b);
         });
-        cont.append(nodo('h4', 'vitrina-titulo', 'Insignias'), lista);
+        izq.append(nodo('h4', 'vitrina-titulo', 'Insignias'), lista);
     }
-    if (r.mas_jugados.length) {
-        cont.appendChild(nodo('h4', 'vitrina-titulo', 'Juegos más jugados'));
-        r.mas_jugados.forEach(g => cont.appendChild(filaJuego(g.titulo,
-            [g.consola, formatearTiempo(g.segundos) || `${g.veces} ${g.veces === 1 ? 'vez' : 'veces'}`].filter(Boolean).join(' · '), g.identificativo)));
-    }
+    // Tablero: los más jugados como tarjetas grandes con etiquetas, y los números
+    const mas = nodo('div', 'perfil-tarjeta');
+    mas.appendChild(nodo('h4', 'vitrina-titulo', 'Juegos más jugados'));
+    if (!r.mas_jugados.length) mas.appendChild(mensajeVacio('Todavía no hay juegos jugados desde el launcher.'));
+    r.mas_jugados.forEach(g => mas.appendChild(tarjetaJuegoDestacado(g)));
+    const numeros = nodo('div', 'vitrina-stats');
+    [['Juegos', r.juegos], ['Horas', r.horas], ['Sesiones', r.sesiones], ['Opiniones', r.opiniones], ['Pts. logros', r.puntos_ra]].forEach(([e, v]) => {
+        const s = nodo('div', 'vitrina-stat');
+        s.append(nodo('strong', '', String(v)), nodo('span', '', e));
+        numeros.appendChild(s);
+    });
+    const estadisticas = nodo('div', 'perfil-tarjeta');
+    estadisticas.append(nodo('h4', 'vitrina-titulo', 'Estadísticas'), numeros);
+    est.appendChild(estadisticas);
+    cont.appendChild(mas);
+}
+
+// Juego destacado del tablero: carátula grande a la izquierda y etiquetas, como los juegos favoritos de Discord.
+function tarjetaJuegoDestacado(g) {
+    const fila = nodo('div', 'juego-destacado');
+    const etiquetas = nodo('div', 'juego-etiquetas');
+    [[icono('timer'), ' ' + (formatearTiempo(g.segundos) || 'Sin horas')], [icono('repeat'), ` ${g.veces} ${g.veces === 1 ? 'sesión' : 'sesiones'}`],
+     g.consola ? [icono('gamepad-2'), ' ' + g.consola] : null].filter(Boolean)
+        .forEach(partes => etiquetas.appendChild(nodo('span', 'juego-etiqueta', partes)));
+    const info = nodo('div', 'juego-destacado-info');
+    info.append(nodo('strong', '', g.titulo), etiquetas);
+    fila.append(crearMiniPortada(g.identificativo, g.titulo), info);
+    return fila;
+}
+
+// Pestañas del perfil (Tablero, Actividad, Deseados...): sirven igual en el tuyo y en el de un amigo.
+function pestanaPerfil(boton) {
+    const columna = boton.closest('.perfil-der');
+    columna.querySelectorAll('.perfil-pestana').forEach(b => b.classList.toggle('activa', b === boton));
+    columna.querySelectorAll('.perfil-panel').forEach(p => { p.style.display = p.dataset.panel === boton.dataset.tab ? '' : 'none'; });
 }
 
 // Juegos recientes, en común y deseados de un amigo.
@@ -2056,9 +2118,9 @@ function pintarJuegosPerfil(res) {
     deseados.innerHTML = '';
 
     const vitrina = document.getElementById('pa-vitrina');
-    pintarVitrina(vitrina, res.relacion === 'amigos' ? res.resumen : null);
-    vitrina.style.display = vitrina.children.length ? '' : 'none';
+    pintarVitrina(vitrina, res.relacion === 'amigos' ? res.resumen : null, document.getElementById('pa-nivel'), document.getElementById('pa-estadisticas'));
     if (res.relacion !== 'amigos') {
+        vitrina.appendChild(mensajeVacio('Solo los amigos pueden ver su nivel y sus juegos más jugados.'));
         jugados.appendChild(mensajeVacio('Solo los amigos pueden ver los juegos que jugó.'));
         comun.appendChild(mensajeVacio('Agregalo a tus amigos para ver qué juegos tienen en común.'));
         deseados.appendChild(mensajeVacio('Solo los amigos pueden ver su lista de deseados.'));
@@ -2071,7 +2133,7 @@ function pintarJuegosPerfil(res) {
     }
     recientes.forEach(j => {
         const veces = `${j.veces} ${j.veces === 1 ? 'vez' : 'veces'}`;
-        jugados.appendChild(filaJuego(j.titulo, [j.consola, formatearTiempo(j.segundos) || veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
+        jugados.appendChild(tarjetaJuegoPerfil(j.titulo, [formatearTiempo(j.segundos) || veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
     });
 
     const enComun = res.en_comun || [];
@@ -2082,14 +2144,14 @@ function pintarJuegosPerfil(res) {
         resumen.className = 'settings-help';
         resumen.textContent = `${enComun.length} ${enComun.length === 1 ? 'juego' : 'juegos'} en común`;
         comun.appendChild(resumen);
-        enComun.forEach(j => comun.appendChild(filaJuego(j.titulo, j.consola, j.identificativo)));
+        enComun.forEach(j => comun.appendChild(tarjetaJuegoPerfil(j.titulo, j.consola, j.identificativo)));
     }
 
     const lista = res.deseados || [];
     if (lista.length === 0) {
         deseados.appendChild(mensajeVacio('No tiene juegos en su lista de deseados (o no la comparte).'));
     }
-    lista.forEach(d => deseados.appendChild(filaJuego(d.titulo, d.consola, d.identificativo)));
+    lista.forEach(d => deseados.appendChild(tarjetaJuegoPerfil(d.titulo, d.consola, d.identificativo)));
 }
 
 // Va a Social y abre el perfil de un amigo.
@@ -2418,14 +2480,14 @@ async function cargarMiActividad() {
     }
     res.recientes.forEach(j => {
         const veces = `${j.veces} ${j.veces === 1 ? 'vez' : 'veces'}`;
-        recientes.appendChild(filaJuego(j.titulo, [j.consola, formatearTiempo(j.segundos) || veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
+        recientes.appendChild(tarjetaJuegoPerfil(j.titulo, [formatearTiempo(j.segundos) || veces, formatearFecha(j.ultima_vez)].filter(Boolean).join(' · '), j.identificativo));
     });
-    pintarVitrina(document.getElementById('mi-vitrina'), res.resumen);
+    pintarVitrina(document.getElementById('mi-vitrina'), res.resumen, document.getElementById('mi-nivel'), document.getElementById('mi-estadisticas'));
 
     if (res.deseados.length === 0) {
         deseados.appendChild(mensajeVacio('Tu lista está vacía. Podés agregar juegos en Social → Deseados.'));
     }
-    res.deseados.forEach(d => deseados.appendChild(filaJuego(d.titulo, d.consola, d.identificativo)));
+    res.deseados.forEach(d => deseados.appendChild(tarjetaJuegoPerfil(d.titulo, d.consola, d.identificativo)));
 }
 
 // ============================================================================
@@ -2692,7 +2754,7 @@ async function abrirConversacion(amigoId) {
     document.getElementById('chat-error').textContent = '';
     document.getElementById('picker').style.display = 'none';
     document.getElementById('chat-nombre').textContent = conv.username;
-    document.getElementById('chat-estado').textContent = textoActividad(conv.en_llamada, conv.jugando);
+    document.getElementById('chat-estado').textContent = textoActividad(conv.en_llamada, conv.jugando, conv.estado);
     const avatar = document.getElementById('chat-avatar');
     avatar.src = avatarDe(conv);
     document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
@@ -3154,7 +3216,7 @@ async function cargarStickers() {
     }
     res.stickers = res.stickers || [];
     if (res.stickers.length === 0) {
-        grilla.appendChild(mensajeVacio('Todavía no tenés stickers. Tocá "＋ Crear sticker" para hacer el primero con una de tus imágenes.'));
+        grilla.appendChild(mensajeVacio('Todavía no tenés stickers. Tocá "Crear sticker" para hacer el primero con una de tus imágenes.'));
         return;
     }
     res.stickers.forEach(s => {
@@ -4343,7 +4405,7 @@ function pintarGrupos(cont, res) {
         });
     }
     const titulo = tituloBloque('Grupos', res.grupos.length);
-    titulo.appendChild(boton('＋ Crear grupo', 'btn-secondary-sm social-block-accion', abrirCrearGrupo));
+    titulo.appendChild(boton([icono('plus'), ' Crear grupo'], 'btn-secondary-sm social-block-accion', abrirCrearGrupo));
     cont.appendChild(titulo);
     if (!res.grupos.length) cont.appendChild(mensajeVacio('Creá un grupo para chatear y llamar a varios amigos a la vez.'));
     res.grupos.forEach(g => {
@@ -5513,4 +5575,139 @@ async function publicarGuia() {
     cargarComunidad('guia', true);
     cargarResumenComunidad();
     abrirGuia(r.publicacion);
+}
+
+
+// ============================================================================
+// ESTADO DE CONEXIÓN: lo ven tus amigos; "No molestar" y "Desconectado" silencian los sonidos
+// ============================================================================
+
+const ESTADOS = {
+    en_linea: { texto: 'En línea', detalle: 'Tus amigos te ven conectado y suenan las notificaciones.' },
+    ausente: { texto: 'Ausente', detalle: 'Te ven conectado pero lejos del teclado. Las notificaciones suenan.' },
+    no_molestar: { texto: 'No molestar', detalle: 'Te ven conectado, pero no suena ninguna notificación.' },
+    desconectado: { texto: 'Desconectado', detalle: 'Nadie te ve conectado (ni a qué jugás) y no suena ninguna notificación.' },
+};
+const MINUTOS_INACTIVO = 10;   // sin mouse ni teclado en la app este tiempo: "Ausente" automático (como Discord)
+let estadoActual = 'en_linea';
+let latidoTimer = null;       // revisa la inactividad; el aviso "sigo conectado" lo manda Python
+let ultimaActividad = Date.now();
+let ausenteAutomatico = false;
+['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach(evento =>
+    window.addEventListener(evento, () => {
+        ultimaActividad = Date.now();
+        if (ausenteAutomatico) revisarInactividad();   // volviste: de nuevo "En línea" sin esperar
+    }, { passive: true }));
+
+const puedeSonar = () => estadoActual === 'en_linea' || estadoActual === 'ausente';
+
+function puntoEstado(estado) {
+    const punto = nodo('span', 'punto-estado estado-' + estado);
+    punto.setAttribute('aria-hidden', 'true');
+    return punto;
+}
+
+function aplicarEstado(estado) {
+    estadoActual = ESTADOS[estado] ? estado : 'en_linea';
+    const texto = ESTADOS[estadoActual].texto;
+    document.getElementById('mi-estado').replaceChildren(puntoEstado(estadoActual), ' ' + texto);
+    document.getElementById('vista-estado').replaceChildren(puntoEstado(estadoActual), ' ' + texto);
+    document.getElementById('header-estado').className = 'punto-estado estado-' + estadoActual;
+}
+
+async function iniciarEstado() {
+    detenerLatido();
+    let r = null;
+    try { r = await window.pywebview.api.obtener_mi_estado(); } catch (e) { /* queda "En línea" */ }
+    aplicarEstado(r && r.estado);
+    ultimaActividad = Date.now();
+    ausenteAutomatico = false;
+    latidoTimer = setInterval(revisarInactividad, 30000);
+}
+
+async function revisarInactividad() {
+    const inactivo = Date.now() - ultimaActividad > MINUTOS_INACTIVO * 60000;
+    if (inactivo === ausenteAutomatico) return;
+    ausenteAutomatico = inactivo;
+    let r = null;
+    try { r = await window.pywebview.api.marcar_inactividad(inactivo); } catch (e) { return; }
+    // Solo cuando elegiste "En línea": se muestra lo publicado, pero lo elegido no cambia
+    if (!r || !r.exito || estadoActual !== 'en_linea') return;
+    const texto = ESTADOS[r.estado].texto + (r.estado === 'ausente' ? ' (automático)' : '');
+    document.getElementById('mi-estado').replaceChildren(puntoEstado(r.estado), ' ' + texto);
+    document.getElementById('header-estado').className = 'punto-estado estado-' + r.estado;
+}
+
+// Realtime avisó que un amigo cambió de estado: se vuelve a pedir lo que esté a la vista (una vez, aunque lleguen varios avisos).
+// El aviso de cada minuto ("sigo conectado") no cambia nada: solo se actualiza si el estado es otro.
+const estadosConocidos = {};
+let cambioConexionTimer = null;
+function alCambioConexion(fila) {
+    if (fila && fila.user_id) {
+        const estado = fila.visto_en ? fila.estado : 'desconectado';
+        if (estadosConocidos[fila.user_id] === estado) return;
+        estadosConocidos[fila.user_id] = estado;
+    }
+    clearTimeout(cambioConexionTimer);
+    cambioConexionTimer = setTimeout(() => {
+        if (vistaActual !== 'social') return;
+        if (socialSeccion === 'amigos') { if (perfilAjenoId) cargarPerfilAjeno(); else cargarSocial(); }
+        else if (socialSeccion === 'chat') cargarConversaciones();
+    }, 400);
+}
+
+function detenerLatido() {
+    if (latidoTimer) clearInterval(latidoTimer);
+    latidoTimer = null;
+}
+
+function abrirSelectorEstado() {
+    const cont = document.getElementById('estado-opciones');
+    cont.replaceChildren(...Object.entries(ESTADOS).map(([clave, e]) => {
+        const b = nodo('button', 'estado-opcion' + (clave === estadoActual ? ' activa' : ''));
+        b.type = 'button';
+        const textos = nodo('span', 'estado-opcion-textos');
+        textos.append(nodo('strong', '', e.texto), nodo('small', '', e.detalle));
+        b.append(puntoEstado(clave), textos);
+        b.onclick = () => elegirEstado(clave);
+        return b;
+    }));
+    document.getElementById('estado-modal').style.display = 'flex';
+}
+
+function cerrarSelectorEstado() {
+    document.getElementById('estado-modal').style.display = 'none';
+}
+
+async function elegirEstado(estado) {
+    let r;
+    try { r = await window.pywebview.api.latido_conexion(estado); } catch (e) { r = null; }
+    if (!r || !r.exito) { avisoPost((r && r.error) || 'No se pudo cambiar tu estado.', true); return; }
+    ausenteAutomatico = false;
+    ultimaActividad = Date.now();
+    aplicarEstado(r.estado);
+    cerrarSelectorEstado();
+}
+
+// Sonido corto para mensajes y solicitudes nuevas, generado por código como el timbre de llamada.
+let sonidoCtx = null;
+function sonarNotificacion() {
+    if (!puedeSonar()) return;
+    try {
+        sonidoCtx = sonidoCtx || new AudioContext();
+        if (sonidoCtx.state === 'suspended') sonidoCtx.resume();
+        [[880, 0], [1320, 0.11]].forEach(([frecuencia, retraso]) => {
+            const osc = sonidoCtx.createOscillator();
+            const vol = sonidoCtx.createGain();
+            const inicio = sonidoCtx.currentTime + retraso;
+            osc.type = 'sine';
+            osc.frequency.value = frecuencia;
+            vol.gain.setValueAtTime(0.0001, inicio);
+            vol.gain.exponentialRampToValueAtTime(0.12, inicio + 0.02);
+            vol.gain.exponentialRampToValueAtTime(0.0001, inicio + 0.18);
+            osc.connect(vol).connect(sonidoCtx.destination);
+            osc.start(inicio);
+            osc.stop(inicio + 0.2);
+        });
+    } catch (e) { /* sin sonido */ }
 }

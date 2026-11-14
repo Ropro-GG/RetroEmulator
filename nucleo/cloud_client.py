@@ -241,6 +241,7 @@ class CloudClient:
     # Borra la presencia, cierra la sesión y olvida la sesión recordada.
     def cerrar_sesion(self):
         self.limpiar_jugando()
+        self.salir_de_conexion()
         try:
             if self.client:
                 self.client.auth.sign_out()
@@ -320,6 +321,60 @@ class CloudClient:
         return {r["user_id"]: {"titulo": r["titulo"], "consola": r.get("consola", "")}
                 for r in res.data or [] if self._vigente(r["desde"])}
 
+    ESTADOS = ("en_linea", "ausente", "no_molestar", "desconectado")
+    MINUTOS_CONECTADO = 3   # la app avisa cada minuto: sin aviso en 3 (por ejemplo, si se cerró de golpe), figura desconectado
+
+    def _conexiones(self, ids):
+        """{user_id: estado} de los amigos conectados. La base no entrega a quien eligió "desconectado"."""
+        if not ids:
+            return {}
+        try:
+            filas = self.client.table("conexion").select("user_id, estado, visto_en").in_("user_id", list(ids)).execute().data or []
+        except Exception as e:
+            print(f"[SOCIAL] Sin datos de conexión: {e}")
+            return {}
+        limite = datetime.now(timezone.utc) - timedelta(minutes=self.MINUTOS_CONECTADO)
+        salida = {}
+        for f in filas:
+            try:
+                visto = datetime.fromisoformat(str(f.get("visto_en")).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if f.get("estado") in self.ESTADOS and f["estado"] != "desconectado" and visto >= limite:
+                salida[f["user_id"]] = f["estado"]
+        return salida
+
+    def latido_conexion(self, estado=None):
+        """Avisa que la app sigue abierta. Con "desconectado" no se publica la hora: nadie te ve conectado.
+        El estado elegido lo guarda el equipo (gui_app); en la nube "desconectado" es solo la hora vacía, en un único cambio:
+        si se ocultara la fila, Realtime descartaría el aviso y tus amigos no se enterarían."""
+        if not self.client or not self.usuario_actual:
+            return {"exito": False}
+        if estado is not None:
+            if estado not in self.ESTADOS:
+                return {"exito": False, "error": "Estado no válido."}
+            self.estado_conexion = estado
+        estado = getattr(self, "estado_conexion", "en_linea")
+        try:
+            if estado == "desconectado":
+                self.client.table("conexion").upsert({"user_id": self._yo(), "estado": "en_linea", "visto_en": None}).execute()
+                self.limpiar_jugando()   # "jugando a..." también delataría que estás conectado
+            else:
+                self.client.table("conexion").upsert({
+                    "user_id": self._yo(), "estado": estado, "visto_en": datetime.now(timezone.utc).isoformat()}).execute()
+            return {"exito": True, "estado": estado}
+        except Exception as e:
+            return {"exito": False, "error": self._error_social(e)}
+
+    def salir_de_conexion(self):
+        """Al cerrar la app o la sesión: dejás de figurar conectado (se conserva el estado elegido)."""
+        if not self.client or not self.usuario_actual:
+            return
+        try:
+            self.client.table("conexion").update({"visto_en": None}).eq("user_id", self._yo()).execute()
+        except Exception as e:
+            print(f"[SOCIAL] No se pudo marcar la desconexión: {self._error_social(e)}")
+
     def _en_llamada(self, ids):
         """Amigos que están en una llamada (Supabase solo devuelve los que lo comparten)."""
         if not ids:
@@ -356,6 +411,7 @@ class CloudClient:
             aceptados = [o for f, o in zip(filas, otros) if f["status"] == "accepted"]
             presencias = self._presencias(aceptados)
             en_llamada = self._en_llamada(aceptados)
+            conexiones = self._conexiones(aceptados)
 
             amigos, recibidas, enviadas = [], [], []
             for f, otro in zip(filas, otros):
@@ -369,14 +425,15 @@ class CloudClient:
                 if f["status"] == "accepted":
                     item["jugando"] = presencias.get(otro)
                     item["en_llamada"] = otro in en_llamada
+                    item["estado"] = conexiones.get(otro, "desconectado")
                     amigos.append(item)
                 elif f["requester_id"] == yo:
                     enviadas.append(item)
                 else:
                     recibidas.append(item)
 
-            # Primero los que están jugando o en llamada, después por orden alfabético
-            amigos.sort(key=lambda a: (a["jugando"] is None and not a["en_llamada"], a["username"].lower()))
+            # Primero los que están jugando o en llamada, después los conectados, y por orden alfabético
+            amigos.sort(key=lambda a: (a["jugando"] is None and not a["en_llamada"], a["estado"] == "desconectado", a["username"].lower()))
             return {"exito": True, "amigos": amigos, "recibidas": recibidas, "enviadas": enviadas}
         except Exception as e:
             return {"exito": False, "error": self._error_social(e)}
@@ -449,6 +506,7 @@ class CloudClient:
                         break
 
             jugando = self._presencias([user_id]).get(user_id) if relacion == "amigos" else None
+            estado = self._conexiones([user_id]).get(user_id, "desconectado") if relacion == "amigos" else None
             en_llamada = relacion == "amigos" and user_id in self._en_llamada([user_id])
             recientes, en_comun, resumen = self._historial_con_amigo(yo, user_id) if relacion == "amigos" else ([], [], None)
             deseados = self.obtener_deseados_de(user_id) if relacion == "amigos" else []
@@ -465,6 +523,7 @@ class CloudClient:
                 "friendship_id": fid,
                 "jugando": jugando,
                 "en_llamada": en_llamada,
+                "estado": estado,
                 "recientes": recientes,
                 "en_comun": en_comun,
                 "resumen": resumen,
@@ -802,12 +861,14 @@ class CloudClient:
                 f_perfiles = hilos.submit(self._perfiles_por_id, amigos)
                 f_presencias = hilos.submit(self._presencias, amigos)
                 f_llamada = hilos.submit(self._en_llamada, amigos)
+                f_conexion = hilos.submit(self._conexiones, amigos)
                 f_ultimos = hilos.submit(lambda: self.client.table("mensajes").select(self._COLUMNAS_MENSAJE)
                                          .or_(f"de.eq.{yo},para.eq.{yo}").order("id", desc=True).limit(300).execute())
                 f_sin_leer = hilos.submit(lambda: self.client.table("mensajes").select("de")
                                           .eq("para", yo).is_("leido_en", "null").limit(1000).execute())
                 f_grupos = hilos.submit(self.grupos.conversaciones)
             perfiles, presencias, en_llamada = f_perfiles.result(), f_presencias.result(), f_llamada.result()
+            conexiones = f_conexion.result()
             res = f_ultimos.result()
             ultimos = {}
             for m in res.data or []:                       # vienen del más nuevo al más viejo
@@ -829,6 +890,7 @@ class CloudClient:
                     "avatar_url": p.get("avatar_url") or "",
                     "jugando": presencias.get(amigo),
                     "en_llamada": amigo in en_llamada,
+                    "estado": conexiones.get(amigo, "desconectado"),
                     "no_leidos": sin_leer.get(amigo, 0),
                     "ultimo": {"id": u["id"], "mio": u["de"] == yo, "texto": self._resumen_mensaje(self.llaves.abrir(u)),
                                "creado_en": u.get("creado_en")} if u else None,
@@ -1077,8 +1139,8 @@ class CloudClient:
         return datos
 
     def establecer_jugando(self, titulo, consola):
-        """Publica (solo para tus amigos) a qué estás jugando."""
-        if not self.client or not self.usuario_actual:
+        """Publica (solo para tus amigos) a qué estás jugando. En "desconectado" no se publica."""
+        if not self.client or not self.usuario_actual or getattr(self, "estado_conexion", "en_linea") == "desconectado":
             return
         try:
             self.client.table("presencia").upsert({
